@@ -107,9 +107,9 @@
         },
         "15": {
             "semantic_fidelity": "5",
-            "schema_accuracy": "",
-            "explicit_accuracy": "",
-            "structural_integrity": "",
+            "schema_accuracy": "5",
+            "explicit_accuracy": "5",
+            "structural_integrity": "5",
             "notes": "LLM can understand text in the custom format which they improvise in causal structure and keep senmantic perfectly while mark this as \"I\" to indicate that this causal have to be improvised"
         },
         "16": {
