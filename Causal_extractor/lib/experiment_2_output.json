@@ -1,0 +1,146 @@
+[
+  {
+    "relationship_extraction": "Trash truck schedule -> Is agreed upon by Bangkok and university",
+    "generated_questions": [
+      "How exactly does the system process [The truck schedule] to impact [Agreed upon by Bangkok and university], and what are the known failure states?",
+      "The link between [The truck schedule] and [Agreed upon by Bangkok and university] is stated directly but not marked with a causal word—what formal document or process validates this agreement?",
+      "Is this statement about [The truck schedule] a static fact, or is it subject to change over time?"
+    ]
+  },
+  {
+    "relationship_extraction": "Some event -> Causes an unusual amount of trash",
+    "generated_questions": [
+      "How exactly does the system process [Some event] to impact [An unusual amount of trash], and what are the known failure states?",
+      "The text explicitly states that [Some event] leads to [An unusual amount of trash]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Some event] entirely, would [An unusual amount of trash] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "An unusual amount of trash -> University staff call for trash trucks",
+    "generated_questions": [
+      "How exactly does the system process [An unusual amount of trash] to impact [University staff call for trash trucks], and what are the known failure states?",
+      "The link between [An unusual amount of trash] and [University staff call for trash trucks] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [An unusual amount of trash] entirely, would [University staff call for trash trucks] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "Limited space in university -> Garbage buffer is created",
+    "generated_questions": [
+      "Is [the garbage buffer] solely influenced by [limited space in our university], or do other environmental factors play a role?",
+      "The text explicitly states that [limited space in our university] leads to [the garbage buffer]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [limited space in our university] entirely, would [the garbage buffer] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "Storing trash in a buffer -> Prevents normal collection points from overflowing",
+    "generated_questions": [
+      "How exactly does the system process [Garbage buffer storing trash] to impact [Normal collection points overflowing], and what are the known failure states?",
+      "The link between [Garbage buffer storing trash] and [Normal collection points overflowing] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Garbage buffer storing trash] entirely, would [Normal collection points overflowing] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "Universities accept more students -> Challenges emerge",
+    "generated_questions": [
+      "Is [Challenges] solely influenced by [Universities accept more students], or do other environmental factors play a role?",
+      "The link between [Universities accept more students] and [Challenges] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Universities accept more students] entirely, would [Challenges] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "Increase in the number of students -> Increases the number of trash producers",
+    "generated_questions": [
+      "Is [The number of trash producers] solely influenced by [Increase in the number of students], or do other environmental factors play a role?",
+      "The link between [Increase in the number of students] and [The number of trash producers] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Increase in the number of students] entirely, would [The number of trash producers] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "The most important factor -> Makes the project fail",
+    "generated_questions": [
+      "What specific KPI defines the success of [The project in general fail], and how is [The most important factor] quantified?",
+      "The link between [The most important factor] and [The project in general fail] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [The most important factor] entirely, would [The project in general fail] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "Gains after employing developed policy -> Consume more monthly cost",
+    "generated_questions": [
+      "What specific KPI defines the success of [more monthly cost], and how is [gains after employing developed policy] quantified?",
+      "The link between [gains after employing developed policy] and [more monthly cost] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [gains after employing developed policy] entirely, would [more monthly cost] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "Gains after employing developed policy -> Give insignificant improvement",
+    "generated_questions": [
+      "What specific KPI defines the success of [insignificant improvement], and how is [gains after employing developed policy] quantified?",
+      "The link between [gains after employing developed policy] and [insignificant improvement] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [gains after employing developed policy] entirely, would [insignificant improvement] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "We -> may need to include financial factor and staff sentiment to the reward function",
+    "generated_questions": [
+      "What operational friction do you anticipate in implementing [We] may need to include financial factor and staff sentiment to the reward function, and how will you ensure [financial factor and staff sentiment] is achieved?",
+      "The link between [We] and [financial factor and staff sentiment] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Who is the specific decision-maker for [We], and what data informed that action?"
+    ]
+  },
+  {
+    "relationship_extraction": "University -> calls BMA to collect garbage on a case-by-case basis",
+    "generated_questions": [
+      "How exactly does the system process [University] to impact [BMA (Bangkok Metropolitan Administration)], and what are the known failure states?",
+      "The link between [University] and [BMA (Bangkok Metropolitan Administration)] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Who is the specific decision-maker for [University], and what data informed that action?"
+    ]
+  },
+  {
+    "relationship_extraction": "Number of people in the university -> Increases",
+    "generated_questions": [
+      "Is [Increase] solely influenced by [Number of people in the university], or do other environmental factors play a role?",
+      "The link between [Number of people in the university] and [Increase] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Is this statement about [Number of people in the university] a static fact, or is it subject to change over time?"
+    ]
+  },
+  {
+    "relationship_extraction": "Management -> Policy changes",
+    "generated_questions": [
+      "What operational friction do you anticipate in implementing [Management (ผู้บริหาร)], and how will you ensure [Policy] is achieved?",
+      "The link between [Management (ผู้บริหาร)] and [Policy] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Management (ผู้บริหาร)] entirely, would [Policy] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "Housekeepers -> Collect waste from buildings",
+    "generated_questions": [
+      "How exactly does the system process [Housekeepers (แม่บ้าน)] to impact [Waste from buildings], and what are the known failure states?",
+      "The link between [Housekeepers (แม่บ้าน)] and [Waste from buildings] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Is this statement about [Housekeepers (แม่บ้าน)] a static fact, or is it subject to change over time?"
+    ]
+  },
+  {
+    "relationship_extraction": "Staff working hours overlap with housekeeper working hours -> Garbage appears to overflow",
+    "generated_questions": [
+      "How exactly does the system process [Staff working hours, Housekeeper working hours] to impact [Garbage overflowing], and what are the known failure states?",
+      "The link between [Staff working hours, Housekeeper working hours] and [Garbage overflowing] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Staff working hours, Housekeeper working hours] entirely, would [Garbage overflowing] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "Personnel -> Inaccurate weight measurements",
+    "generated_questions": [
+      "How exactly does the system process [Personnel (บุคลากร)] to impact [Inaccurate weight measurements (การคลาดเคลื่อนการชั่งน้ำหนัก)], and what are the known failure states?",
+      "The text explicitly states that [Personnel (บุคลากร)] leads to [Inaccurate weight measurements (การคลาดเคลื่อนการชั่งน้ำหนัก)]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Personnel (บุคลากร)] entirely, would [Inaccurate weight measurements (การคลาดเคลื่อนการชั่งน้ำหนัก)] still occur via another pathway?"
+    ]
+  },
+  {
+    "relationship_extraction": "Waste collection cage size -> Is too small",
+    "generated_questions": [
+      "How exactly does the system process [Waste collection cage size] to impact [Too small], and what are the known failure states?",
+      "The link between [Waste collection cage size] and [Too small] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Is this statement about [Waste collection cage size] a static fact, or is it subject to change over time?"
+    ]
+  }
+]

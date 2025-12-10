@@ -11,7 +11,6 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))  # Go up to Framewor
 # Define the base directories (use data_extract output and generation_log as requested)
 BASE_DIR = os.path.join(PROJECT_ROOT, "Causal_extractor", "data_extract", "output")
 REFERENCE_DIR = os.path.join(PROJECT_ROOT, "Causal_extractor", "data_extract")
-FOLLOWUP_FILE_PATH = os.path.join(PROJECT_ROOT, "Causal_extractor", "lib", "experiment_2_output.json")
 
 # --- NEW: Define the score storage path (inside the base directory) ---
 SCORE_FILE_NAME = "validation_scores.json"
@@ -74,27 +73,6 @@ def save_scores(scores):
         st.toast("✅ Saved successfully!", icon='💾')
     except Exception as e:
         st.error(f"Error saving: {e}")
-
-
-@st.cache_data
-def load_followup_questions():
-    """Load follow-up questions keyed by relationship_extraction."""
-    if not os.path.exists(FOLLOWUP_FILE_PATH):
-        return {}
-    try:
-        with open(FOLLOWUP_FILE_PATH, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        mapping = {}
-        if isinstance(data, list):
-            for item in data:
-                rel = item.get("relationship_extraction")
-                questions = item.get("generated_questions", [])
-                if rel and isinstance(questions, list):
-                    mapping[rel] = questions
-        return mapping
-    except Exception as e:
-        st.error(f"Error loading follow-up questions: {e}")
-        return {}
 
 def get_score_and_notes(all_scores, file_name, unique_id):
     """Get scores and notes for a specific row. Handles old format and new 4-matrix format."""
@@ -466,9 +444,16 @@ if not df.empty:
                 break
     
     if len(selected_rows) >= 1:
+        # ---------------------------
+        # INLINE SCORE & NOTES EDIT SECTION
+        # ---------------------------
         if len(selected_rows) == 1:
             selected_row_data = selected_rows.iloc[0]
             selected_unique_id = str(selected_row_data['Unique_ID'])
+            
+            # Get current scores and notes
+            all_scores = load_scores()
+            current_scores, current_notes = get_score_and_notes(all_scores, selected_file_name, selected_unique_id)
 
             # ---------------------------
             # Comparison Display
@@ -556,6 +541,12 @@ if not df.empty:
                 if reasoning:
                     st.markdown("##### 💡 Reasoning")
                     st.caption(reasoning)
+                
+                # Show saved scores summary
+                saved_scores_display = f"SF: `{current_scores['semantic_fidelity'] or '-'}` | SA: `{current_scores['schema_accuracy'] or '-'}` | EA: `{current_scores['explicit_accuracy'] or '-'}` | SI: `{current_scores['structural_integrity'] or '-'}`"
+                st.markdown(f"**Saved Scores:** {saved_scores_display}")
+                if current_notes:
+                    st.markdown(f"**Saved Notes:** {current_notes}")
             
             with source_col:
                 st.subheader("📄 Source Text Comparison")
@@ -615,23 +606,133 @@ if not df.empty:
                     st.markdown(f"**Source Text:** {original_reference_text}")
 
         # ---------------------------
-        # Follow-up questions for implicit causal links
+        # ✍️ Evaluation Scores (at the bottom)
         # ---------------------------
         st.markdown("---")
-        st.subheader("🔎 Follow-up Questions")
+        st.subheader("✍️ Evaluation Scores")
+        
+        # 2x2 Grid for 4 scoring matrices
+        score_row1_col1, score_row1_col2 = st.columns(2)
+        score_row2_col1, score_row2_col2 = st.columns(2)
+        
+        # 1. Semantic Fidelity (SF)
+        with score_row1_col1:
+            st.markdown("##### 🎯 Semantic Fidelity (SF)")
+            with st.expander("📖 Criteria Guide", expanded=False):
+                st.markdown("""
+**5 - Excellent:** The causal statement completely and accurately captures the meaning from the source text with no distortion or loss.
 
-        # Check if explicit_type is "I" (Implicit)
-        if schema_version == "v4" and (explicit_type or "").strip().upper() == "I":
-            questions_map = load_followup_questions()
-            questions = questions_map.get(causal_statement, [])
-            if questions:
-                st.markdown("Because this causal link is **implicit**, review these questions:")
-                for q in questions:
-                    st.markdown(f"- {q}")
-            else:
-                st.caption("⚠️ No follow-up questions found for this relationship in the follow-up questions file.")
-        else:
-            st.caption("ℹ️ Follow-up questions are only shown for implicit causal relationships.")
+**4 - Good:** The causal statement captures the meaning well, but may have minor phrasing differences that don't change the core meaning.
+
+**3 - Moderate:** The causal statement generally captures the meaning, but some nuance is lost or slightly altered.
+
+**2 - Below Average:** The causal statement captures some meaning, but has notable distortions or missing elements.
+
+**1 - Poor:** The causal statement significantly misrepresents or fails to capture the meaning from the source.
+""")
+            semantic_score = st.radio(
+                "Rate Semantic Fidelity (1-5):",
+                options=["—", "1", "2", "3", "4", "5"],
+                horizontal=True,
+                key=f"semantic_{selected_unique_id}",
+                index=["—", "1", "2", "3", "4", "5"].index(current_scores['semantic_fidelity']) if current_scores['semantic_fidelity'] in ["1", "2", "3", "4", "5"] else 0
+            )
+        
+        # 2. Schema Classification Accuracy (SA)
+        with score_row1_col2:
+            st.markdown("##### 📊 Schema Classification Accuracy (SA)")
+            with st.expander("📖 Criteria Guide", expanded=False):
+                st.markdown("""
+**5 - Excellent:** Causal Type, Sentence Type, and Marked Type are all correctly classified.
+
+**4 - Good:** Two out of three types are correctly classified; the third has a minor error.
+
+**3 - Moderate:** One major type (e.g., Causal Type) is incorrect, or two types have minor errors.
+
+**2 - Below Average:** Multiple types are incorrectly classified.
+
+**1 - Poor:** All or nearly all type classifications are incorrect.
+""")
+            schema_score = st.radio(
+                "Rate Schema Accuracy (1-5):",
+                options=["—", "1", "2", "3", "4", "5"],
+                horizontal=True,
+                key=f"schema_{selected_unique_id}",
+                index=["—", "1", "2", "3", "4", "5"].index(current_scores['schema_accuracy']) if current_scores['schema_accuracy'] in ["1", "2", "3", "4", "5"] else 0
+            )
+        
+        # 3. Explicit Type Accuracy (EA)
+        with score_row2_col1:
+            st.markdown("##### 🔍 Explicit Type Accuracy (EA)")
+            with st.expander("📖 Criteria Guide", expanded=False):
+                st.markdown("""
+**5 - Excellent:** Explicit Type classification is correct, matching the presence of a clear causal marker (e.g., "because," "therefore").
+
+**4 - Good:** Classification is correct, but the marker choice or reasoning is slightly ambiguous.
+
+**3 - Moderate:** Classification is borderline correct, with room for interpretation (e.g., implicit causality misidentified as explicit).
+
+**2 - Below Average:** Classification is incorrect but understandable given context.
+
+**1 - Poor:** Classification is clearly wrong (e.g., explicit marked as implicit or vice versa).
+""")
+            explicit_score = st.radio(
+                "Rate Explicit Type Accuracy (1-5):",
+                options=["—", "1", "2", "3", "4", "5"],
+                horizontal=True,
+                key=f"explicit_{selected_unique_id}",
+                index=["—", "1", "2", "3", "4", "5"].index(current_scores['explicit_accuracy']) if current_scores['explicit_accuracy'] in ["1", "2", "3", "4", "5"] else 0
+            )
+        
+        # 4. Structural Integrity (SI)
+        with score_row2_col2:
+            st.markdown("##### 🔗 Structural Integrity (SI)")
+            with st.expander("📖 Criteria Guide", expanded=False):
+                st.markdown("""
+**5 - Excellent:** Subject and Object are correctly identified with appropriate cause-to-effect directionality.
+
+**4 - Good:** Subject and Object are mostly correct; minor boundary or phrasing issues.
+
+**3 - Moderate:** One element (Subject or Object) is incorrect or direction is partially off.
+
+**2 - Below Average:** Significant errors in structure (e.g., roles swapped or incomplete).
+
+**1 - Poor:** Subject/Object are entirely wrong, or cause-effect directionality is reversed.
+""")
+            structural_score = st.radio(
+                "Rate Structural Integrity (1-5):",
+                options=["—", "1", "2", "3", "4", "5"],
+                horizontal=True,
+                key=f"structural_{selected_unique_id}",
+                index=["—", "1", "2", "3", "4", "5"].index(current_scores['structural_integrity']) if current_scores['structural_integrity'] in ["1", "2", "3", "4", "5"] else 0
+            )
+        
+        # Notes
+        notes = st.text_area("📝 Notes (optional):", value=current_notes, height=80, key=f"notes_{selected_unique_id}")
+        
+        # Save button
+        if st.button("💾 Save Score & Notes", type="primary", key=f"save_{selected_unique_id}"):
+            all_scores = load_scores()
+            
+            if selected_file_name not in all_scores:
+                all_scores[selected_file_name] = {}
+            
+            all_scores[selected_file_name][selected_unique_id] = {
+                "semantic_fidelity": semantic_score if semantic_score != "—" else "",
+                "schema_accuracy": schema_score if schema_score != "—" else "",
+                "explicit_accuracy": explicit_score if explicit_score != "—" else "",
+                "structural_integrity": structural_score if structural_score != "—" else "",
+                "notes": notes
+            }
+            
+            save_scores(all_scores)
+            st.success(f"Saved scores for Unique_ID: {selected_unique_id}")
+            
+            # Auto-select next row
+            current_idx = selected_row_data['original_index']
+            if current_idx < len(df_filtered) - 1:
+                st.session_state.auto_select_index = current_idx + 1
+                st.rerun()
 
     else:
         st.info("Select a row above to view details.")
