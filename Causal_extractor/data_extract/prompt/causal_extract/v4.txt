@@ -69,5 +69,5 @@ JSON Example
 
 Input Text
 """
-{{INSERT TEXT HERE}}
+{input}
 """
