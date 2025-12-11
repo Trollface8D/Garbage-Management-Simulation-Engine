@@ -4,6 +4,6 @@ models/
 
 # Ignore output directories but allow validation_scores.json
 output/*
-!output/validation_scores.json
+!output/validation_scores_saved.json
 **/output/*
-!**/output/validation_scores.json
+!**/output/validation_scores_saved.json
