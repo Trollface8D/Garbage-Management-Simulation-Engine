@@ -33,7 +33,7 @@ OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data_extract", "output")
 LOG_FILE = os.path.join(PROJECT_ROOT, "data_extract", "generation_log.csv")
 
 # Load default prompt template with fallback
-DEFAULT_PROMPT_FILE = os.path.join(PROJECT_ROOT, "data_extract", "prompt", "exp1", "v4.txt")
+DEFAULT_PROMPT_FILE = os.path.join(PROJECT_ROOT, "data_extract", "prompt", "causal_extract", "v4.txt")
 try:
     with open(DEFAULT_PROMPT_FILE, 'r') as f:
         default_prompt_template = f.read()
@@ -138,7 +138,7 @@ def show_extractor():
         st.markdown("---")
         
         # --- Input Data Section ---
-        st.markdown("**💬 Input Data**")
+        st.markdown("**💬 Input Data as text (optional)**")
         user_input = st.text_area(
             "Enter your input data here...",
             height=200,
@@ -190,12 +190,15 @@ def show_extractor():
                     text, response = model.generate(
                         prompt=final_prompt,
                         generation_config=out_as_json,
-                        model_name="gemini-2.5-pro",
+                        pdf_bytes=[f.read() for f in uploaded_files] if uploaded_files else None,
+                        model_name="gemini-2.5-flash",
                         google_search=False
                     )
+
+                    print(response)
                     
                     # Clean the response
-                    raw = (response.text or "").strip()
+                    raw = (text or "").strip()
                     raw = raw.replace("```json", "").replace("```", "").strip()
 
                     parsed_json = None
