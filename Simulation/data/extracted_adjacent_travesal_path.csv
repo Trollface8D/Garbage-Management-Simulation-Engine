@@ -1,0 +1,63 @@
+Source,Target,Weight,Description
+TR-1,L1.1,140,Main road from Dorms to Pepsi Kiosk intersection
+L1.1,L2.1,80,Road North to Energy Building
+L1.1,L1.27,120,Walkway East to Wisawa Watana
+L1.1,L1.26,60,Path South-East to Ek-Kai Court
+L2.1,L1.4,40,Path around Energy Building (West to Front)
+L1.4,L1.3,50,Path from Energy to Back of CB5
+L1.3,TR-3,20,Back entrance to CB5
+L1.3,L1.6,30,Path connecting Back CB5 points
+TR-3,L1.2,30,Walkway from CB5 to 7-11
+TR-3,TR-6,100,Central path to Waste Plant
+L1.2,L2.4,60,Path South to Chem Eng side
+L1.2,L1.29,50,Path East to Stadium/Chem Back
+L1.2,L1.13,40,Path to Front of CB1
+L2.4,L2.6,30,Path to Behind Chemistry
+L2.4,TR-4,40,Side entrance to CB4
+TR-4,L1.5,30,Rear exit of CB4
+TR-4,L2.5_A,20,Front exit of CB4
+L1.5,TR-5,40,Path between CB4 and CB3
+TR-5,L1.6,30,Path from CB3 to Stadium edge
+L1.6,L1.29,60,Path along Stadium West edge
+L1.29,L1.12,40,Path along Stadium West (Middle)
+L1.12,L1.7,60,Path to Stadium North-West
+L1.7,L1.8,110,Stadium North Curve
+L1.8,L1.9,70,Stadium North-East Corner
+L1.9,L1.10,100,Path South along School
+L1.10,L1.11,40,Stadium South-East Corner
+L1.11,L1.13,50,Path West to CB1 Front
+L1.11,TR-6,60,Path South to Waste Plant
+L1.13,TR-6,30,Path South from CB1 to Waste Plant
+L1.13,L1.29,50,Path West to Stadium/Chem
+TR-6,L1.14,35,Main road East to Civil Eng
+L1.14,TR-7,30,Path to SIT Building
+L1.14,TR-9,40,Path South to Physics Dept
+TR-7,L1.15,40,Path to Behind Library
+L1.15,TR-10,30,Rear entrance to Library
+L1.15,L1.16,50,Path East to Basketball Court
+TR-10,L1.19,25,Front entrance to Library
+L1.19,TR-11,40,Path South to President Office
+L1.19,TR-9,50,Path West to Physics
+TR-9,TR-8,30,Path to Microbiology
+TR-8,L1.20,40,Path South to Behind Architecture
+TR-11,L1.20,50,Path South to Architecture
+TR-11,L1.23,30,Path to Pond Side (Emerald Pool)
+L1.23,L1.22,60,Path around Pond to Tool Center
+L1.20,L1.21,30,Path Behind So.Or. Building
+L1.21,L1.18,40,Path to Workshop Building
+L1.18,L1.24,50,Path to Front CB2
+L1.24,TR-11,40,Path to President Office
+L1.16,L1.17,30,Entrance to FIBO
+L1.17,L2.7,120,Road loop behind FIBO
+L2.5_A,TR-12,50,Path from CB4 to Wisawa Watana
+L2.5_A,L1.22,60,Path South to Pond/Tool Center
+TR-12,L2.8,70,Back exit to GMI
+L2.8,L2.4,40,Path GMI to Chem Eng
+TR-12,L1.27,15,Side exit Wisawa
+TR-12,L1.28,50,Front exit to Parking
+TR-12,L1.26,40,Side exit to Ek-Kai
+L1.26,L1.25,30,Path to Jook 4 Parking
+L1.28,L1.22,45,Walkway from Parking to Pond
+L1.22,L2.2,80,Road South to Gym
+L2.2,L2.5_B,50,Path to Multipurpose Building
+L2.5_B,L1.27,60,Path North to Wisawa side
