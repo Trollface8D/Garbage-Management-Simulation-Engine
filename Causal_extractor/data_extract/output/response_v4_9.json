@@ -1,0 +1,200 @@
+[
+    {
+        "pattern_type": "F",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Trash truck schedule -> Is agreed upon by Bangkok and university",
+        "marker": null,
+        "subject": "The truck schedule",
+        "object": "Agreed upon by Bangkok and university",
+        "source_text": "The schedule of the truck seems to be agreed on both Bangkok and university ends."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Some event -> Causes an unusual amount of trash",
+        "marker": "causes",
+        "subject": "Some event",
+        "object": "An unusual amount of trash",
+        "source_text": "university staff will call for trash trucks only when there is some event that causes an unusual amount of trash."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "An unusual amount of trash -> University staff call for trash trucks",
+        "marker": null,
+        "subject": "An unusual amount of trash",
+        "object": "University staff call for trash trucks",
+        "source_text": "university staff will call for trash trucks only when there is some event that causes an unusual amount of trash."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Limited space in university -> Garbage buffer is created",
+        "marker": "due to",
+        "subject": "limited space in our university",
+        "object": "the garbage buffer",
+        "source_text": "Also due to limited space in our university, the garbage buffer is created to store trash preventing normal collection points from overflowing."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "Storing trash in a buffer -> Prevents normal collection points from overflowing",
+        "marker": null,
+        "subject": "Garbage buffer storing trash",
+        "object": "Normal collection points overflowing",
+        "source_text": "the garbage buffer is created to store trash preventing normal collection points from overflowing."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Universities accept more students -> Challenges emerge",
+        "marker": null,
+        "subject": "Universities accept more students",
+        "object": "Challenges",
+        "source_text": "And these challenges emerge as universities accept more students."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "Increase in the number of students -> Increases the number of trash producers",
+        "marker": null,
+        "subject": "Increase in the number of students",
+        "object": "The number of trash producers",
+        "source_text": "Increase in the number of students also increases the number of trash producers"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "The most important factor -> Makes the project fail",
+        "marker": null,
+        "subject": "The most important factor",
+        "object": "The project in general fail",
+        "source_text": "He mentions that the most important factor that makes the project in general fail is economic feasibility."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "Gains after employing developed policy -> Consume more monthly cost",
+        "marker": null,
+        "subject": "gains after employing developed policy",
+        "object": "more monthly cost",
+        "source_text": "Ex. gains after employing developed policy consume more monthly cost"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "Gains after employing developed policy -> Give insignificant improvement",
+        "marker": null,
+        "subject": "gains after employing developed policy",
+        "object": "insignificant improvement",
+        "source_text": "gains after employing developed policy... give insignificant improvement compared to old policy."
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SP",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "We -> may need to include financial factor and staff sentiment to the reward function",
+        "marker": null,
+        "subject": "We",
+        "object": "financial factor and staff sentiment",
+        "source_text": "We may need to include financial factor and staff sentiment to the reward function"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "relationship": "University -> calls BMA to collect garbage on a case-by-case basis",
+        "marker": null,
+        "subject": "University",
+        "object": "BMA (Bangkok Metropolitan Administration)",
+        "source_text": "\u0e16\u0e49\u0e32\u0e02\u0e22\u0e30\u0e40\u0e22\u0e2d\u0e30\u0e40\u0e01\u0e34\u0e19 -> \u0e42\u0e17\u0e23\u0e40\u0e23\u0e35\u0e22\u0e01\u0e01\u0e17\u0e21\u0e21\u0e32\u0e40\u0e01\u0e47\u0e1a\u0e15\u0e32\u0e21 case"
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "relationship": "Number of people in the university -> Increases",
+        "marker": null,
+        "subject": "Number of people in the university",
+        "object": "Increase",
+        "source_text": "\u0e1b\u0e23\u0e34\u0e21\u0e32\u0e13\u0e04\u0e19\u0e17\u0e35\u0e48\u0e21\u0e2b\u0e32\u0e25\u0e31\u0e22\u0e40\u0e1e\u0e34\u0e48\u0e21/\u0e2b\u0e19\u0e49\u0e32\u0e17\u0e35\u0e48\u0e02\u0e2d\u0e07\u0e41\u0e15\u0e48\u0e25\u0e30\u0e04\u0e19"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Management -> Policy changes",
+        "marker": null,
+        "subject": "Management (\u0e1c\u0e39\u0e49\u0e1a\u0e23\u0e34\u0e2b\u0e32\u0e23)",
+        "object": "Policy",
+        "source_text": "\u0e19\u0e42\u0e22\u0e1a\u0e32\u0e22\u0e40\u0e1b\u0e25\u0e35\u0e48\u0e22\u0e19\u0e15\u0e32\u0e21\u0e1c\u0e39\u0e49\u0e1a\u0e23\u0e34\u0e2b\u0e32\u0e23"
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "relationship": "Housekeepers -> Collect waste from buildings",
+        "marker": null,
+        "subject": "Housekeepers (\u0e41\u0e21\u0e48\u0e1a\u0e49\u0e32\u0e19)",
+        "object": "Waste from buildings",
+        "source_text": "\u0e20\u0e32\u0e22\u0e43\u0e19 = \u0e2d\u0e32\u0e04\u0e32\u0e23 \u0e23\u0e27\u0e21\u0e42\u0e14\u0e22\u0e41\u0e21\u0e48\u0e1a\u0e49\u0e32\u0e19 -> \u0e41\u0e21\u0e48\u0e1a\u0e49\u0e32\u0e19\u0e41\u0e22\u0e01 -> \u0e43\u0e2a\u0e48\u0e01\u0e23\u0e07\u0e41\u0e22\u0e01\u0e02\u0e22\u0e30"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Staff working hours overlap with housekeeper working hours -> Garbage appears to overflow",
+        "marker": null,
+        "subject": "Staff working hours, Housekeeper working hours",
+        "object": "Garbage overflowing",
+        "source_text": "\u0e1e\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19\u0e40\u0e01\u0e47\u0e1a\u0e02\u0e22\u0e30 3-4pm(\u0e40\u0e25\u0e34\u0e01 5pm), \u0e41\u0e21\u0e48\u0e1a\u0e49\u0e32\u0e19\u0e40\u0e01\u0e47\u0e1a 5pm (\u0e40\u0e25\u0e34\u0e01 5pm) = \u0e02\u0e22\u0e30\u0e14\u0e39\u0e25\u0e49\u0e19\u0e46"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Personnel -> Inaccurate weight measurements",
+        "marker": "\u0e40\u0e19\u0e37\u0e48\u0e2d\u0e07\u0e08\u0e32\u0e01",
+        "subject": "Personnel (\u0e1a\u0e38\u0e04\u0e25\u0e32\u0e01\u0e23)",
+        "object": "Inaccurate weight measurements (\u0e01\u0e32\u0e23\u0e04\u0e32\u0e14\u0e40\u0e04\u0e25\u0e37\u0e48\u0e2d\u0e19\u0e01\u0e32\u0e23\u0e0a\u0e31\u0e48\u0e07\u0e19\u0e49\u0e33\u0e2b\u0e19\u0e31\u0e01)",
+        "source_text": "\u0e1b\u0e31\u0e0d\u0e2b\u0e32 1 -> \u0e01\u0e32\u0e23\u0e04\u0e32\u0e14\u0e40\u0e04\u0e25\u0e37\u0e48\u0e2d\u0e19\u0e01\u0e32\u0e23\u0e0a\u0e31\u0e48\u0e07\u0e19\u0e49\u0e33\u0e2b\u0e19\u0e31\u0e01\u0e40\u0e19\u0e37\u0e48\u0e2d\u0e07\u0e08\u0e32\u0e01\u0e1a\u0e38\u0e04\u0e25\u0e32\u0e01\u0e23"
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Waste collection cage size -> Is too small",
+        "marker": null,
+        "subject": "Waste collection cage size",
+        "object": "Too small",
+        "source_text": "\u0e1b\u0e31\u0e0d\u0e2b\u0e32 2 \u0e02\u0e19\u0e32\u0e14\u0e01\u0e23\u0e07\u0e23\u0e27\u0e21\u0e02\u0e22\u0e30\u0e40\u0e25\u0e47\u0e01\u0e44\u0e1b"
+    }
+]
