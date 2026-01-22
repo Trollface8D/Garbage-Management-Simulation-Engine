@@ -8,4 +8,5 @@ output/*
 **/output/*
 !**/output/validation_scores.json
 !**/output/response_v4_9.json
+!**/output/transcript/
 !**/output/transcript/**
