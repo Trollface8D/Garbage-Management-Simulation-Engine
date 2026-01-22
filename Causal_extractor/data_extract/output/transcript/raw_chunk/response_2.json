@@ -1,0 +1,90 @@
+[
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Housekeepers collect and compact trash in the morning -> Trash overflows at collection points in the morning",
+    "marker": "เพราะว่า",
+    "subject": "Housekeepers collecting and compacting trash in the morning",
+    "object": "Trash overflows at collection points",
+    "source_text": "โดยปัญหาที่ขยะล้นจุดพักขยะเนี่ย จะเป็นช่วงตอนเช้าเลย เพราะว่าแม่บ้านเนี่ยจะเก็บขยะรอบเช้าเนี่ย มาอัด"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Truck collects at 3 PM while housekeeper dumps at 4 PM -> Residual waste/Overflow remains",
+    "marker": "ซึ่งก็จะมี",
+    "subject": "Truck collects at 3 PM while housekeeper dumps at 4 PM",
+    "object": "Residual waste/Overflow remains",
+    "source_text": "รถรอบเนี่ยมาเก็บตอน 3 โมง แม่บ้านที่อยู่ในอาคารเอามาทิ้งตอน 4 โมง ซึ่งก็จะมีขยะล้น ขยะเหลืออยู่ในนั้น ก็คือขยะตกค้าง"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Housekeepers add more trash after morning collection -> Trash is compacted until it overflows constantly",
+    "marker": "สรุป...จน",
+    "subject": "Housekeepers add more trash after morning collection",
+    "object": "Trash is compacted until it overflows constantly",
+    "source_text": "พอรถมาเก็บ ปึ๊บ อ้าว ตอนเช้าเก็บไปแล้ว ภาคเช้าเนี่ย ที่แม่บ้านมาเก็บขยะอีก ก็เอามาลงอีก สรุปขยะมันก็จะถูกอัด อัดๆๆ มาจนล้นตลอด"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "U",
+    "explicit_type": "I",
+    "relationship": "Trash overflows at specific points -> Staff and students complain/report",
+    "marker": "null",
+    "subject": "Trash overflows at specific points",
+    "object": "Staff and students complain/report",
+    "source_text": "ก็จะถูกฟ้องอะไรเงี้ย ก็คือจากบุคลากรบ้าง จากนักศึกษาบ้าง ว่าขยะแต่ละจุดเนี่ยมันล้น"
+  },
+  {
+    "pattern_type": "A",
+    "sentence_type": "SP",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Working committee -> Warns to manage overflow quickly",
+    "marker": "null",
+    "subject": "Working committee",
+    "object": "Management of overflow",
+    "source_text": "แต่ มันก็มีทางที่เขาเป็นคณะทำงานในเรื่องเนี้ย เขาก็จะตักเตือนอะไรเงี้ย ให้รีบจัดการ ให้มันล้นจนเกินไป อะไรอย่างเงี้ย"
+  },
+  {
+    "pattern_type": "F",
+    "sentence_type": "D",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Gray bins -> Contain construction waste (metal, cement) ranging from powder to large pieces",
+    "marker": "null",
+    "subject": "Gray bins",
+    "object": "Construction waste characteristics",
+    "source_text": "ถังขยะ ถังเทาอะครับ ที่เป็นเศษวัสดุ พวกเหล็ก ปูน อะไรพวกเนี้ย ขนาดของมันก็คือจะมีตั้งแต่เป็นผง จนถึงขั้นเป็นชิ้นใหญ่"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Presence of large construction waste pieces -> Building management notifies network and schedules specific collection rounds",
+    "marker": "ถ้า",
+    "subject": "Presence of large construction waste pieces",
+    "object": "Building management notifies network and schedules specific collection rounds",
+    "source_text": "ทางงานอาคารเอง... เขาก็จะแจ้งไปยังเครือข่าย ที่ทำงานแต่ละอาคารเงี้ย ว่าสมมติถ้ามีขยะเศษวัสดุ ที่เป็นชิ้นใหญ่ อะไรอย่างเงี้ย เราก็จะนับวัน เพื่อมาเก็บเป็นแต่ละรอบๆ ไป"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "ES",
+    "marked_type": "U",
+    "explicit_type": "E",
+    "relationship": "Students -> Trash piles up improperly at cages/bins",
+    "marker": "null",
+    "subject": "Students",
+    "object": "Trash piles up improperly at cages/bins",
+    "source_text": "ที่เห็นมาตรงกองเนี่ย ส่วนใหญ่จะเป็นนักศึกษากอง... แต่ถ้ามากอง อีเขเกขะ ขาดเลย นักศึกษาล้วนๆ"
+  }
+]
