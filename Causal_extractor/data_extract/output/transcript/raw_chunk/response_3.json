@@ -1,134 +1,134 @@
 [
-  {
-    "pattern_type": "F",
-    "sentence_type": "ES",
-    "marked_type": "N/A",
-    "explicit_type": "E",
-    "relationship": "Waste from buildings and faculties -> Managed well",
-    "marker": "null",
-    "subject": "Waste from buildings and faculties",
-    "object": "Managed well",
-    "source_text": "ขยะที่เกิดขึ้นจากอาคาร แต่ละอาคาร แล้วก็แต่ละคณะเนี่ย มีการจัดการที่ค่อนข้างโอเค"
-  },
-  {
-    "pattern_type": "C",
-    "sentence_type": "ES",
-    "marked_type": "M",
-    "explicit_type": "E",
-    "relationship": "Personnel without clear affiliation (e.g., students) -> Hard-to-control factors/problems",
-    "marker": "เกิดจาก",
-    "subject": "Personnel without clear affiliation, Students",
-    "object": "Hard-to-control factors/problems",
-    "source_text": "แต่ว่าส่วนที่เกิดปัญหาส่วนใหญ่ ก็จะเป็นปัจจัยที่ควบคุมได้ยาก... แล้วก็ ส่วนใหญ่ปัจจัยก็จะเกิดจากบุคลากรที่ไม่ได้มีสังกัดชัดเจน เช่น นักศึกษา"
-  },
-  {
-    "pattern_type": "A",
-    "sentence_type": "SB",
-    "marked_type": "N/A",
-    "explicit_type": "E",
-    "relationship": "PM (Property Manager) -> Acts as central coordinator for the building",
-    "marker": "null",
-    "subject": "PM",
-    "object": "Acts as central coordinator",
-    "source_text": "เขาจะมี PM อ่า ที่คอยดูแลตึกนี้ใช่ไหม เขาก็จะเป็นเหมือนศูนย์กลางของตึกเนี่ย"
-  },
-  {
-    "pattern_type": "C",
-    "sentence_type": "SB",
-    "marked_type": "M",
-    "explicit_type": "E",
-    "relationship": "Presence of large specific waste items (e.g., sofa) -> Contact coordinator to schedule pickup with P'Mos",
-    "marker": "เพื่อ",
-    "subject": "Presence of large specific waste items",
-    "object": "Contact coordinator to schedule pickup",
-    "source_text": "สมมุติขยะที่นี่มี เขาก็จะติดต่อคนนี้ เพื่อสมมุติ วันเนี้ยเขาจะทิ้งโซฟา... พี่คนเนี้ยก็จะติดต่อไปทางพี่มอส เพื่อจะนัดวัน เพื่อจะเข้ามารับ"
-  },
-  {
-    "pattern_type": "C",
-    "sentence_type": "SB",
-    "marked_type": "M",
-    "explicit_type": "E",
-    "relationship": "Waste is non-daily/large quantity -> Must schedule a specific pickup date",
-    "marker": "เพราะว่า",
-    "subject": "Waste is non-daily/large quantity",
-    "object": "Must schedule a specific pickup date",
-    "source_text": "ถ้ามันมีขยะในปริมาณมาก เพราะว่ามันเป็นขยะที่ไม่ได้เกิดขึ้นประจำวัน... ก็ต้องนัดวัน"
-  },
-  {
-    "pattern_type": "C",
-    "sentence_type": "ES",
-    "marked_type": "U",
-    "explicit_type": "I",
-    "relationship": "Clearing or cleaning the building -> Generates large amount of recycling waste",
-    "marker": "null",
-    "subject": "Clearing or cleaning the building",
-    "object": "Generates large amount of recycling waste",
-    "source_text": "มีการจะเคลียร์ตึก หรือจะทำความสะอาดตึกอะไรเงี้ย เขาก็จะมีขยะที่รีไซเคิลไว้"
-  },
-  {
-    "pattern_type": "C",
-    "sentence_type": "SB",
-    "marked_type": "M",
-    "explicit_type": "E",
-    "relationship": "Very large volume of recycling waste -> Cannot be picked up immediately (requires scheduling)",
-    "marker": "ก็",
-    "subject": "Very large volume of recycling waste",
-    "object": "Cannot be picked up immediately",
-    "source_text": "แต่มีปริมาณที่เยอะมากๆ เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน นอกเหนือจากวันพฤหัสบดี"
-  },
-  {
-    "pattern_type": "SP",
-    "sentence_type": "OT",
-    "marked_type": "N/A",
-    "explicit_type": "E",
-    "relationship": "Policy -> Do not pile waste at the resting point",
-    "marker": "null",
-    "subject": "Policy",
-    "object": "Do not pile waste at the resting point",
-    "source_text": "คือเราจะไม่เอาขยะมากองไว้ที่จุดพัก"
-  },
-  {
-    "pattern_type": "C",
-    "sentence_type": "ES",
-    "marked_type": "M",
-    "explicit_type": "E",
-    "relationship": "Sports events or activities -> Accumulation of plywood/large waste",
-    "marker": "ถ้า...ก็",
-    "subject": "Sports events or activities",
-    "object": "Accumulation of plywood/large waste",
-    "source_text": "สมมุติถ้ามีพวกงานกีฬา หรืองานอะไรเงี้ย ก็จะมีพวกไม้ ไม้อัด ไม้อัด ใช่ไหม ที่น้องๆ ชอบเอามากองไว้"
-  },
-  {
-    "pattern_type": "C",
-    "sentence_type": "SB",
-    "marked_type": "M",
-    "explicit_type": "E",
-    "relationship": "Material waste is unusable -> Transport to external landfill (Wat Bua Phan)",
-    "marker": "ถ้า...ก็",
-    "subject": "Material waste is unusable",
-    "object": "Transport to external landfill",
-    "source_text": "ถ้ามันไม่ได้เอาไปใช้ประโยชน์อะไร หรือไปใช้ประโยชน์อะไรไม่ได้แล้วเนี่ย เขาก็จะขี่ เอารถที่ขนขยะเนี่ย ขนเอาไปทิ้งด้านนอก"
-  },
-  {
-    "pattern_type": "C",
-    "sentence_type": "SP",
-    "marked_type": "M",
-    "explicit_type": "E",
-    "relationship": "Piling waste in front blocks the walkway -> Waste is not piled in front (kept in shops/designated areas)",
-    "marker": "เพราะ",
-    "subject": "Piling waste in front blocks the walkway",
-    "object": "Waste is not piled in front",
-    "source_text": "เขาก็จะอาจมากองลงตรงนี้ไว้ก่อน เขาคงไม่เอามากองไว้ข้างหน้า เพราะ มันก็ขวางทางคนหลบ (เดิน)"
-  },
-  {
-    "pattern_type": "C",
-    "sentence_type": "SB",
-    "marked_type": "M",
-    "explicit_type": "E",
-    "relationship": "Monthly recycling cycle -> Waste placed in front of the building (early morning)",
-    "marker": "ถ้า...ก็",
-    "subject": "Monthly recycling cycle",
-    "object": "Waste placed in front of the building",
-    "source_text": "แต่ถ้าเป็นพวกของขยะรีไซเคิล ที่เป็นตาม ตามรอบของเดือนอะไรเงี้ย เขาก็จะวางกองไว้หน้าตึก"
-  }
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Waste from buildings and faculties -> Managed well",
+        "marker": "null",
+        "subject": "Waste from buildings and faculties",
+        "object": "Managed well",
+        "source_text": "ขยะที่เกิดขึ้นจากอาคาร แต่ละอาคาร แล้วก็แต่ละคณะเนี่ย มีการจัดการที่ค่อนข้างโอเค"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Personnel without clear affiliation (e.g., students) -> Hard-to-control factors/problems",
+        "marker": "เกิดจาก",
+        "subject": "Personnel without clear affiliation, Students",
+        "object": "Hard-to-control factors/problems",
+        "source_text": "แต่ว่าส่วนที่เกิดปัญหาส่วนใหญ่ ก็จะเป็นปัจจัยที่ควบคุมได้ยาก... แล้วก็ ส่วนใหญ่ปัจจัยก็จะเกิดจากบุคลากรที่ไม่ได้มีสังกัดชัดเจน เช่น นักศึกษา"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "PM (Property Manager) -> Acts as central coordinator for the building",
+        "marker": "null",
+        "subject": "PM",
+        "object": "Acts as central coordinator",
+        "source_text": "เขาจะมี PM อ่า ที่คอยดูแลตึกนี้ใช่ไหม เขาก็จะเป็นเหมือนศูนย์กลางของตึกเนี่ย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Presence of large specific waste items (e.g., sofa) -> Contact coordinator to schedule pickup with P'Mos",
+        "marker": "เพื่อ",
+        "subject": "Presence of large specific waste items",
+        "object": "Contact coordinator to schedule pickup",
+        "source_text": "สมมุติขยะที่นี่มี เขาก็จะติดต่อคนนี้ เพื่อสมมุติ วันเนี้ยเขาจะทิ้งโซฟา... พี่คนเนี้ยก็จะติดต่อไปทางพี่มอส เพื่อจะนัดวัน เพื่อจะเข้ามารับ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Waste is non-daily/large quantity -> Must schedule a specific pickup date",
+        "marker": "เพราะว่า",
+        "subject": "Waste is non-daily/large quantity",
+        "object": "Must schedule a specific pickup date",
+        "source_text": "ถ้ามันมีขยะในปริมาณมาก เพราะว่ามันเป็นขยะที่ไม่ได้เกิดขึ้นประจำวัน... ก็ต้องนัดวัน"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Clearing or cleaning the building -> Generates large amount of recycling waste",
+        "marker": "null",
+        "subject": "Clearing or cleaning the building",
+        "object": "Generates large amount of recycling waste",
+        "source_text": "มีการจะเคลียร์ตึก หรือจะทำความสะอาดตึกอะไรเงี้ย เขาก็จะมีขยะที่รีไซเคิลไว้"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Very large volume of recycling waste -> Cannot be picked up immediately (requires scheduling)",
+        "marker": "ก็",
+        "subject": "Very large volume of recycling waste",
+        "object": "Cannot be picked up immediately",
+        "source_text": "แต่มีปริมาณที่เยอะมากๆ เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน นอกเหนือจากวันพฤหัสบดี"
+    },
+    {
+        "pattern_type": "SP",
+        "sentence_type": "OT",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Policy -> Do not pile waste at the resting point",
+        "marker": "null",
+        "subject": "Policy",
+        "object": "Do not pile waste at the resting point",
+        "source_text": "คือเราจะไม่เอาขยะมากองไว้ที่จุดพัก"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Sports events or activities -> Accumulation of plywood/large waste",
+        "marker": "ถ้า...ก็",
+        "subject": "Sports events or activities",
+        "object": "Accumulation of plywood/large waste",
+        "source_text": "สมมุติถ้ามีพวกงานกีฬา หรืองานอะไรเงี้ย ก็จะมีพวกไม้ ไม้อัด ไม้อัด ใช่ไหม ที่น้องๆ ชอบเอามากองไว้"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Material waste is unusable -> Transport to external landfill (Wat Bua Phan)",
+        "marker": "ถ้า...ก็",
+        "subject": "Material waste is unusable",
+        "object": "Transport to external landfill",
+        "source_text": "ถ้ามันไม่ได้เอาไปใช้ประโยชน์อะไร หรือไปใช้ประโยชน์อะไรไม่ได้แล้วเนี่ย เขาก็จะขี่ เอารถที่ขนขยะเนี่ย ขนเอาไปทิ้งด้านนอก"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Piling waste in front blocks the walkway -> Waste is not piled in front (kept in shops/designated areas)",
+        "marker": "เพราะ",
+        "subject": "Piling waste in front blocks the walkway",
+        "object": "Waste is not piled in front",
+        "source_text": "เขาก็จะอาจมากองลงตรงนี้ไว้ก่อน เขาคงไม่เอามากองไว้ข้างหน้า เพราะ มันก็ขวางทางคนหลบ (เดิน)"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Monthly recycling cycle -> Waste placed in front of the building (early morning)",
+        "marker": "ถ้า...ก็",
+        "subject": "Monthly recycling cycle",
+        "object": "Waste placed in front of the building",
+        "source_text": "แต่ถ้าเป็นพวกของขยะรีไซเคิล ที่เป็นตาม ตามรอบของเดือนอะไรเงี้ย เขาก็จะวางกองไว้หน้าตึก"
+    }
 ]
