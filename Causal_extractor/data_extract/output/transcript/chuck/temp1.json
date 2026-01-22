@@ -1,0 +1,79 @@
+[
+  {
+    "pattern_type": "A",
+    "sentence_type": "ES",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "The university -> Implements specific disposal protocols",
+    "marker": "null",
+    "subject": "The university",
+    "object": "Specific disposal protocols",
+    "source_text": "The university implements specific disposal protocols for different types of waste."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "General waste sent to BMA -> Disposal",
+    "marker": "for",
+    "subject": "General waste is collected and sent to the Bangkok Metropolitan Administration (BMA)",
+    "object": "Disposal",
+    "source_text": "General waste is collected and sent to the Bangkok Metropolitan Administration (BMA) for disposal."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Recyclable waste sold to antique shop -> Revenue returned to departments or central fund",
+    "marker": "with",
+    "subject": "Recyclable waste is separated and sold to a contracted antique shop",
+    "object": "Revenue returned to the respective departments or the central fund",
+    "source_text": "Recyclable waste is separated and sold to a contracted antique shop, with the revenue returned to the respective departments or the central fund."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Cleaned plastics and single-use items sent to N15 -> Used as refuse-derived fuel",
+    "marker": "to be used as",
+    "subject": "Cleaned plastics and single-use items sent to N15",
+    "object": "Refuse-derived fuel",
+    "source_text": "cleaned plastics and single-use items are sent to N15 to be used as refuse-derived fuel"
+  },
+  {
+    "pattern_type": "A",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Hazardous and infectious waste -> Sent to certified disposal companies",
+    "marker": "null",
+    "subject": "Hazardous and infectious waste (Red Bin)",
+    "object": "Certified disposal companies",
+    "source_text": "while hazardous and infectious waste (Red Bin) is sent to certified disposal companies."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Electronic waste is repairable -> Donated to the Mirror Foundation",
+    "marker": "if",
+    "subject": "Electronic waste is repairable",
+    "object": "Donated to the Mirror Foundation",
+    "source_text": "Electronic waste is either donated to the Mirror Foundation if repairable"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Electronic waste is hazardous -> Disposed of via standardized methods",
+    "marker": "if",
+    "subject": "Electronic waste is hazardous",
+    "object": "Disposed of via standardized methods",
+    "source_text": "or disposed of via standardized methods if it is hazardous."
+  }
+]

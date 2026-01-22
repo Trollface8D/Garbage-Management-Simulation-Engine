@@ -1,0 +1,134 @@
+[
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Recording waste data -> Finance transfers money to units",
+    "marker": "เพื่อ (in order to)",
+    "subject": "P'Moss and the shop record data (weight, type) at each building",
+    "object": "Finance department transfers money to each unit",
+    "source_text": "เขาก็จะมาควบคู่ไปกับร้านรับซื้อของเก่าเนี่ย ไปตามแต่ละอาคาร เพื่อจดบันทึกว่าหน่วยงานนี้มีอะไรบ้าง ได้เท่าไหร่ๆ น้ำหนักเท่าไหร่ เพื่อส่งข้อมูลพวกเนี้ยให้กับทางกองคลัง เพื่อโอนเงินให้กับ จัดจ่ายเรื่องเงินให้กับแต่ละหน่วยงาน"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Cleaning and separating waste -> Sending to N15 as fuel",
+    "marker": "เพื่อ (in order to)",
+    "subject": "Separating and cleaning general waste (cups, bags, spoons)",
+    "object": "Sending to N15 to be used as Refuse Derived Fuel (RDF)",
+    "source_text": "การแยกขยะทั่วไป เอามาล้าง เอามาทำความสะอาด อย่างเช่นพวกแก้ว ถ้วย ถุง ถุงแกงอะไรเงี้ยต่างๆ เราก็หลอด ช้อนซ้อม อะไรเงี้ย เราก็แยกออกมาเพื่อส่งให้ N15 เป็นขยะเชื้อเพลิง"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "ES",
+    "marked_type": "M",
+    "explicit_type": "I",
+    "relationship": "Insufficient manpower -> Waste sorting failure",
+    "marker": "จาก (from)",
+    "subject": "Having only 3-4 sorters for hundreds/thousands of kilos of waste",
+    "object": "Waste sorting is unsuccessful/insufficient",
+    "source_text": "จากคน 3 คนในการคัดแยกขยะเนี่ย มันคงไม่ success กันอยู่แล้ว ซึ่งไม่เพียงพออยู่แล้ว"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Timing mismatch in collection -> Waste overflow/residue",
+    "marker": "ซึ่ง (which leads to)",
+    "subject": "Collection truck comes at 3 PM but housekeepers dump waste at 4 PM",
+    "object": "Waste overflows or remains at the collection point overnight",
+    "source_text": "อย่างสมมติ รถรอบเนี่ยมาเก็บตอน 3 โมง แม่บ้านที่อยู่ในอาคารเอามาทิ้งตอน 4 โมง ซึ่งก็จะมีขยะล้น ขยะเหลืออยู่ในนั้น ก็คือขยะตกค้าง"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "ES",
+    "marked_type": "U",
+    "explicit_type": "I",
+    "relationship": "Waste overflow -> Complaints from users",
+    "marker": "null",
+    "subject": "Waste overflowing/being compressed until full",
+    "object": "Complaints from staff and students",
+    "source_text": "สรุปขยะมันก็จะถูกอัด อัดๆๆ มาจนล้นตลอด ก็จะถูกฟ้องอะไรเงี้ย ก็คือจากบุคลากรบ้าง จากนักศึกษาบ้าง ว่าขยะแต่ละจุดเนี่ยมันล้น"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "I",
+    "relationship": "Large quantity/Event waste -> Need for special appointment",
+    "marker": "ถ้า (If)",
+    "subject": "Waste volume is very large (e.g., from clearing a building or events)",
+    "object": "Cannot use regular pickup; must schedule a specific appointment",
+    "source_text": "ถ้ามีปริมาณที่เยอะ อย่างเช่น ขยะรีไซเคิลที่หน่วยงาน... เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน นอกเหนือจากวันพฤหัสบดี ท้ายเดือน อะไรอย่างเงี้ย อีกทีนึง"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "OT",
+    "marked_type": "U",
+    "explicit_type": "I",
+    "relationship": "Using rented reusable containers -> Significant waste reduction",
+    "marker": "null",
+    "subject": "Renting reusable cups/plates for events (e.g., Bang Mod Klang Plaeng)",
+    "object": "Waste reduced from 300-400kg to over 100kg",
+    "source_text": "เขา ก็ มีการ ไปเช่า พวก อุปกรณ์ อ่า พวกแก้วน้ำ พวกชาม พวกจาน มา ลดขยะ ได้ อย่าง เยอะ เลย หายไป เป็น 100 โล ได้เลย... ขยะ เกือบ สัก 3-400 โล ใช่ไหม เหลืออยู่ ประมาณ 100 กว่าโล"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "ES",
+    "marked_type": "U",
+    "explicit_type": "I",
+    "relationship": "Violent handling -> Damaged bins",
+    "marker": "null",
+    "subject": "Collectors using feet or excessive force to handle bins",
+    "object": "Bins and cages are broken or damaged",
+    "source_text": "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย โซฟาเปิดอยู่ ตึง ตึง แตกหมด... พังหมด"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "OT",
+    "marked_type": "U",
+    "explicit_type": "I",
+    "relationship": "Inconvenient weighing process -> Inaccurate data",
+    "marker": "null",
+    "subject": "Weighing process is not convenient for housekeepers",
+    "object": "Data is inaccurate/falsified (guessing numbers)",
+    "source_text": "การชั่งน้ำหนักเนี่ย มันต้องสะดวกกับ คนใช้งาน... เราอะ ต้องการข้อมูล ที่มันเป็น ข้อมูลจริง จริงๆ นะ ไม่ใช่ข้อมูลที่ แม่บ้านเขา แล้วแต่อารมณ์ อยากจะเขียนน่ะ... ว่า วันนี้ชอบเลขอะไร... เขาก็บอก ทำจริง ป่าว เราก็ทำ อืม อะไรประมาณนั้น"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "F",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Convenience/Proximity -> Mixed waste disposal",
+    "marker": "ก็ (then)",
+    "subject": "Bin is close to hand",
+    "object": "Throwing waste without separating",
+    "source_text": "ใกล้มือ มั้ง บางที เดินมา ใกล้มือ กู ก็ทิ้ง นี่แหละ"
+  },
+  {
+    "pattern_type": "A",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Garden team -> Drives to collect external waste",
+    "marker": "null",
+    "subject": "Garden team (waste management section)",
+    "object": "Drives around the university to collect waste from various points",
+    "source_text": "ขยะภายนอกเนี่ย ก็จะเป็นทีมของงานสวน... เขาก็จะขับรถเนี่ย เก็บรอบ ม."
+  },
+  {
+    "pattern_type": "F",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Revenue sharing -> 80% Unit / 20% University",
+    "marker": "null",
+    "subject": "Waste coming from specific units or offices",
+    "object": "Revenue is split 80% to the unit and 20% to the university",
+    "source_text": "แต่ถ้าเป็นของหน่วยงาน หรือสำนักงาน หรือภาคเนี่ย ก็จะเข้าหน่วยงาน 80 เข้ามหาวิทยาลัย 20 อะไรอย่างเงี้ย"
+  }
+]

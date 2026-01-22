@@ -1,0 +1,57 @@
+[
+  {
+    "pattern_type": "F",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "The collection process -> Consists of internal and external rounds",
+    "marker": "null",
+    "subject": "The collection process",
+    "object": "Internal and external rounds",
+    "source_text": "The collection process consists of internal and external rounds."
+  },
+  {
+    "pattern_type": "A",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Housekeepers -> Collect, weigh, record, and move waste to external points",
+    "marker": "null",
+    "subject": "Housekeepers",
+    "object": "Waste",
+    "source_text": "Housekeepers collect waste from inside buildings, are supposed to weigh and record it, and then move it to external collection points or \"cages\"."
+  },
+  {
+    "pattern_type": "A",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Central team -> Collects waste from points and transports to sorting plant",
+    "marker": "null",
+    "subject": "A central team",
+    "object": "Waste",
+    "source_text": "A central team then drives around the campus to collect waste from these points and transport it to the central sorting plant."
+  },
+  {
+    "pattern_type": "F",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Large items (furniture, debris) -> Not collected daily",
+    "marker": "null",
+    "subject": "Large items",
+    "object": "Daily collection schedule",
+    "source_text": "Large items, such as furniture or construction debris, are not collected daily"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SP",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Departments schedule specific pickups -> Avoid cluttering regular collection points",
+    "marker": "to avoid",
+    "subject": "Departments",
+    "object": "Regular collection points",
+    "source_text": "departments must schedule specific pickups for these materials to avoid cluttering the regular collection points."
+  }
+]

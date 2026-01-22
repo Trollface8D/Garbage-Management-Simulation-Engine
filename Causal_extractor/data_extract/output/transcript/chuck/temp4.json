@@ -1,0 +1,46 @@
+[
+  {
+    "pattern_type": "F",
+    "sentence_type": "ES",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Human behavior -> Most difficult factor to control",
+    "marker": "null",
+    "subject": "Human behavior",
+    "object": "Control factor",
+    "source_text": "The interviewee emphasizes that human behavior is the most difficult factor to control."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "ES",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Convenience, lack of discipline -> Students and staff mix waste",
+    "marker": "out of",
+    "subject": "Convenience, lack of discipline",
+    "object": "Waste separation",
+    "source_text": "Despite having separate bins and general knowledge about recycling, students and staff often mix waste out of convenience or lack of discipline."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Housekeepers guess or fabricate numbers -> Data accuracy is unreliable",
+    "marker": "because",
+    "subject": "Housekeepers guessing or fabricating numbers",
+    "object": "Data accuracy regarding waste weight",
+    "source_text": "Furthermore, data accuracy regarding waste weight is unreliable because housekeepers often guess or fabricate numbers rather than weighing the trash properly."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SP",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Developing tools or systems -> Weighing and recording process becomes easier and more accurate",
+    "marker": "to make",
+    "subject": "Developing tools or systems",
+    "object": "Weighing and data recording process",
+    "source_text": "The interviewee suggests that the student’s project could focus on developing tools or systems to make the weighing and data recording process easier and more accurate for the staff."
+  }
+]
