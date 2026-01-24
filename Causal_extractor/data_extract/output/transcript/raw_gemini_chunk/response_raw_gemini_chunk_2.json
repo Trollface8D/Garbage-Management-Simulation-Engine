@@ -1,0 +1,101 @@
+[
+    {
+        "pattern_type": "F",
+        "sentence_type": "D",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Waste generation -> Categorized into internal and external types",
+        "marker": "null",
+        "subject": "Waste generated daily",
+        "object": "Internal and External categories",
+        "source_text": "โดยขยะที่เกิดขึ้นเนี่ย ตาม... เกิดขึ้นประจำทุกวันเนี่ย ก็จะมีขยะที่อยู่ภายใน ภายนอก จะแบ่งเป็นภายใน ภายนอก"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Housekeepers -> Collect and sort indoor waste",
+        "marker": "null",
+        "subject": "Housekeepers",
+        "object": "Indoor waste",
+        "source_text": "แม่บ้านที่จะคอยดูแล ก็คือจะมาคอยเก็บ ช่วยคัดแยกในระดับนึง"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Students/Staff disposal -> Housekeepers sorting/collecting",
+        "marker": "จากการที่",
+        "subject": "Students, Staff",
+        "object": "Housekeepers sorting",
+        "source_text": "ช่วยคัดแยกในระดับนึง จากการที่นักศึกษา หรือบุคลากรทิ้ง"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Housekeepers -> Weigh waste and move to holding cage",
+        "marker": "null",
+        "subject": "Housekeepers",
+        "object": "Waste management (weighing, moving)",
+        "source_text": "เขาก็จะเก็บรวบรวมแต่ละถัง ชั่งน้ำหนัก แล้วก็เอาไปไว้ที่กรงพักขยะ"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Garden Team -> Drive to collect outdoor waste",
+        "marker": "null",
+        "subject": "Garden Team (Waste Management Division)",
+        "object": "Outdoor waste collection",
+        "source_text": "ขยะภายนอกเนี่ย ก็จะเป็นทีมของงานสวน... เขาก็จะขับรถเนี่ย เก็บรอบ ม."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Completion of collection -> Transport to sorting plant",
+        "marker": "พอ...เสร็จ...ก็",
+        "subject": "Completion of collection",
+        "object": "Move to sorting plant",
+        "source_text": "พอเก็บรวบรวมครบเสร็จ เขาก็จะไปที่โรงคัดแยกขยะ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Waste sortability status -> Disposal method (Piled vs Compressed)",
+        "marker": "null",
+        "subject": "Waste Sortability (Sortable vs Unsortable)",
+        "object": "Disposal Action (Pile vs Yellow Compactor Bin)",
+        "source_text": "ขยะที่เกิดขึ้น บางส่วนที่คนเนี่ยสามารถคัดแยกได้ เขาก็จะกองไว้อีกส่วนนึง อีกส่วนนึงที่คัดแยกไม่ได้เนี่ย เขาก็จะอัดเข้าถังสีเหลือง"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "High waste volume (thousands of kg) -> Insufficient sorting capacity",
+        "marker": "จาก",
+        "subject": "High waste volume",
+        "object": "Sorting staff insufficiency",
+        "source_text": "มันซึ่งไม่พออยู่แล้วในการคัดแยก จากปริมาณขยะเป็นหมื่น เป็น... วันละเป็นพันกิโล"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Low number of staff (3 people) -> Sorting process failure",
+        "marker": "จาก",
+        "subject": "Low staff count (3 people)",
+        "object": "Process success (Failure)",
+        "source_text": "จากคน 3 คนในการคัดแยกขยะเนี่ย มันคงไม่ success กันอยู่แล้ว"
+    }
+]

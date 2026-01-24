@@ -1,0 +1,90 @@
+[
+    {
+        "pattern_type": "A",
+        "sentence_type": "OT",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Students -> Create senior project to optimize system",
+        "marker": "null",
+        "subject": "Students",
+        "object": "System Optimization/Senior Project",
+        "source_text": "กะว่าจะเอาไปทำเป็น ตัวจบ โปรเจกต์จบ... Optimize ระบบ อะไรเงี้ยครับ ว่า เออ มันสามารถทำไง ให้มัน ประสิทธิภาพดีขึ้นได้ไหม"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Changing policy slightly -> System efficiency improves",
+        "marker": "null",
+        "subject": "Changing policy slightly",
+        "object": "System efficiency",
+        "source_text": "พอเปลี่ยน นโยบาย เล็กน้อยเนี่ย ในจุดๆ นึงเนี่ย มันดีขึ้นไหม"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Hiring additional staff -> Increases cost and problems",
+        "marker": "ก็เลย",
+        "subject": "Hiring additional staff",
+        "object": "Cost and problems",
+        "source_text": "มันก็เพิ่มเงิน ก็เลย เพิ่มปัญหาตรงนี้"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Personnel behavior -> Garbage weight data is inaccurate",
+        "marker": "เนื่องจาก",
+        "subject": "Personnel behavior",
+        "object": "Garbage weight data inaccuracy",
+        "source_text": "ปัญหาเรื่องของการ ชั่งข้อมูลขยะ ที่มันมีอาการคลาดเคลื่อน เนื่องจาก ตัวบุคลากรเอง"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Maid's mood -> Data recording (inaccurate)",
+        "marker": "null",
+        "subject": "Maid's mood",
+        "object": "Data recording",
+        "source_text": "ไม่ใช่ข้อมูลที่ แม่บ้านเขา แล้วแต่อารมณ์ อยากจะเขียนน่ะ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Complexity of current weighing process -> Difficulty for current staff",
+        "marker": "null",
+        "subject": "Complexity of current weighing process",
+        "object": "Difficulty for current staff",
+        "source_text": "ไอ้ขั้นตอนการ ชั่งขยะ ในปัจจุบัน มันก็ดูจะ ยุ่งยากเกินไป สำหรับ พนักงาน ปัจจุบัน ที่จะทำ"
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Garbage truck crew -> Lift bags without weighing",
+        "marker": "null",
+        "subject": "Garbage truck crew",
+        "object": "Weighing process",
+        "source_text": "เขาก็ ส่วนใหญ่ก็ ยกขึ้นรถเลย ไม่ต้องชั่ง ไม่ค่อยได้ชั่ง"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SP",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Interviewer -> Proposes using hook scales for convenience",
+        "marker": "null",
+        "subject": "Interviewer",
+        "object": "Hook scales",
+        "source_text": "พี่เคยคิดว่าจะใช้ตัวเนี้ย ให้กับ คนที่เก็บขยะพวกเนี้ย เอาไปใช้ เพื่อชั่งน้ำหนัก"
+    }
+]

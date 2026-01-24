@@ -1,0 +1,79 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Maids bringing trash down at 5 PM while the truck collects at 4 PM -> Discrepancy/Missed collection",
+        "marker": "ทำให้",
+        "subject": "Maids bringing trash down at 5 PM while the truck collects at 4 PM",
+        "object": "Discrepancy/Missed collection",
+        "source_text": "โดยแม่บ้านเองเนี่ย มันมีรอบวันเก็บ อ่า มีรอบ อ่า ช่วงอา 3 โมง 4 โมง แต่แม่บ้าน เลิกงานกี่โมง 5 โมง เขาจะถือขยะลงมาทิ้ง ตอน 5 โมง... ซึ่งอันเนี้ยแหละ คือ ทำให้คาด... คลาดเคลื่อนได้"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Prioritizing convenience over the schedule -> Missed collection rounds and problems",
+        "marker": "ทำให้",
+        "subject": "Prioritizing convenience over the schedule",
+        "object": "Missed collection rounds and problems",
+        "source_text": "แต่ว่าด้วยความสะดวก... มันก็ทำให้รอบการเก็บ มันพลาดกัน ทำให้เกิดปัญหา"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Staff working late (until midnight or 2 AM) -> Trash accumulating overnight",
+        "marker": "null",
+        "subject": "Staff working late (until midnight or 2 AM)",
+        "object": "Trash accumulating overnight",
+        "source_text": "พี่ทำงานเนี่ย เลิกดึก 4-5 ทุ่ม เที่ยงคืน ตี 2 บางทีมันมีขยะที่เรากินข้าว มาทิ้งเนี่ย... มันก็อาจมีขยะตกค้าง ในช่วงของ ข้ามวัน"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Student activities (freshman reception) late at night -> Massive amounts of trash",
+        "marker": "เกิด",
+        "subject": "Student activities (freshman reception) late at night",
+        "object": "Massive amounts of trash",
+        "source_text": "อย่างเช่น น้องๆ มีจัดกิจกรรม รับน้อง รับน้อง กัน ก็จะเกิดขยะ มหาศาล"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Garbage collectors finishing work at 5 PM -> Inability to collect trash brought down at 5 PM without overtime costs",
+        "marker": "null",
+        "subject": "Garbage collectors finishing work at 5 PM",
+        "object": "Inability to collect trash brought down at 5 PM without overtime costs",
+        "source_text": "พนักงานเก็บขยะ เขาก็เลิก 5 โมง เหมือนกันไง ประเด็น เขาจะมาขับรถเก็บตอนรอบ 5 โมง อีกรอบเหรอ ถูกต้องไหม ซึ่งเขาต้องเสียเงินเพิ่ม"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Keeping food waste in the office to avoid outside disposal -> Infestation of rats and ants, making management harder",
+        "marker": "null",
+        "subject": "Keeping food waste in the office to avoid outside disposal",
+        "object": "Infestation of rats and ants, making management harder",
+        "source_text": "แต่ถ้าเกิด ไม่ทิ้งนอกเวลางานนะ แล้วเกิด กูเพิ่งกินข้าวเนี่ย... ซึ่งในห้องนี้มี เอ่อ พวกขยะพวกเนี้ย อยู่ในออฟฟิศ หนู มด อ่า พวกเนี้ย ซึ่งต่อเนื่องมาอีก จัดการยากกว่าเดิมอีก"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "F",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Users (superiors) not following the rules -> Subordinates feeling justified in ignoring the rules",
+        "marker": "ทำให้",
+        "subject": "Users (superiors) not following the rules",
+        "object": "Subordinates feeling justified in ignoring the rules",
+        "source_text": "คนใช้อะ มันไม่ยอมใช้ไง... มันเลยทำให้ คนที่มันอยู่ข้างล่าง... กูไม่จำเป็นต้องทำไง"
+    }
+]

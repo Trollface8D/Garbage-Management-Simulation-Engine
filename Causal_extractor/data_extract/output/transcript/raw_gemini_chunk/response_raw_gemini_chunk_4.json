@@ -1,0 +1,134 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Presence of large construction waste -> Staff schedules a specific pickup round",
+        "marker": "ถ้า",
+        "subject": "Presence of large construction waste",
+        "object": "Staff schedules a specific pickup round",
+        "source_text": "สมมติถ้ามีขยะเศษวัสดุ ที่เป็นชิ้นใหญ่ อะไรอย่างเงี้ย เราก็จะนับวัน เพื่อมาเก็บเป็นแต่ละรอบๆ ไป"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "Students -> Waste piled up disorderly at the garbage cage",
+        "marker": "null",
+        "subject": "Students",
+        "object": "Waste piled up disorderly at the garbage cage",
+        "source_text": "ที่เห็นมาตรงกองเนี่ย ส่วนใหญ่จะเป็นนักศึกษากอง... แต่ถ้ามากอง อีเขเกขะ (เกะกะ) ขาดเลย นักศึกษาล้วนๆ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Departments/Faculties have waste -> They call for a specific pickup round",
+        "marker": "null",
+        "subject": "Departments/Faculties having waste",
+        "object": "Call for a specific pickup round",
+        "source_text": "ถ้าเป็นของหน่วยงาน หรือเป็นของทางคณะ อะไรพวกเนี้ย เขาก็จะเรียกเป็นรอบๆ ถ้ามีคนดูแลนะ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Uncontrollable factors (Students, public bins) -> Management problems",
+        "marker": "เกิดจาก",
+        "subject": "Uncontrollable factors (Students, public bins)",
+        "object": "Management problems",
+        "source_text": "ส่วนที่เกิดปัญหาส่วนใหญ่ ก็จะเป็นปัจจัยที่ควบคุมได้ยาก เช่น ส่วนที่เป็นถังขยะรอบ ม. แล้วก็ ส่วนใหญ่ปัจจัยก็จะเกิดจากบุคลากรที่ไม่ได้มีสังกัดชัดเจน เช่น นักศึกษา"
+    },
+    {
+        "pattern_type": "SB",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Building PM acts as a central hub -> Coordinates waste management within the building",
+        "marker": "null",
+        "subject": "Building PM (Project Manager)",
+        "object": "Coordinates waste management within the building",
+        "source_text": "เขาก็จะมีคนที่ดูแล แบบสมมุติตึกนี้ เขาจะมี PM อ่า ที่คอยดูแลตึกนี้ใช่ไหม เขาก็จะเป็นเหมือนศูนย์กลางของตึกเนี่ย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Disposal of special/large items (e.g., sofa) -> PM contacts coordinator to schedule pickup",
+        "marker": "เพื่อ",
+        "subject": "Disposal of special/large items (e.g., sofa)",
+        "object": "PM contacts coordinator to schedule pickup",
+        "source_text": "สมมุติ วันเนี้ยเขาจะทิ้งโซฟา... พี่คนเนี้ยก็จะติดต่อไปทางพี่มอส เพื่อจะนัดวัน เพื่อจะเข้ามารับ อะไรอย่างเงี้ย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Clearing building/Large quantity of recyclables -> Cannot be picked up immediately (Requires scheduling)",
+        "marker": "ก็",
+        "subject": "Clearing building/Large quantity of recyclables",
+        "object": "Cannot be picked up immediately (Requires scheduling)",
+        "source_text": "บางหน่วยงานเนี่ย มีการจะเคลียร์ตึก... เขาก็จะมีขยะที่รีไซเคิลไว้ แต่มีปริมาณที่เยอะมากๆ เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Sports events/activities -> Students pile up plywood/materials",
+        "marker": "ถ้า",
+        "subject": "Sports events/activities",
+        "object": "Students pile up plywood/materials",
+        "source_text": "สมมุติถ้ามีพวกงานกีฬา หรืองานอะไรเงี้ย ก็จะมีพวกไม้ ไม้อัด ไม้อัด ใช่ไหม ที่น้องๆ ชอบเอามากองไว้"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Construction waste is useless -> Transported to external landfill",
+        "marker": "ถ้า",
+        "subject": "Construction waste is useless",
+        "object": "Transported to external landfill",
+        "source_text": "แล้วขยะที่เป็นพวกเศษวัสดุ เนี่ย ถ้ามันไม่ได้ เอ่อ ถ้ามันไม่ได้เอาไปใช้ประโยชน์อะไร... เขาก็จะขี่ เอารถที่ขนขยะเนี่ย ขนเอาไปทิ้งด้านนอก"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Piling waste in front of the building -> Blocks walking path",
+        "marker": "เพราะ",
+        "subject": "Piling waste in front of the building",
+        "object": "Blocks walking path",
+        "source_text": "เขาคงไม่เอามากองไว้ข้างหน้า เพราะ มันก็ขวางทางคนหลบ (เดิน)"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "relationship": "Pickup day arrives -> Truck collects waste directly from the storage room",
+        "marker": "null",
+        "subject": "Pickup truck/Staff",
+        "object": "Collects waste directly from the storage room",
+        "source_text": "จากพอถึงวันปุ๊บเนี่ย เขาก็จะเข้ามาคุย เข้าไปเก็บในช็อปเลย อะไรอย่างเงี้ย ก็อาจจะเข้าไปขนเลย"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Monthly recycle round -> Staff piles waste in front of building in the morning",
+        "marker": "null",
+        "subject": "Staff/Building",
+        "object": "Piles waste in front of building in the morning",
+        "source_text": "แต่ถ้าเป็นพวกของขยะรีไซเคิล ที่เป็นตาม ตามรอบของเดือนอะไรเงี้ย เขาก็จะวางกองไว้หน้าตึก แต่ต้องมาช่วงเช้าๆ หน่อย"
+    }
+]
