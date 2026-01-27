@@ -55,7 +55,7 @@ Extraction Rules
 * Crucial: You must still evaluate explicit_type for 'A' and 'F'.
 
 Output Format
-Return ONLY a valid JSON list of objects. Do not wrap the JSON in markdown code blocks. Do not include preambles or explanations.
+Return ONLY a valid JSON file list of objects. Do not include preambles or explanations.
 
 JSON Example
 [
