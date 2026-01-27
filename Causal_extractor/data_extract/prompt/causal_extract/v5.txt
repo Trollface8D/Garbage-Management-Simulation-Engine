@@ -35,40 +35,39 @@ Applies to ALL pattern types (C, A, F).
 Extraction Rules
 
 1. Scope & Logic:
-* Chain of Thought: Before extracting, verify: "Is there a change of state? Is the Subject the logical cause or just the grammatical subject?"
-* **Important: Translation.** If the text is in Thai, extract the semantic meaning and output the values (reasoning, subject, object, relationship) in English. However, source_text MUST remain in the original language.
+* Chain of Thought: Before extracting, verify: "Is there a change of state? Who are the actors?"
+* **Important: Translation.** If the text is in Thai, extract the semantic meaning and output the values (reasoning, entities, relationship) in English. However, source_text MUST remain in the original language.
 
-2. Field Extraction (Entity & Relationship Parsing):
-* relationship: A string summary describing the verb or action linking the subject and object (e.g., "leads to", "increases", "corrupts"). Do NOT include the entities here.
-* subject: The Logical Cause or Agent(s). Must be a JSON List of Strings (e.g., ["Entity1", "Entity2"]).
-    * Extract strictly as Noun Phrases.
-    * Split compound subjects. (e.g., "Script A and Script B failed" -> subject: ["Script A", "Script B"]).
-    * Do not include the verb/action in the entity string.
-* object: The Logical Effect or Target(s). Must be a JSON List of Strings.
-    * Extract strictly as Noun Phrases.
-    * Split compound objects. (e.g., "impacted database and logs" -> object: ["database", "logs"]).
+2. Field Extraction:
+* entities: A list of strings [entity1, entity2, ...].
+    * Extract specific **noun clauses** involved in the event.
+    * Do not nest relationships. Flatten the structure.
+    * Convention: Place the Logical Cause/Agent as the first item in the list, followed by the Effect/Target/Secondary entities.
+* relationship: A string summary describing the link between the entities in the list (e.g., "Entity 1 leads to increase in Entity 2").
 * marker: Extract the exact connector word (e.g., "because", "ดังนั้น") if marked_type is "M". If the marker is in Thai, keep it in Thai. Otherwise "null".
-* source_text: The exact original text (Thai or English) supporting this finding.
+* source_text: The exact original text (Thai or English) supporting this finding. If the relationship spans multiple sentences, include both.
 
 3. Handling Non-Causal (A, F):
 * Set marked_type and marker to "N/A" and "null" respectively.
 * Crucial: You must still evaluate explicit_type for 'A' and 'F'.
 
 Output Format
-Return ONLY a valid JSON file list of objects. Do not include preambles or explanations.
+Return ONLY a valid JSON list of objects file. Do not include preambles or explanations.
 
 JSON Example
 [
   {
     "pattern_type": "C",
-    "sentence_type": "SB",
+    "sentence_type": "SP",
     "marked_type": "M",
     "explicit_type": "E",
-    "relationship": "overloads",
-    "marker": "resulting in",
-    "subject": ["High traffic volume", "Legacy api calls"],
-    "object": ["Server CPU", "Memory buffer"],
-    "source_text": "High traffic volume and legacy api calls resulting in overloads on Server CPU and Memory buffer."
+    "relationship": "New city policy -> Cleaner streets",
+    "marker": "leads to",
+    "entities": [
+      "New city policy",
+      "Streets"
+    ],
+    "source_text": "The new city policy in Bangkok was approved. This leads to streets being cleaner."
   }
 ]
 
