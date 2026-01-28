@@ -1,0 +1,126 @@
+[
+    {
+        "pattern_type": "F",
+        "sentence_type": "D",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Waste generated is categorized into internal and external types.",
+        "marker": "null",
+        "entities": [
+            "Waste generated",
+            "Internal waste",
+            "External waste"
+        ],
+        "source_text": "โดยขยะที่เกิดขึ้นเนี่ย ตาม... เกิดขึ้นประจำทุกวันเนี่ย ก็จะมีขยะที่อยู่ภายใน ภายนอก จะแบ่งเป็นภายใน ภายนอก"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Housekeepers collect and partially sort waste discarded by students and staff.",
+        "marker": "null",
+        "entities": [
+            "Housekeepers",
+            "Waste collection",
+            "Partial sorting",
+            "Students and Staff"
+        ],
+        "source_text": "แม่บ้านที่จะคอยดูแล ก็คือจะมาคอยเก็บ ช่วยคัดแยกในระดับนึง จากการที่นักศึกษา หรือบุคลากรทิ้ง แม่บ้านก็จะเป็นคนคอยคัดแยกในระดับนึง"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Housekeepers weigh waste and place it in holding cages.",
+        "marker": "null",
+        "entities": [
+            "Housekeepers",
+            "Waste weighing",
+            "Holding cages"
+        ],
+        "source_text": "เขาก็จะเก็บรวบรวมแต่ละถัง ชั่งน้ำหนัก แล้วก็เอาไปไว้ที่กรงพักขยะ"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "The gardening team drives to collect external waste around the university.",
+        "marker": "null",
+        "entities": [
+            "Gardening team",
+            "External waste",
+            "Vehicle collection"
+        ],
+        "source_text": "ก็จะเป็นทีมของงานสวน ที่ดูแลสวนภายนอกเนี่ย เขาจะมีฝ่ายที่เป็นฝ่ายจัดการขยะ เขาก็จะขับรถเนี่ย เก็บรอบ ม."
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Staff inconsistently record waste data despite instructions.",
+        "marker": "null",
+        "entities": [
+            "Staff",
+            "Data recording",
+            "Inconsistency"
+        ],
+        "source_text": "เขาก็จะมีการจดบันทึก จดบ้าง ไม่จดบ้าง แต่ก็จะพยายามบอกให้เขาจด"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Completion of waste collection leads to transport to the sorting plant.",
+        "marker": "พอ...เสร็จ",
+        "entities": [
+            "Completion of collection",
+            "Transport to sorting plant"
+        ],
+        "source_text": "พอเก็บรวบรวมครบเสร็จ เขาก็จะไปที่โรงคัดแยกขยะ"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Unsortable waste is compressed into BMA yellow tanks.",
+        "marker": "null",
+        "entities": [
+            "Unsortable waste",
+            "BMA yellow compactor tanks"
+        ],
+        "source_text": "อีกส่วนนึงที่คัดแยกไม่ได้เนี่ย เขาก็จะอัดเข้าถังสีเหลือง ที่เป็นถังบีบอัดขยะ ของ กทม. ไป"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "relationship": "High waste volume combined with insufficient staff leads to unsuccessful waste sorting.",
+        "marker": "จาก",
+        "entities": [
+            "High waste volume",
+            "Insufficient staff (3-4 people)",
+            "Unsuccessful sorting"
+        ],
+        "source_text": "จากปริมาณขยะเป็นหมื่น ... จากคน 3 คนในการคัดแยกขยะเนี่ย มันคงไม่ success กันอยู่แล้ว"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Insufficient sorting capacity results in remaining waste being sent to the compactor.",
+        "marker": "null",
+        "entities": [
+            "Insufficient sorting capacity",
+            "Waste sent to compactor"
+        ],
+        "source_text": "ซึ่งไม่เพียงพออยู่แล้ว เราก็สามารถคัดแยกได้ในส่วนนึง อีกส่วนนึงก็เข้าถังบีบอัดไป"
+    }
+]

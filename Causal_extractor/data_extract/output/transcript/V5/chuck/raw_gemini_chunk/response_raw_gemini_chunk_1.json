@@ -1,0 +1,119 @@
+[
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "General waste is sent to BMA for disposal",
+        "marker": "null",
+        "entities": [
+            "General waste from sorting plant",
+            "Disposal by BMA (Bangkok Metropolitan Administration)"
+        ],
+        "source_text": "ส่วนสถานที่อยู่ในภาพรวมที่มารวมอยู่ที่โรงคัดแยกขยะเนี่ย ก็จะถูกส่งให้กับ กทม. ก็คือส่ง กทม. กำจัดนั่นแหละ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Staff visiting buildings leads to recording of waste data",
+        "marker": "เพื่อ",
+        "entities": [
+            "Staff and antique shop visiting buildings",
+            "Recording waste type and weight data"
+        ],
+        "source_text": "เขาก็จะมาควบคู่ไปกับร้านรับซื้อของเก่าเนี่ย ไปตามแต่ละอาคาร เพื่อจดบันทึกว่าหน่วยงานนี้มีอะไรบ้าง ได้เท่าไหร่ๆ น้ำหนักเท่าไหร่"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Sending waste data to Finance Division enables money transfer to units",
+        "marker": "เพื่อ",
+        "entities": [
+            "Sending waste data to Finance Division",
+            "Money transfer/allocation to departments"
+        ],
+        "source_text": "เพื่อส่งข้อมูลพวกเนี้ยให้กับทางกองคลัง เพื่อโอนเงินให้กับ จัดจ่ายเรื่องเงินให้กับแต่ละหน่วยงาน"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "If waste originates from departments, revenue is split 80/20",
+        "marker": "ถ้า...ก็จะ",
+        "entities": [
+            "Waste originating from departments/offices",
+            "Revenue split (80% unit, 20% university)"
+        ],
+        "source_text": "แต่ถ้าเป็นของหน่วยงาน หรือสำนักงาน หรือภาคเนี่ย ก็จะเข้าหน่วยงาน 80 เข้ามหาวิทยาลัย 20"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Cleaning and separating waste leads to its use as fuel by N15",
+        "marker": "เพื่อ",
+        "entities": [
+            "Cleaning and separating general waste (glass, bags, spoons)",
+            "Sending to N15 as fuel (RDF)"
+        ],
+        "source_text": "การแยกขยะทั่วไป เอามาล้าง เอามาทำความสะอาด... เราก็แยกออกมาเพื่อส่งให้ N15 เป็นขยะเชื้อเพลิง"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "COVID situation caused the addition of infectious waste bins",
+        "marker": "ก็จะมี",
+        "entities": [
+            "COVID situation",
+            "Addition of infectious waste bins (for ATK, masks)"
+        ],
+        "source_text": "ช่วงสถานการณ์โควิด ก็จะมีถังแยกออกมาอีก ที่เป็นถังขยะติดเชื้อ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "relationship": "Donating e-waste allows students to receive activity hours",
+        "marker": "ก็เหมือน",
+        "entities": [
+            "Donating electronic waste",
+            "Receiving activity hours"
+        ],
+        "source_text": "ใครเนี่ยที่มีขยะอิเล็กทรอนิกส์เนี่ย ก็มาบริจาคให้กับที่นี่ ก็เหมือนแลกชั่วโมงไป"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Usable e-waste is sent to Mirror Foundation for reuse as parts",
+        "marker": "ก็จะ",
+        "entities": [
+            "Usable electronic waste/parts",
+            "Sending to Mirror Foundation for computer repair"
+        ],
+        "source_text": "ขยะอิเล็กทรอนิกส์บางส่วนที่มันยังสามารถเป็นอะไหล่ หรือสามารถใช้ได้เนี่ย ก็จะถูกส่งไปให้กับมูลนิธิกระจกเงา"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "relationship": "Tree debris is processed into fertilizer",
+        "marker": "ก็มา",
+        "entities": [
+            "Tree debris",
+            "Production of fertilizer"
+        ],
+        "source_text": "อย่างพวกเศษต้นไม้อย่างเงี้ย เราก็มาทำปุ๋ย"
+    }
+]

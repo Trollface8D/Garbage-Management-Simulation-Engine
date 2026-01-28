@@ -1,0 +1,122 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Changing policy in simulation leads to checking for system efficiency improvement",
+        "marker": "พอ...เนี่ย...ไหม",
+        "entities": [
+            "Changing policy in simulation",
+            "System efficiency improvement"
+        ],
+        "source_text": "ดูว่า พอเปลี่ยน นโยบาย เล็กน้อยเนี่ย ในจุดๆ นึงเนี่ย มันดีขึ้นไหม"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Hiring additional staff for management leads to increased costs",
+        "marker": "ถ้า...มันก็",
+        "entities": [
+            "Hiring additional staff",
+            "Increased cost"
+        ],
+        "source_text": "ถ้าเราจัดการขึ้น เราต้องไปหาคนอีกคน 2 คน มาเพื่อจัดการตรงนี้ ... มันก็เพิ่มเงิน"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Personnel behavior causes inaccuracies in waste weight data",
+        "marker": "เนื่องจาก",
+        "entities": [
+            "Personnel behavior",
+            "Inaccurate waste weight data"
+        ],
+        "source_text": "ปัญหาเรื่องของการ ชั่งข้อมูลขยะ ที่มันมีอาการคลาดเคลื่อน เนื่องจาก ตัวบุคลากรเอง"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Maids recording data based on mood leads to unreliable data",
+        "marker": "null",
+        "entities": [
+            "Maids recording based on mood",
+            "Unreliable data"
+        ],
+        "source_text": "ไม่ใช่ข้อมูลที่ แม่บ้านเขา แล้วแต่อารมณ์ อยากจะเขียนน่ะ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Complexity of the current weighing process leads to difficulty for staff compliance",
+        "marker": "null",
+        "entities": [
+            "Complexity of current weighing process",
+            "Staff difficulty"
+        ],
+        "source_text": "ไอ้ขั้นตอนการ ชั่งขยะ ในปัจจุบัน มันก็ดูจะ ยุ่งยากเกินไป สำหรับ พนักงาน ปัจจุบัน ที่จะทำ"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Staff weigh waste under the building and record it in a notebook",
+        "marker": "null",
+        "entities": [
+            "Staff",
+            "Weighing scale under building",
+            "Notebook recording"
+        ],
+        "source_text": "แต่ละตึก ใต้ตึกเนี่ย จะมีกิโล ... ก็คือจะมาชั่งข้างล่าง แล้วก็จดใส่ สมุด บันทึกใส่สมุด"
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Waste collectors often lift bins onto the truck without weighing them",
+        "marker": "null",
+        "entities": [
+            "Waste collectors",
+            "Waste bins",
+            "Truck"
+        ],
+        "source_text": "เขาก็ ส่วนใหญ่ก็ ยกขึ้นรถเลย ไม่ต้องชั่ง ไม่ค่อยได้ชั่ง"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Using new equipment helps increase convenience and enables immediate data collection",
+        "marker": "ช่วยให้",
+        "entities": [
+            "New equipment/tool",
+            "Convenience",
+            "Immediate data collection"
+        ],
+        "source_text": "อยากได้ อุปกรณ์ หรือ เครื่องมือ ที่มัน ช่วย ให้มันสะดวก กว่าเนี้ย... มีการเก็บข้อมูล หรือชั่งน้ำหนักเลย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Maids using lucky numbers for weight entries leads to data inaccuracy",
+        "marker": "null",
+        "entities": [
+            "Maids using lucky numbers",
+            "Data inaccuracy"
+        ],
+        "source_text": "ซึ่งตอนนี้ มันคลาดเคลื่อน ... วันนี้ชอบเลขอะไร ... ไม่เก้ากิโล อะไรเงี้ย เขาก็หัวเราะ ... เขาก็บอก ทำจริง ป่าว เราก็ทำ"
+    }
+]
