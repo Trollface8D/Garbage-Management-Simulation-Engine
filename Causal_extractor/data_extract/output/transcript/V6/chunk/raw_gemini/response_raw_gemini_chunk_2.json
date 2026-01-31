@@ -1,0 +1,138 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "จากการที่ (From the fact that)",
+        "source_text": "แม่บ้านที่จะคอยดูแล ก็คือจะมาคอยเก็บ ช่วยคัดแยกในระดับนึง จากการที่นักศึกษา หรือบุคลากรทิ้ง",
+        "extracted": [
+            {
+                "head": "Students discarding waste",
+                "relationship": "triggers",
+                "tail": "Housekeepers sorting",
+                "detail": "partially"
+            },
+            {
+                "head": "Staff discarding waste",
+                "relationship": "triggers",
+                "tail": "Housekeepers sorting",
+                "detail": "partially"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "เขาก็จะเก็บรวบรวมแต่ละถัง ชั่งน้ำหนัก แล้วก็เอาไปไว้ที่กรงพักขยะ",
+        "extracted": [
+            {
+                "head": "Housekeepers",
+                "relationship": "collect",
+                "tail": "waste bins",
+                "detail": "null"
+            },
+            {
+                "head": "Housekeepers",
+                "relationship": "weigh",
+                "tail": "waste",
+                "detail": "null"
+            },
+            {
+                "head": "Housekeepers",
+                "relationship": "move",
+                "tail": "waste",
+                "detail": "to the waste holding cage"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ซึ่งขยะภายนอกเนี่ย ก็จะเป็นทีมของงานสวน ที่ดูแลสวนภายนอกเนี่ย เขาจะมีฝ่ายที่เป็นฝ่ายจัดการขยะ เขาก็จะขับรถเนี่ย เก็บรอบ ม.",
+        "extracted": [
+            {
+                "head": "Garden team",
+                "relationship": "collects",
+                "tail": "external waste",
+                "detail": "using a truck around the university"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "marker": "พอ...เสร็จ...ก็ (When...done...then)",
+        "source_text": "พอเก็บรวบรวมครบเสร็จ เขาก็จะไปที่โรงคัดแยกขยะ",
+        "extracted": [
+            {
+                "head": "Completion of waste collection",
+                "relationship": "leads to",
+                "tail": "transporting waste",
+                "detail": "to the sorting plant"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ขยะที่เกิดขึ้น บางส่วนที่คนเนี่ยสามารถคัดแยกได้ เขาก็จะกองไว้อีกส่วนนึง",
+        "extracted": [
+            {
+                "head": "Waste being sortable",
+                "relationship": "results in",
+                "tail": "piling separately",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "อีกส่วนนึงที่คัดแยกไม่ได้เนี่ย เขาก็จะอัดเข้าถังสีเหลือง ที่เป็นถังบีบอัดขยะ ของ กทม.",
+        "extracted": [
+            {
+                "head": "Waste being unsortable",
+                "relationship": "results in",
+                "tail": "compression into yellow BMA bins",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "จาก (From/Due to)",
+        "source_text": "จากคน 3 คนในการคัดแยกขยะเนี่ย มันคงไม่ success กันอยู่แล้ว ซึ่งไม่เพียงพออยู่แล้ว",
+        "extracted": [
+            {
+                "head": "Limited number of sorters",
+                "relationship": "causes",
+                "tail": "unsuccessful sorting process",
+                "detail": "3-4 people vs large volume"
+            },
+            {
+                "head": "Limited number of sorters",
+                "relationship": "causes",
+                "tail": "insufficiency",
+                "detail": "null"
+            }
+        ]
+    }
+]

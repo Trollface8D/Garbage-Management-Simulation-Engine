@@ -1,0 +1,1200 @@
+[
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ส่วนสถานที่อยู่ในภาพรวมที่มารวมอยู่ที่โรงคัดแยกขยะเนี่ย ก็จะถูกส่งให้กับ กทม. ก็คือส่ง กทม. กำจัดนั่นแหละ",
+        "extracted": [
+            {
+                "head": "Waste at the sorting facility",
+                "relationship": "is sent to",
+                "tail": "BMA",
+                "detail": "for disposal"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "เขาก็จะเอาขยะจากหน่วยงาน หรือสำนักงานของตัวเองเนี่ยลงมาไว้ตามแต่ละตึก ตามใต้ตึกอะ ตามจุดที่เขาคุยกันไว้ เขาก็จะติดป้ายไว้ว่าเป็นของหน่วยงานใคร",
+        "extracted": [
+            {
+                "head": "Units and offices",
+                "relationship": "bring down",
+                "tail": "waste",
+                "detail": "to designated spots at each building"
+            },
+            {
+                "head": "Units and offices",
+                "relationship": "label",
+                "tail": "waste",
+                "detail": "to identify ownership"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เพื่อ (in order to)",
+        "source_text": "เพื่อส่งข้อมูลพวกเนี้ยให้กับทางกองคลัง เพื่อโอนเงินให้กับ จัดจ่ายเรื่องเงินให้กับแต่ละหน่วยงาน",
+        "extracted": [
+            {
+                "head": "Sending waste data to Finance Division",
+                "relationship": "enables",
+                "tail": "money transfer to units",
+                "detail": "payment processing"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "แต่ถ้าเป็นของหน่วยงาน หรือสำนักงาน หรือภาคเนี่ย ก็จะเข้าหน่วยงาน 80 เข้ามหาวิทยาลัย 20",
+        "extracted": [
+            {
+                "head": "Revenue from unit waste",
+                "relationship": "is allocated to",
+                "tail": "the Unit",
+                "detail": "80%"
+            },
+            {
+                "head": "Revenue from unit waste",
+                "relationship": "is allocated to",
+                "tail": "the University",
+                "detail": "20%"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เพื่อ (in order to)",
+        "source_text": "การแยกขยะทั่วไป เอามาล้าง... เราก็แยกออกมาเพื่อส่งให้ N15 เป็นขยะเชื้อเพลิง",
+        "extracted": [
+            {
+                "head": "Separating and cleaning waste",
+                "relationship": "allows sending to",
+                "tail": "N15",
+                "detail": "as fuel waste (RDF)"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ช่วงสถานการณ์โควิด ก็จะมีถังแยกออกมาอีก ที่เป็นถังขยะติดเชื้อ ที่คอยทิ้งพวกชุดตรวจ ATK แมสก์",
+        "extracted": [
+            {
+                "head": "COVID-19 situation",
+                "relationship": "caused",
+                "tail": "separation of infectious waste bins",
+                "detail": "for ATK kits and masks"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ใครเนี่ยที่มีขยะอิเล็กทรอนิกส์เนี่ย ก็มาบริจาคให้กับที่นี่ ก็เหมือนแลกชั่วโมงไป",
+        "extracted": [
+            {
+                "head": "Donating e-waste",
+                "relationship": "results in",
+                "tail": "receiving activity hours",
+                "detail": "exchange mechanism"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ขยะอิเล็กทรอนิกส์บางส่วนที่มันยังสามารถเป็นอะไหล่ หรือสามารถใช้ได้เนี่ย ก็จะถูกส่งไปให้กับมูลนิธิกระจกเงา",
+        "extracted": [
+            {
+                "head": "Reusable e-waste",
+                "relationship": "is sent to",
+                "tail": "Mirror Foundation",
+                "detail": "for use as spare parts"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "เขาก็จะนำไปเป็นวัตถุดิบ เป็นอะไหล่ ให้กับในการซ่อมอุปกรณ์คอมพิวเตอร์ ที่จะส่งให้กับน้องๆ ที่อยู่ตามชนบท",
+        "extracted": [
+            {
+                "head": "Mirror Foundation",
+                "relationship": "uses parts to repair",
+                "tail": "computers",
+                "detail": "for children in rural areas"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "อย่างพวกเศษต้นไม้อย่างเงี้ย เราก็มาทำปุ๋ย",
+        "extracted": [
+            {
+                "head": "Tree debris",
+                "relationship": "is processed into",
+                "tail": "fertilizer",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "จากการที่ (From the fact that)",
+        "source_text": "แม่บ้านที่จะคอยดูแล ก็คือจะมาคอยเก็บ ช่วยคัดแยกในระดับนึง จากการที่นักศึกษา หรือบุคลากรทิ้ง",
+        "extracted": [
+            {
+                "head": "Students discarding waste",
+                "relationship": "triggers",
+                "tail": "Housekeepers sorting",
+                "detail": "partially"
+            },
+            {
+                "head": "Staff discarding waste",
+                "relationship": "triggers",
+                "tail": "Housekeepers sorting",
+                "detail": "partially"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "เขาก็จะเก็บรวบรวมแต่ละถัง ชั่งน้ำหนัก แล้วก็เอาไปไว้ที่กรงพักขยะ",
+        "extracted": [
+            {
+                "head": "Housekeepers",
+                "relationship": "collect",
+                "tail": "waste bins",
+                "detail": "null"
+            },
+            {
+                "head": "Housekeepers",
+                "relationship": "weigh",
+                "tail": "waste",
+                "detail": "null"
+            },
+            {
+                "head": "Housekeepers",
+                "relationship": "move",
+                "tail": "waste",
+                "detail": "to the waste holding cage"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ซึ่งขยะภายนอกเนี่ย ก็จะเป็นทีมของงานสวน ที่ดูแลสวนภายนอกเนี่ย เขาจะมีฝ่ายที่เป็นฝ่ายจัดการขยะ เขาก็จะขับรถเนี่ย เก็บรอบ ม.",
+        "extracted": [
+            {
+                "head": "Garden team",
+                "relationship": "collects",
+                "tail": "external waste",
+                "detail": "using a truck around the university"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "marker": "พอ...เสร็จ...ก็ (When...done...then)",
+        "source_text": "พอเก็บรวบรวมครบเสร็จ เขาก็จะไปที่โรงคัดแยกขยะ",
+        "extracted": [
+            {
+                "head": "Completion of waste collection",
+                "relationship": "leads to",
+                "tail": "transporting waste",
+                "detail": "to the sorting plant"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ขยะที่เกิดขึ้น บางส่วนที่คนเนี่ยสามารถคัดแยกได้ เขาก็จะกองไว้อีกส่วนนึง",
+        "extracted": [
+            {
+                "head": "Waste being sortable",
+                "relationship": "results in",
+                "tail": "piling separately",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "อีกส่วนนึงที่คัดแยกไม่ได้เนี่ย เขาก็จะอัดเข้าถังสีเหลือง ที่เป็นถังบีบอัดขยะ ของ กทม.",
+        "extracted": [
+            {
+                "head": "Waste being unsortable",
+                "relationship": "results in",
+                "tail": "compression into yellow BMA bins",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "จาก (From/Due to)",
+        "source_text": "จากคน 3 คนในการคัดแยกขยะเนี่ย มันคงไม่ success กันอยู่แล้ว ซึ่งไม่เพียงพออยู่แล้ว",
+        "extracted": [
+            {
+                "head": "Limited number of sorters",
+                "relationship": "causes",
+                "tail": "unsuccessful sorting process",
+                "detail": "3-4 people vs large volume"
+            },
+            {
+                "head": "Limited number of sorters",
+                "relationship": "causes",
+                "tail": "insufficiency",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เพราะว่า",
+        "source_text": "โดยปัญหาที่ขยะล้นจุดพักขยะเนี่ย จะเป็นช่วงตอนเช้าเลย เพราะว่าแม่บ้านเนี่ยจะเก็บขยะรอบเช้าเนี่ย มาอัด",
+        "extracted": [
+            {
+                "head": "Housekeepers collecting and compressing morning trash",
+                "relationship": "causes",
+                "tail": "trash overflow at collection points",
+                "detail": "particularly in the morning"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ซึ่งก็จะ",
+        "source_text": "อย่างสมมติ รถรอบเนี่ยมาเก็บตอน 3 โมง แม่บ้านที่อยู่ในอาคารเอามาทิ้งตอน 4 โมง ซึ่งก็จะมีขยะล้น ขยะเหลืออยู่ในนั้น ก็คือขยะตกค้าง",
+        "extracted": [
+            {
+                "head": "Housekeepers disposing trash at 4 PM after collection time",
+                "relationship": "results in",
+                "tail": "trash overflow",
+                "detail": "context: truck collects at 3 PM"
+            },
+            {
+                "head": "Housekeepers disposing trash at 4 PM after collection time",
+                "relationship": "results in",
+                "tail": "residual waste",
+                "detail": "context: truck collects at 3 PM"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "สรุป...ก็",
+        "source_text": "ตอนเช้าเก็บไปแล้ว ภาคเช้าเนี่ย ที่แม่บ้านมาเก็บขยะอีก ก็เอามาลงอีก สรุปขยะมันก็จะถูกอัด อัดๆๆ มาจนล้นตลอด",
+        "extracted": [
+            {
+                "head": "Adding more trash in the morning round",
+                "relationship": "results in",
+                "tail": "constant trash overflow",
+                "detail": "trash gets compressed and piles up on top of residual waste"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "marker": "ถูกฟ้อง (passive voice implying cause)",
+        "source_text": "ก็จะถูกฟ้องอะไรเงี้ย ก็คือจากบุคลากรบ้าง จากนักศึกษาบ้าง ว่าขยะแต่ละจุดเนี่ยมันล้น",
+        "extracted": [
+            {
+                "head": "Trash overflow at various points",
+                "relationship": "leads to",
+                "tail": "complaints from staff",
+                "detail": "null"
+            },
+            {
+                "head": "Trash overflow at various points",
+                "relationship": "leads to",
+                "tail": "complaints from students",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SP",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "แต่ มันก็มีทางที่เขาเป็นคณะทำงานในเรื่องเนี้ย เขาก็จะตักเตือนอะไรเงี้ย ให้รีบจัดการ ให้มันล้นจนเกินไป",
+        "extracted": [
+            {
+                "head": "The working committee",
+                "relationship": "warns to",
+                "tail": "manage waste quickly",
+                "detail": "to prevent excessive overflow"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "D",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ถังขยะ ถังเทาอะครับ ที่เป็นเศษวัสดุ พวกเหล็ก ปูน อะไรพวกเนี้ย",
+        "extracted": [
+            {
+                "head": "Gray bins",
+                "relationship": "contain",
+                "tail": "construction waste",
+                "detail": "null"
+            },
+            {
+                "head": "construction waste",
+                "relationship": "includes",
+                "tail": "iron",
+                "detail": "in the context of gray bins"
+            },
+            {
+                "head": "construction waste",
+                "relationship": "includes",
+                "tail": "cement",
+                "detail": "in the context of gray bins"
+            }
+        ]
+    },
+    {
+        "pattern_type": "SB",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "แล้วก็เวลาเราขนส่ง เราก็คือ เราใส่รวมกันอยู่แล้ว... แล้วเราค่อยไปแยกปลายทางใช่ไหมครับ",
+        "extracted": [
+            {
+                "head": "The transport process",
+                "relationship": "involves",
+                "tail": "mixing waste types",
+                "detail": "initially"
+            },
+            {
+                "head": "The waste management team",
+                "relationship": "separates",
+                "tail": "the waste",
+                "detail": "at the destination"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ว่าสมมติถ้ามีขยะเศษวัสดุ ที่เป็นชิ้นใหญ่ อะไรอย่างเงี้ย เราก็จะนับวัน เพื่อมาเก็บเป็นแต่ละรอบๆ ไป",
+        "extracted": [
+            {
+                "head": "Presence of large construction waste",
+                "relationship": "results in",
+                "tail": "scheduling specific pickup rounds",
+                "detail": "instead of regular daily collection"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "จะเป็น",
+        "source_text": "ที่เห็นมาตรงกองเนี่ย ส่วนใหญ่จะเป็นนักศึกษากอง",
+        "extracted": [
+            {
+                "head": "Students",
+                "relationship": "cause",
+                "tail": "waste piles",
+                "detail": "at the waste cage/collection point"
+            }
+        ]
+    },
+    {
+        "pattern_type": "SB",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ถ้าเป็นของหน่วยงาน หรือเป็นของทางคณะ อะไรพวกเนี้ย เขาก็จะเรียกเป็นรอบๆ",
+        "extracted": [
+            {
+                "head": "Departments",
+                "relationship": "request",
+                "tail": "pickup rounds",
+                "detail": "managed process"
+            },
+            {
+                "head": "Faculties",
+                "relationship": "request",
+                "tail": "pickup rounds",
+                "detail": "managed process"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เกิดจาก",
+        "source_text": "ส่วนที่เกิดปัญหาส่วนใหญ่ ก็จะเป็นปัจจัยที่ควบคุมได้ยาก เช่น... ปัจจัยก็จะเกิดจากบุคลากรที่ไม่ได้มีสังกัดชัดเจน เช่น นักศึกษา",
+        "extracted": [
+            {
+                "head": "Unaffiliated personnel",
+                "relationship": "cause",
+                "tail": "waste management problems",
+                "detail": "specifically students"
+            },
+            {
+                "head": "Students",
+                "relationship": "are examples of",
+                "tail": "unaffiliated personnel",
+                "detail": "regarding waste control factors"
+            }
+        ]
+    },
+    {
+        "pattern_type": "SB",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "สมมุติขยะที่นี่มี เขาก็จะติดต่อคนนี้... พี่คนเนี้ยก็จะติดต่อไปทางพี่มอส เพื่อจะนัดวัน เพื่อจะเข้ามารับ",
+        "extracted": [
+            {
+                "head": "Building PM",
+                "relationship": "contacts",
+                "tail": "the coordinator",
+                "detail": "when waste is present"
+            },
+            {
+                "head": "The coordinator",
+                "relationship": "contacts",
+                "tail": "Mr. Moss",
+                "detail": "to schedule pickup"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "marker": "ก็ต้อง",
+        "source_text": "แต่มีปริมาณที่เยอะมากๆ เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน นอกเหนือจากวันพฤหัสบดี ท้ายเดือน",
+        "extracted": [
+            {
+                "head": "High volume of recyclable waste",
+                "relationship": "prevents",
+                "tail": "immediate pickup",
+                "detail": "null"
+            },
+            {
+                "head": "High volume of recyclable waste",
+                "relationship": "necessitates",
+                "tail": "scheduling a special pickup date",
+                "detail": "outside regular Thursday/end-of-month rounds"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "marker": "ก็จะมี",
+        "source_text": "สมมุติถ้ามีพวกงานกีฬา หรืองานอะไรเงี้ย ก็จะมีพวกไม้ ไม้อัด",
+        "extracted": [
+            {
+                "head": "Sports events",
+                "relationship": "generate",
+                "tail": "wood waste",
+                "detail": "null"
+            },
+            {
+                "head": "Sports events",
+                "relationship": "generate",
+                "tail": "plywood waste",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ถ้า... ก็จะ",
+        "source_text": "เศษวัสดุ เนี่ย ถ้ามันไม่ได้... เอาไปใช้ประโยชน์อะไรไม่ได้แล้วเนี่ย เขาก็จะขี่ เอารถที่ขนขยะเนี่ย ขนเอาไปทิ้งด้านนอก",
+        "extracted": [
+            {
+                "head": "Unusable construction waste",
+                "relationship": "leads to",
+                "tail": "transportation to external landfill",
+                "detail": "near Wat Bua Phan"
+            }
+        ]
+    },
+    {
+        "pattern_type": "SB",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "บางพื้นที่ของอาคารเนี้ย มีพื้นที่อยู่ในช็อป ใช่ไหม เขาก็จะอาจมากองลงตรงนี้ไว้ก่อน... เขาก็จะเข้ามาคุย เข้าไปเก็บในช็อปเลย",
+        "extracted": [
+            {
+                "head": "Faculties with shop space",
+                "relationship": "store",
+                "tail": "waste",
+                "detail": "inside the shop before pickup"
+            },
+            {
+                "head": "Waste collectors",
+                "relationship": "collect",
+                "tail": "waste",
+                "detail": "directly from the shop"
+            }
+        ]
+    },
+    {
+        "pattern_type": "SB",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "แต่ถ้าเป็นพวกของขยะรีไซเคิล ที่เป็นตาม ตามรอบของเดือนอะไรเงี้ย เขาก็จะวางกองไว้หน้าตึก",
+        "extracted": [
+            {
+                "head": "Monthly recycle rounds",
+                "relationship": "involve",
+                "tail": "piling waste in front of buildings",
+                "detail": "early morning around 7 AM"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ทำให้ (makes/causes)",
+        "source_text": "ถ้าเราทำให้การส่งต่อ มันไม่เกิดการพลาดกันได้ เนี่ย ไอ้เรื่องของการที่เห็นขยะ แบบ... ล้น... มันก็จะน้อยลง",
+        "extracted": [
+            {
+                "head": "preventing errors in waste transfer",
+                "relationship": "leads to",
+                "tail": "reduction of overflowing waste",
+                "detail": "hypothetical condition"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "โดยแม่บ้านเองเนี่ย มันมีรอบวันเก็บ อ่า มีรอบ อ่า ช่วงอา 3 โมง 4 โมง",
+        "extracted": [
+            {
+                "head": "waste collection rounds",
+                "relationship": "occur at",
+                "tail": "3:00 PM to 4:00 PM",
+                "detail": "standard schedule"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "แต่แม่บ้าน เลิกงานกี่โมง 5 โมง เขาจะถือขยะลงมาทิ้ง ตอน 5 โมง",
+        "extracted": [
+            {
+                "head": "maids",
+                "relationship": "bring down",
+                "tail": "trash",
+                "detail": "at 5:00 PM (end of shift)"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ทำให้ (makes/causes)",
+        "source_text": "ซึ่งอันเนี้ยแหละ คือ ทำให้คาด... คลาดเคลื่อนได้... เพราะเก็บตอนเก็บมา 4 โมง",
+        "extracted": [
+            {
+                "head": "maids bringing trash at 5 PM",
+                "relationship": "causes",
+                "tail": "discrepancy in collection",
+                "detail": "because collection finishes at 4 PM"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ทำให้ (makes/causes)",
+        "source_text": "แต่มันก็ทำให้รอบการเก็บ มันพลาดกัน ทำให้เกิดปัญหา... มันก็เป็นขยะที่ตกค้าง",
+        "extracted": [
+            {
+                "head": "missing the collection round",
+                "relationship": "causes",
+                "tail": "operational problems",
+                "detail": "null"
+            },
+            {
+                "head": "missing the collection round",
+                "relationship": "results in",
+                "tail": "waste residue overnight",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ตกค้างเย็นนี้ พรุ่งนี้เช้า อ่า พวกคณะทำงาน หรือประธานมาเห็นเนี่ย เขาก็จะบอกละ เอ๊ะ ทำไมจุดนี้ขยะเยอะจัง",
+        "extracted": [
+            {
+                "head": "waste residue overnight",
+                "relationship": "leads to",
+                "tail": "complaints from the committee",
+                "detail": "null"
+            },
+            {
+                "head": "waste residue overnight",
+                "relationship": "leads to",
+                "tail": "complaints from the president",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "น้องๆ มีจัดกิจกรรม รับน้อง... ก็จะเกิดขยะ มหาศาล... เที่ยงคืน ตี 2 มึงยังไม่เลิกกันเลย มันก็มีขยะพวกเนี้ย เกิดขึ้น",
+        "extracted": [
+            {
+                "head": "student activities",
+                "relationship": "generate",
+                "tail": "massive amounts of waste",
+                "detail": "freshmen reception"
+            },
+            {
+                "head": "late night activities",
+                "relationship": "result in",
+                "tail": "waste accumulation at night",
+                "detail": "midnight to 2 AM"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "เขาจะมาขับรถเก็บตอนรอบ 5 โมง อีกรอบเหรอ... ซึ่งเขาต้องเสียเงินเพิ่ม",
+        "extracted": [
+            {
+                "head": "driving an additional collection round at 5 PM",
+                "relationship": "requires",
+                "tail": "paying extra money",
+                "detail": "overtime costs"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "กินข้าวบูด... อยู่ในออฟฟิศ หนู มด อ่า พวกเนี้ย ซึ่งต่อเนื่องมาอีก จัดการยากกว่าเดิมอีก",
+        "extracted": [
+            {
+                "head": "keeping food waste in the office",
+                "relationship": "attracts",
+                "tail": "rats",
+                "detail": "null"
+            },
+            {
+                "head": "keeping food waste in the office",
+                "relationship": "attracts",
+                "tail": "ants",
+                "detail": "null"
+            },
+            {
+                "head": "presence of pests",
+                "relationship": "makes",
+                "tail": "waste management more difficult",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ทำให้ (makes/causes)",
+        "source_text": "สุดท้ายเนี่ย ก็จะมีพวกแบบเนี้ย มา ทำให้แบบ เกิดเหตุ อะ ถ่ายเคมี 6 รั่วไหล 6 รดตัวเองบ้าง",
+        "extracted": [
+            {
+                "head": "ignoring lab regulations",
+                "relationship": "causes",
+                "tail": "chemical spills",
+                "detail": "analogy used by interviewee"
+            },
+            {
+                "head": "ignoring lab regulations",
+                "relationship": "causes",
+                "tail": "personal injury",
+                "detail": "spilling chemicals on oneself"
+            }
+        ]
+    },
+    {
+        "pattern_type": "OT",
+        "sentence_type": "OT",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "กะว่าจะเอาไปทำเป็น ตัวจบ โปรเจกต์จบ ความสำคัญของ ตัว โครงการ ทีสิส จบอะครับ อือหือ ว่าจะแบบ เออ มาช่วยแก้ปัญญา ยังไงได้บ้าง อย่างที่ เอ่อ พวกผมตั้งกันไว้ตอนแรก ก็คือจะทำเป็นพวก แบบ แนว อ่า Optimize ระบบ อะไรเงี้ยครับ ว่า เออ มันสามารถทำไง ให้มัน ประสิทธิภาพดีขึ้นได้ไหม",
+        "extracted": [
+            {
+                "head": "Optimizing the system",
+                "relationship": "improves",
+                "tail": "efficiency",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "โดยที่ เราเอา เอ่อ เราสร้าง Simulation ขึ้นมา แล้วแบบ พยายามที่จะ ลอกเลียนแบบ สภาวะตอนนี้ แล้วดูว่า พอเปลี่ยน นโยบาย เล็กน้อยเนี่ย ในจุดๆ นึงเนี่ย มันดีขึ้นไหม",
+        "extracted": [
+            {
+                "head": "Changing the policy",
+                "relationship": "improves",
+                "tail": "system state",
+                "detail": "in simulation context"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ก็เลย (so/therefore)",
+        "source_text": "แต่ ถ้าเราจัดการขึ้น เราต้องไปหาคนอีกคน 2 คน มาเพื่อจัดการตรงนี้ ก่อน ให้แก๊งนั้น จัดการ มันก็เพิ่มเงิน ก็เลย เพิ่มปัญหาตรงนี้ ที่แบบ เอาขยะไปเก็บ",
+        "extracted": [
+            {
+                "head": "Hiring additional staff",
+                "relationship": "increases",
+                "tail": "financial cost",
+                "detail": "null"
+            },
+            {
+                "head": "Hiring additional staff",
+                "relationship": "increases",
+                "tail": "management problems",
+                "detail": "regarding trash collection"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เนื่องจาก (due to)",
+        "source_text": "โดยถ้าพูดถึง ปัญหาตอนนี้ หรอ พี่พูดถึง ปัญหาเรื่องของการ ชั่งข้อมูลขยะ ที่มันมีอาการคลาดเคลื่อน เนื่องจาก ตัวบุคลากรเอง",
+        "extracted": [
+            {
+                "head": "Personnel behavior",
+                "relationship": "causes",
+                "tail": "trash weight data discrepancies",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "แต่ ตัวถังขยะเอง มันก็ ไม่ได้ซัพพอร์ต ขนาดนั้นนะ อย่างเช่น เรื่องของการชั่งน้ำหนัก หรือตัวของกิโล อะไรเงี้ย",
+        "extracted": [
+            {
+                "head": "Trash cans",
+                "relationship": "do not support",
+                "tail": "weighing mechanisms",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "marker": "แม่บ้านเขา แล้วแต่อารมณ์ (Maids depend on mood)",
+        "source_text": "คือเราอะ ต้องการข้อมูล ที่มันเป็น ข้อมูลจริง จริงๆ นะ ไม่ใช่ข้อมูลที่ แม่บ้านเขา แล้วแต่อารมณ์ อยากจะเขียนน่ะ",
+        "extracted": [
+            {
+                "head": "Maids relying on mood",
+                "relationship": "results in",
+                "tail": "inaccurate data",
+                "detail": "implied negation of real data"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ปัญหาคือ เราอะ อยากจะเก็บ ให้มัน มันมีข้อมูล อย่างชัดเจน แบบ ที่มันจะมีข้อมูล ขาดหาย แต่ว่า ไอ้ขั้นตอนการ ชั่งขยะ ในปัจจุบัน มันก็ดูจะ ยุ่งยากเกินไป สำหรับ พนักงาน ปัจจุบัน ที่จะทำ",
+        "extracted": [
+            {
+                "head": "Current trash weighing process",
+                "relationship": "is",
+                "tail": "too complicated",
+                "detail": "for current staff"
+            },
+            {
+                "head": "Complicated weighing process",
+                "relationship": "leads to",
+                "tail": "missing data",
+                "detail": "reification"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ซึ่งแต่ละอาคารเนี่ย แต่ละตึก ใต้ตึกเนี่ย จะมีกิโล ที่ทางพี่เอง ได้ซื้อให้ นี่แหละ ก็จะมีกิโล คนละตัวๆ ตัว ก็คือจะมาชั่งข้างล่าง แล้วก็จดใส่ สมุด บันทึกใส่สมุด",
+        "extracted": [
+            {
+                "head": "Staff",
+                "relationship": "weigh",
+                "tail": "trash",
+                "detail": "downstairs"
+            },
+            {
+                "head": "Staff",
+                "relationship": "record",
+                "tail": "trash data",
+                "detail": "in a notebook"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "เขาก็ ส่วนใหญ่ก็ ยกขึ้นรถเลย ไม่ต้องชั่ง ไม่ค่อยได้ชั่ง ประมาณเนี้ย",
+        "extracted": [
+            {
+                "head": "Lifting trash directly to the truck",
+                "relationship": "results in",
+                "tail": "not weighing the trash",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "พี่อะ แซวตลอดอะ ว่า วันนี้ชอบเลขอะไร ยกโชก (ยกโชค/เสี่ยงโชค) ขยะลงมาทิ้งเนี่ย ชอบเลขอะไร วันนี้ชอบ เอ้ย ไม่เก้า ไม่เก้ากิโล อะไรเงี้ย... ซึ่งตอนนี้ มันคลาดเคลื่อน จนไม่รู้จะคลาดเคลื่อนยังไงละ",
+        "extracted": [
+            {
+                "head": "Maids guessing numbers",
+                "relationship": "causes",
+                "tail": "extreme data inaccuracy",
+                "detail": "treating data entry like a lottery"
+            }
+        ]
+    },
+    {
+        "pattern_type": "OT",
+        "sentence_type": "SP",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "พี่ก็จะเปลี่ยน พี่อยากจะเปลี่ยน ใหม่ ให้มันมีขนาดที่ ใหญ่กว่าเนี้ย แล้วก็มีหลังคง หลังคา ปิด กันฝ่ง กันฝน ให้มันดูเป็น เหมือนกิจจะลักษณะ กว่าเนี้ย",
+        "extracted": [
+            {
+                "head": "The interviewer",
+                "relationship": "wants to redesign",
+                "tail": "the waste cage",
+                "detail": "to be larger and have a roof"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "มันจะไม่...ได้ไง (how could it not)",
+        "source_text": "มีทั้ง ตลาด โรงเรียน ตึก 14 ชั้น ที่เป็นโรงแรม มันจะไม่ล้นได้ไงอะ... รวมทิ้ง อยู่ตรงนั้นน่ะ มันก็ บาน",
+        "extracted": [
+            {
+                "head": "The market",
+                "relationship": "contributes to",
+                "tail": "waste overflow",
+                "detail": "at the Red Building area"
+            },
+            {
+                "head": "The school",
+                "relationship": "contributes to",
+                "tail": "waste overflow",
+                "detail": "at the Red Building area"
+            },
+            {
+                "head": "The 14-story hotel building",
+                "relationship": "contributes to",
+                "tail": "waste overflow",
+                "detail": "at the Red Building area"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "แต่มันก็ ยังไม่ได้ ตอบโจทย์ หรือมันก็ ไม่ง่าย ต่อแม่บ้าน เอง เหมือนกัน อืม ซึ่งมันก็ เล็กเกินไป",
+        "extracted": [
+            {
+                "head": "The compact design of the cage",
+                "relationship": "causes",
+                "tail": "difficulty for the cleaners",
+                "detail": "because it is too small"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เลย (so/therefore)",
+        "source_text": "งบมัน จำกัด ด้วยแหละ อืม ใช่... ซึ่งมันมี งบจำกัด ไง มันก็เลย ออกมาเป็น แบบเนี้ย",
+        "extracted": [
+            {
+                "head": "Limited budget",
+                "relationship": "resulted in",
+                "tail": "the current waste cage design",
+                "detail": "which is problematic"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ทำให้ (makes/causes)",
+        "source_text": "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย... พังหมด",
+        "extracted": [
+            {
+                "head": "Garbage collectors using rough handling",
+                "relationship": "causes",
+                "tail": "equipment damage",
+                "detail": "using feet to hit bins"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SP",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "เวลา มีกิจกรรม ต่างๆ ก็จะมีพวก น้องๆ เนี่ย มายืน แยกขยะ ช่วยแยกขยะ",
+        "extracted": [
+            {
+                "head": "Student volunteers",
+                "relationship": "stand to help",
+                "tail": "separate waste",
+                "detail": "during events"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "บางคน มา ขนาด มีคนยืนบอก มันยัง ทิ้ง ลงไปเลย เออ ไม่สนใจอะ",
+        "extracted": [
+            {
+                "head": "Some people",
+                "relationship": "ignore",
+                "tail": "waste separation instructions",
+                "detail": "even when volunteers are present"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ลด...ได้ (can reduce)",
+        "source_text": "เขา ก็ มีการ ไปเช่า พวก อุปกรณ์ อ่า พวกแก้วน้ำ พวกชาม พวกจาน มา ลดขยะ ได้ อย่าง เยอะ เลย หายไป เป็น 100 โล ได้เลย",
+        "extracted": [
+            {
+                "head": "Renting reusable equipment",
+                "relationship": "reduces",
+                "tail": "waste quantity",
+                "detail": "by approximately 100 kg"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ใกล้มือ มั้ง บางที เดินมา ใกล้มือ กู ก็ทิ้ง นี่แหละ",
+        "extracted": [
+            {
+                "head": "Convenience",
+                "relationship": "causes",
+                "tail": "indiscriminate dumping",
+                "detail": "throwing waste because it is near hand"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ทุกคน ใน ม. เนี่ย แยกขยะ ได้ พื้นฐาน เนี่ย แยกได้ อยู่แล้ว แต่ เวลา ทิ้ง มึง ถึง แยก ไม่ได้",
+        "extracted": [
+            {
+                "head": "Everyone in the university",
+                "relationship": "knows how to",
+                "tail": "separate waste",
+                "detail": "fundamentally"
+            },
+            {
+                "head": "Everyone in the university",
+                "relationship": "fails to",
+                "tail": "separate waste",
+                "detail": "during the actual act of throwing"
+            }
+        ]
+    }
+]

@@ -1,0 +1,180 @@
+[
+    {
+        "pattern_type": "OT",
+        "sentence_type": "OT",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "กะว่าจะเอาไปทำเป็น ตัวจบ โปรเจกต์จบ ความสำคัญของ ตัว โครงการ ทีสิส จบอะครับ อือหือ ว่าจะแบบ เออ มาช่วยแก้ปัญญา ยังไงได้บ้าง อย่างที่ เอ่อ พวกผมตั้งกันไว้ตอนแรก ก็คือจะทำเป็นพวก แบบ แนว อ่า Optimize ระบบ อะไรเงี้ยครับ ว่า เออ มันสามารถทำไง ให้มัน ประสิทธิภาพดีขึ้นได้ไหม",
+        "extracted": [
+            {
+                "head": "Optimizing the system",
+                "relationship": "improves",
+                "tail": "efficiency",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "โดยที่ เราเอา เอ่อ เราสร้าง Simulation ขึ้นมา แล้วแบบ พยายามที่จะ ลอกเลียนแบบ สภาวะตอนนี้ แล้วดูว่า พอเปลี่ยน นโยบาย เล็กน้อยเนี่ย ในจุดๆ นึงเนี่ย มันดีขึ้นไหม",
+        "extracted": [
+            {
+                "head": "Changing the policy",
+                "relationship": "improves",
+                "tail": "system state",
+                "detail": "in simulation context"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ก็เลย (so/therefore)",
+        "source_text": "แต่ ถ้าเราจัดการขึ้น เราต้องไปหาคนอีกคน 2 คน มาเพื่อจัดการตรงนี้ ก่อน ให้แก๊งนั้น จัดการ มันก็เพิ่มเงิน ก็เลย เพิ่มปัญหาตรงนี้ ที่แบบ เอาขยะไปเก็บ",
+        "extracted": [
+            {
+                "head": "Hiring additional staff",
+                "relationship": "increases",
+                "tail": "financial cost",
+                "detail": "null"
+            },
+            {
+                "head": "Hiring additional staff",
+                "relationship": "increases",
+                "tail": "management problems",
+                "detail": "regarding trash collection"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เนื่องจาก (due to)",
+        "source_text": "โดยถ้าพูดถึง ปัญหาตอนนี้ หรอ พี่พูดถึง ปัญหาเรื่องของการ ชั่งข้อมูลขยะ ที่มันมีอาการคลาดเคลื่อน เนื่องจาก ตัวบุคลากรเอง",
+        "extracted": [
+            {
+                "head": "Personnel behavior",
+                "relationship": "causes",
+                "tail": "trash weight data discrepancies",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "แต่ ตัวถังขยะเอง มันก็ ไม่ได้ซัพพอร์ต ขนาดนั้นนะ อย่างเช่น เรื่องของการชั่งน้ำหนัก หรือตัวของกิโล อะไรเงี้ย",
+        "extracted": [
+            {
+                "head": "Trash cans",
+                "relationship": "do not support",
+                "tail": "weighing mechanisms",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "marker": "แม่บ้านเขา แล้วแต่อารมณ์ (Maids depend on mood)",
+        "source_text": "คือเราอะ ต้องการข้อมูล ที่มันเป็น ข้อมูลจริง จริงๆ นะ ไม่ใช่ข้อมูลที่ แม่บ้านเขา แล้วแต่อารมณ์ อยากจะเขียนน่ะ",
+        "extracted": [
+            {
+                "head": "Maids relying on mood",
+                "relationship": "results in",
+                "tail": "inaccurate data",
+                "detail": "implied negation of real data"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ปัญหาคือ เราอะ อยากจะเก็บ ให้มัน มันมีข้อมูล อย่างชัดเจน แบบ ที่มันจะมีข้อมูล ขาดหาย แต่ว่า ไอ้ขั้นตอนการ ชั่งขยะ ในปัจจุบัน มันก็ดูจะ ยุ่งยากเกินไป สำหรับ พนักงาน ปัจจุบัน ที่จะทำ",
+        "extracted": [
+            {
+                "head": "Current trash weighing process",
+                "relationship": "is",
+                "tail": "too complicated",
+                "detail": "for current staff"
+            },
+            {
+                "head": "Complicated weighing process",
+                "relationship": "leads to",
+                "tail": "missing data",
+                "detail": "reification"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ซึ่งแต่ละอาคารเนี่ย แต่ละตึก ใต้ตึกเนี่ย จะมีกิโล ที่ทางพี่เอง ได้ซื้อให้ นี่แหละ ก็จะมีกิโล คนละตัวๆ ตัว ก็คือจะมาชั่งข้างล่าง แล้วก็จดใส่ สมุด บันทึกใส่สมุด",
+        "extracted": [
+            {
+                "head": "Staff",
+                "relationship": "weigh",
+                "tail": "trash",
+                "detail": "downstairs"
+            },
+            {
+                "head": "Staff",
+                "relationship": "record",
+                "tail": "trash data",
+                "detail": "in a notebook"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "เขาก็ ส่วนใหญ่ก็ ยกขึ้นรถเลย ไม่ต้องชั่ง ไม่ค่อยได้ชั่ง ประมาณเนี้ย",
+        "extracted": [
+            {
+                "head": "Lifting trash directly to the truck",
+                "relationship": "results in",
+                "tail": "not weighing the trash",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "พี่อะ แซวตลอดอะ ว่า วันนี้ชอบเลขอะไร ยกโชก (ยกโชค/เสี่ยงโชค) ขยะลงมาทิ้งเนี่ย ชอบเลขอะไร วันนี้ชอบ เอ้ย ไม่เก้า ไม่เก้ากิโล อะไรเงี้ย... ซึ่งตอนนี้ มันคลาดเคลื่อน จนไม่รู้จะคลาดเคลื่อนยังไงละ",
+        "extracted": [
+            {
+                "head": "Maids guessing numbers",
+                "relationship": "causes",
+                "tail": "extreme data inaccuracy",
+                "detail": "treating data entry like a lottery"
+            }
+        ]
+    }
+]
