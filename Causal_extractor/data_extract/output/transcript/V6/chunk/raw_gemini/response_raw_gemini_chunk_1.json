@@ -1,0 +1,158 @@
+[
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ส่วนสถานที่อยู่ในภาพรวมที่มารวมอยู่ที่โรงคัดแยกขยะเนี่ย ก็จะถูกส่งให้กับ กทม. ก็คือส่ง กทม. กำจัดนั่นแหละ",
+        "extracted": [
+            {
+                "head": "General waste gathered at the sorting facility",
+                "relationship": "is sent to",
+                "tail": "BMA (Bangkok Metropolitan Administration)",
+                "detail": "for disposal"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "เขาก็จะเอาขยะจากหน่วยงาน หรือสำนักงานของตัวเองเนี่ยลงมาไว้ตามแต่ละตึก... ทางร้านรับซื้อของเก่า... ก็จะมา... เพื่อจดบันทึกว่าหน่วยงานนี้มีอะไรบ้าง ได้เท่าไหร่ๆ น้ำหนักเท่าไหร่",
+        "extracted": [
+            {
+                "head": "Department staff",
+                "relationship": "bring down",
+                "tail": "waste",
+                "detail": "to designated spots at each building on the last Thursday of the month"
+            },
+            {
+                "head": "Contracted scrap buying shop and central manager",
+                "relationship": "record",
+                "tail": "waste data",
+                "detail": "type and weight for each department"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เพื่อ (in order to)",
+        "source_text": "เพื่อส่งข้อมูลพวกเนี้ยให้กับทางกองคลัง เพื่อโอนเงินให้กับ จัดจ่ายเรื่องเงินให้กับแต่ละหน่วยงาน",
+        "extracted": [
+            {
+                "head": "Sending waste data to the Finance Division",
+                "relationship": "leads to",
+                "tail": "money transfer",
+                "detail": "payment distributed to each department based on the data"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "แต่ถ้าเป็นของหน่วยงาน หรือสำนักงาน หรือภาคเนี่ย ก็จะเข้าหน่วยงาน 80 เข้ามหาวิทยาลัย 20",
+        "extracted": [
+            {
+                "head": "Revenue from department/office waste",
+                "relationship": "is split",
+                "tail": "80% to department, 20% to university",
+                "detail": "allocation rule"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เพื่อ (to/for)",
+        "source_text": "การแยกขยะทั่วไป เอามาล้าง... เราก็แยกออกมาเพื่อส่งให้ N15 เป็นขยะเชื้อเพลิง",
+        "extracted": [
+            {
+                "head": "Separating and cleaning general waste (cups, bags, straws)",
+                "relationship": "enables sending to",
+                "tail": "N15",
+                "detail": "to be processed into Refuse Derived Fuel (RDF)"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "คือใครเนี่ยที่มีขยะอิเล็กทรอนิกส์เนี่ย ก็มาบริจาคให้กับที่นี่ ก็เหมือนแลกชั่วโมงไป",
+        "extracted": [
+            {
+                "head": "Donating e-waste to the EE department",
+                "relationship": "results in",
+                "tail": "receiving activity hours",
+                "detail": "incentive system for students/staff"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "พวกแบตเตอรี่ ถ่าน ทางพี่เองก็รับเหมือนกัน พี่ก็ส่งกำจัดให้ถูกต้องตามระเบียบ ก็คือส่งบริษัทที่มีมาตรฐานในการกำจัด",
+        "extracted": [
+            {
+                "head": "The waste management team",
+                "relationship": "sends",
+                "tail": "hazardous waste (batteries)",
+                "detail": "to certified disposal companies for proper disposal"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ขยะอิเล็กทรอนิกส์บางส่วนที่มันยังสามารถเป็นอะไหล่ หรือสามารถใช้ได้เนี่ย ก็จะถูกส่งไปให้กับมูลนิธิกระจกเงา เขาก็จะนำไปเป็นวัตถุดิบ เป็นอะไหล่ ให้กับในการซ่อมอุปกรณ์คอมพิวเตอร์",
+        "extracted": [
+            {
+                "head": "Reusable e-waste/parts",
+                "relationship": "is sent to",
+                "tail": "The Mirror Foundation",
+                "detail": "to be used as raw materials/spare parts"
+            },
+            {
+                "head": "Using donated parts",
+                "relationship": "enables",
+                "tail": "repairing computers",
+                "detail": "for children in rural areas"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "อย่างพวกเศษต้นไม้อย่างเงี้ย เราก็มาทำปุ๋ย",
+        "extracted": [
+            {
+                "head": "Tree trimmings",
+                "relationship": "are processed into",
+                "tail": "fertilizer",
+                "detail": "transformation of organic waste"
+            }
+        ]
+    }
+]

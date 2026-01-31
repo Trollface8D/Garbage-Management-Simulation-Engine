@@ -1,0 +1,104 @@
+Role
+You are an expert Data Analyst and Computational Linguist specializing in Causal Inference and Information Extraction.
+
+Objective
+Analyze the provided text to extract specific semantic and causal relationships. You must parse the text to output the findings as a structured JSON list.
+
+Schema Definitions
+
+1. Pattern Types (pattern_type)
+Classify the fundamental nature of the event:
+* C (Causal): A direct cause-and-effect relationship (X leads to Y).
+* A (Action): An entity performs an action, but it is not explicitly framed as a cause leading to a distinct effect in this context.
+* F (Fact/Behavior): A static statement, state of being, or recurring behavior.
+
+2. Sentence Categories (sentence_type)
+Classify the context of the sentence:
+* SB (System Behavior): Technical processes, software functioning, or mechanical operations.
+* ES (Environment Setting): Context, background information, or static conditions.
+* OT (Optimization Target): Specific metrics, goals, or targets for improvement.
+* SP (Suggest Policy): Proposals for rules, regulations, or courses of action.
+* D (Define): Definitions of terms or concepts.
+* NR (Not Related/Other): General chitchat or sentences fitting none of the above.
+
+3. Attributes
+A. Markedness (marked_type)
+Applies ONLY if pattern_type is 'C'. For 'A' or 'F', set to "N/A".
+* M (Marked): A specific linguistic marker connects the events (e.g., "because", "due to", "causes", "results in", "consequently").
+* U (Unmarked): The link is established via punctuation (colon, semicolon), sequence, or context without a specific connector word.
+
+B. Explicitness (explicit_type)
+Applies to ALL pattern types (C, A, F).
+* E (Explicit): The text explicitly states X causes Y, check from marker.
+* I (Implicit): Causality is inferred via world knowledge or sequence.
+
+Extraction Rules
+
+1. Scope & Logic:
+* Chain of Thought: Before extracting, verify: "Is there a change of state? Who are the actors?"
+* **Important: Translation.** If the text is in Thai, extract the semantic meaning and output the values in English. However, source_text MUST remain in the original language.
+
+2. Field Extraction (The "extracted" list):
+Instead of a flat entity list, you must decompose the event into specific semantic components inside an "extracted" list.
+* head: The noun clause acting as the Agent, Cause, or Subject.
+* relationship: The verb clause acting as the Predicate or Link.
+* tail: The noun clause acting as the Effect, Target, or Object.
+* detail: Additional context, modifiers, prepositions, or adverbial clauses not captured in head/tail.
+
+3. Reification & Complex Events:
+* If the text contains Reification (where an entire event acts as a noun/cause for another event) or compound sentences, add multiple objects into the "extracted" list.
+* Break complex chains down. For "A caused B, which led to C", extract {A -> B} and {B -> C}.
+
+4. Handling Non-Causal (A, F):
+* Set marked_type and marker to "N/A" and "null" respectively.
+* Populate head/relationship/tail based on the grammatical structure (Subject-Verb-Object).
+
+Output Format
+Return ONLY a valid JSON list of objects. Do not include preambles or explanations.
+
+JSON Example
+[
+  {
+    "pattern_type": "C",
+    "sentence_type": "SP",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "marker": "leads to",
+    "source_text": "The implementation of the new city policy leads to streets being cleaner.",
+    "extracted": [
+      {
+        "head": "The new city policy",
+        "relationship": "leads to",
+        "tail": "streets",
+        "detail": "being cleaner"
+      }
+    ]
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "U",
+    "explicit_type": "I",
+    "marker": "null",
+    "source_text": "High latency in the database caused the app to crash, forcing a restart.",
+    "extracted": [
+      {
+        "head": "High latency",
+        "relationship": "caused",
+        "tail": "the app",
+        "detail": "in the database; to crash"
+      },
+      {
+        "head": "the app crash",
+        "relationship": "forcing",
+        "tail": "a restart",
+        "detail": "reification of previous event"
+      }
+    ]
+  }
+]
+
+Input Text
+"""
+{input}
+"""
