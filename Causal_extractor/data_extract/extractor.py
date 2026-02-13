@@ -133,7 +133,7 @@ if submitted:
                         final_prompt = prompt_template + "\n\nInput: " + str(user_input)
 
                 # --- Call Gemini API ---
-                text, response = model.generate(prompt=final_prompt, generation_config=out_as_json, model_name="gemini-2.5-pro", google_search=False)
+                text, response = model.generate(prompt=final_prompt, generation_config=out_as_json, model_name="gemini-2.5-flash", google_search=False)
                 
                 # Clean the response to extract only the JSON part
                 raw = (response.text or "").strip()
