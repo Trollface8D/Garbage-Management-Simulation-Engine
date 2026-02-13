@@ -1,0 +1,134 @@
+[
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "University/Staff -> Collects general waste and sends to BMA",
+        "marker": "null",
+        "subject": "The University, Staff",
+        "object": "General waste",
+        "source_text": "General waste is collected and sent to the Bangkok Metropolitan Administration (BMA) for disposal."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Selling recyclable waste -> Revenue returned to departments or central fund",
+        "marker": "with",
+        "subject": "Selling recyclable waste",
+        "object": "Revenue returned to the respective departments or the central fund",
+        "source_text": "Recyclable waste is separated and sold to a contracted antique shop, with the revenue returned to the respective departments or the central fund."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Cleaned plastics and single-use items sent to N15 -> Used as refuse-derived fuel",
+        "marker": "to be used as",
+        "subject": "Cleaned plastics and single-use items sent to N15",
+        "object": "Refuse-derived fuel",
+        "source_text": "Specialized waste streams are handled separately: cleaned plastics and single-use items are sent to N15 to be used as refuse-derived fuel"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Electronic waste is repairable -> Donated to the Mirror Foundation",
+        "marker": "if",
+        "subject": "Electronic waste is repairable",
+        "object": "Donated to the Mirror Foundation",
+        "source_text": "Electronic waste is either donated to the Mirror Foundation if repairable or disposed of via standardized methods if it is hazardous."
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Housekeepers -> Collect, weigh, record, and move waste",
+        "marker": "null",
+        "subject": "Housekeepers",
+        "object": "Waste",
+        "source_text": "Housekeepers collect waste from inside buildings, are supposed to weigh and record it, and then move it to external collection points or cages."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Scheduling specific pickups -> Avoid cluttering regular collection points",
+        "marker": "to",
+        "subject": "Scheduling specific pickups",
+        "object": "Avoid cluttering the regular collection points",
+        "source_text": "Large items, such as furniture or construction debris, are not collected daily; departments must schedule specific pickups for these materials to avoid cluttering the regular collection points."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Timing mismatches between housekeepers and collection trucks -> Major logistical issue",
+        "marker": "arises from",
+        "subject": "Timing mismatches between housekeepers and collection trucks",
+        "object": "Major logistical issue",
+        "source_text": "A major logistical issue arises from timing mismatches between housekeepers and collection trucks."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Trucks finishing early and housekeepers dumping late -> Waste left uncollected and overflowing",
+        "marker": "causing",
+        "subject": "Collection trucks finishing rounds around 3:00–4:00 PM, Housekeepers dumping waste at 5:00 PM",
+        "object": "Waste to be left uncollected and overflowing until the next morning",
+        "source_text": "Collection trucks often complete their rounds around 3:00–4:00 PM, but housekeepers finish their shifts and dump the final load of waste at 5:00 PM, causing waste to be left uncollected and overflowing until the next morning."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Rough handling during collection -> Cages damaged",
+        "marker": "by",
+        "subject": "Rough handling during collection",
+        "object": "Cages damaged",
+        "source_text": "and they are frequently damaged by rough handling during collection."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Convenience or lack of discipline -> Mixing waste",
+        "marker": "out of",
+        "subject": "Convenience, Lack of discipline",
+        "object": "Students and staff mix waste",
+        "source_text": "Despite having separate bins and general knowledge about recycling, students and staff often mix waste out of convenience or lack of discipline."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Housekeepers guess or fabricate numbers -> Data accuracy is unreliable",
+        "marker": "because",
+        "subject": "Housekeepers guess or fabricate numbers",
+        "object": "Data accuracy regarding waste weight is unreliable",
+        "source_text": "Furthermore, data accuracy regarding waste weight is unreliable because housekeepers often guess or fabricate numbers rather than weighing the trash properly."
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Developing tools or systems -> Weighing and data recording process easier and more accurate",
+        "marker": "to",
+        "subject": "Developing tools or systems",
+        "object": "Weighing and data recording process easier and more accurate",
+        "source_text": "The interviewee suggests that the student’s project could focus on developing tools or systems to make the weighing and data recording process easier and more accurate for the staff."
+    }
+]

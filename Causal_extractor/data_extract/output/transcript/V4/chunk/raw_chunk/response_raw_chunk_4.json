@@ -1,0 +1,112 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Prevention of waste transfer errors -> Decreases overflowing trash",
+        "marker": "ทำให้",
+        "subject": "Prevention of waste transfer errors",
+        "object": "Overflowing trash",
+        "source_text": "ถ้าเราทำให้การส่งต่อ มันไม่เกิดการพลาดกันได้ เนี่ย ไอ้เรื่องของการที่เห็นขยะ แบบ... ล้น ... มันก็จะน้อยลง"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Maids -> Bring trash down only once at 5 PM (end of shift)",
+        "marker": "null",
+        "subject": "Maids",
+        "object": "Trash disposal at 5 PM",
+        "source_text": "แม่บ้าน เลิกงานกี่โมง 5 โมง เขาจะถือขยะลงมาทิ้ง ตอน 5 โมง คือ คือรวบรวมเสร็จแล้ว เก็บลงมา ทิ้ง แล้วเขาก็ไปติ๊ดบัตร ออก กลับ ... เขาจะไม่ลงมาหลายรอบ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Maids disposing trash at 5 PM vs Trucks collecting at 4 PM -> Collection discrepancy/Missed collection",
+        "marker": "ทำให้",
+        "subject": "Mismatch between maid disposal time (5 PM) and truck collection time (4 PM)",
+        "object": "Collection discrepancy",
+        "source_text": "ซึ่งอันเนี้ยแหละ คือ ทำให้คาด... คลาดเคลื่อนได้ อะไรเงี้ย ... เพราะเก็บตอนเก็บมา 4 โมง"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Maids prioritizing convenience -> Missed collection rounds",
+        "marker": "ทำให้",
+        "subject": "Maids prioritizing convenience",
+        "object": "Missed collection rounds",
+        "source_text": "แต่ว่าด้วยความสะดวก ... มันก็ทำให้รอบการเก็บ มันพลาดกัน ทำให้เกิดปัญหา"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Staff working late/Eating late -> Trash accumulation overnight",
+        "marker": "null",
+        "subject": "Staff working late",
+        "object": "Trash accumulation overnight",
+        "source_text": "พี่ทำงานเนี่ย เลิกดึก 4-5 ทุ่ม เที่ยงคืน ตี 2 บางทีมันมีขยะที่เรากินข้าว มาทิ้งเนี่ย เราก็จะขนลงมาทิ้งเอง ... มันก็อาจมีขยะตกค้าง ในช่วงของ ข้ามวัน"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Student activities (hazing) late at night -> Massive trash generation",
+        "marker": "ก็จะเกิด",
+        "subject": "Student activities (hazing) late at night",
+        "object": "Massive trash generation",
+        "source_text": "น้องๆ มีจัดกิจกรรม รับน้อง รับน้อง กัน ก็จะเกิดขยะ มหาศาล ... เที่ยงคืน ตี 2 ... มันก็มีขยะพวกเนี้ย เกิดขึ้น"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Collector schedule (5 PM finish) and overtime costs -> Collection rounds restricted to 3-4 PM",
+        "marker": "null",
+        "subject": "Collector schedule and overtime costs",
+        "object": "Collection rounds restricted to 3-4 PM",
+        "source_text": "พนักงานเก็บขยะ เขาก็เลิก 5 โมง เหมือนกันไง ... เขาจะมาขับรถเก็บตอนรอบ 5 โมง อีกรอบเหรอ ... ซึ่งเขาต้องเสียเงินเพิ่ม ... เขาต้องเคลียร์ก่อน 3 โมง 4 โมง อะ ถึงรอบเก็บ"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SP",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Management -> Trains and requests cooperation from maids",
+        "marker": "null",
+        "subject": "Management",
+        "object": "Maids (Training/Cooperation)",
+        "source_text": "เราก็ มีการอบรม แม่บ้าน ตลอด อบรมแม่บ้าน งานสวน อะไรเงี้ย ตลอด ก็ชี้แจง เราบังคับไม่ได้ แต่เราขอความร่วมมือเขา"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Keeping food waste indoors overnight -> Pest issues and hygiene problems",
+        "marker": "null",
+        "subject": "Keeping food waste indoors overnight",
+        "object": "Pest issues (ants) and hygiene problems",
+        "source_text": "กินข้าวบูด 5 คน กินข้าวบูด คืนเนี่ย แล้วกลับไป ซึ่งในห้องนี้มี เอ่อ พวกขยะพวกเนี้ย อยู่ในออฟฟิศ หนู มด อ่า พวกเนี้ย ซึ่งต่อเนื่องมาอีก จัดการยากกว่าเดิมอีก"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Users' lack of discipline -> Ineffectiveness of laws/rules",
+        "marker": "เลยทำให้",
+        "subject": "Users' lack of discipline",
+        "object": "Ineffectiveness of laws/rules",
+        "source_text": "มีกฎหมายที่ ดีนะ แต่คนใช้กฎหมาย มันไม่ดียะ ... มันเลยทำให้ คนที่มันอยู่ข้างล่าง ... กูไม่จำเป็นต้องทำไง"
+    }
+]

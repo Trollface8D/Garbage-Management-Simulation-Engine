@@ -1,0 +1,94 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เพราะว่า",
+        "source_text": "โดยปัญหาที่ขยะล้นจุดพักขยะเนี่ย จะเป็นช่วงตอนเช้าเลย เพราะว่าแม่บ้านเนี่ยจะเก็บขยะรอบเช้าเนี่ย มาอัด",
+        "extracted": [
+            {
+                "head": "Housekeepers collecting and compressing morning trash",
+                "relationship": "causes",
+                "tail": "trash overflow at collection points",
+                "detail": "particularly in the morning"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ซึ่งก็จะ",
+        "source_text": "อย่างสมมติ รถรอบเนี่ยมาเก็บตอน 3 โมง แม่บ้านที่อยู่ในอาคารเอามาทิ้งตอน 4 โมง ซึ่งก็จะมีขยะล้น ขยะเหลืออยู่ในนั้น ก็คือขยะตกค้าง",
+        "extracted": [
+            {
+                "head": "Housekeepers disposing trash at 4 PM after collection time",
+                "relationship": "results in",
+                "tail": "trash overflow",
+                "detail": "context: truck collects at 3 PM"
+            },
+            {
+                "head": "Housekeepers disposing trash at 4 PM after collection time",
+                "relationship": "results in",
+                "tail": "residual waste",
+                "detail": "context: truck collects at 3 PM"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "สรุป...ก็",
+        "source_text": "ตอนเช้าเก็บไปแล้ว ภาคเช้าเนี่ย ที่แม่บ้านมาเก็บขยะอีก ก็เอามาลงอีก สรุปขยะมันก็จะถูกอัด อัดๆๆ มาจนล้นตลอด",
+        "extracted": [
+            {
+                "head": "Adding more trash in the morning round",
+                "relationship": "results in",
+                "tail": "constant trash overflow",
+                "detail": "trash gets compressed and piles up on top of residual waste"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "marker": "ถูกฟ้อง (passive voice implying cause)",
+        "source_text": "ก็จะถูกฟ้องอะไรเงี้ย ก็คือจากบุคลากรบ้าง จากนักศึกษาบ้าง ว่าขยะแต่ละจุดเนี่ยมันล้น",
+        "extracted": [
+            {
+                "head": "Trash overflow at various points",
+                "relationship": "leads to",
+                "tail": "complaints from staff",
+                "detail": "null"
+            },
+            {
+                "head": "Trash overflow at various points",
+                "relationship": "leads to",
+                "tail": "complaints from students",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SP",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "แต่ มันก็มีทางที่เขาเป็นคณะทำงานในเรื่องเนี้ย เขาก็จะตักเตือนอะไรเงี้ย ให้รีบจัดการ ให้มันล้นจนเกินไป",
+        "extracted": [
+            {
+                "head": "The working committee",
+                "relationship": "warns to",
+                "tail": "manage waste quickly",
+                "detail": "to prevent excessive overflow"
+            }
+        ]
+    }
+]

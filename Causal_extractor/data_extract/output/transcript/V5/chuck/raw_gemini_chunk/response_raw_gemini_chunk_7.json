@@ -1,0 +1,93 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "High density of surrounding facilities (market, school, hotel) leads to waste overflow.",
+        "marker": "เพราะว่า",
+        "entities": [
+            "High density of surrounding facilities (market, school, hotel)",
+            "Waste overflow"
+        ],
+        "source_text": "เพราะว่า ตอนเดินมา เดินผ่าน (สวน) ล้นๆ ทุกวันเลย มันจะไม่ล้นได้ไงอะ มีทั้ง ตลาด โรงเรียน ตึก 14 ชั้น ที่เป็นโรงแรม มันจะไม่ล้นได้ไงอะ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "Small size of the waste cage leads to it not meeting needs and being difficult for cleaners.",
+        "marker": "null",
+        "entities": [
+            "Small size of waste cage",
+            "Difficulty for cleaners / Not meeting needs"
+        ],
+        "source_text": "แต่มันก็ ยังไม่ได้ ตอบโจทย์ หรือมันก็ ไม่ง่าย ต่อแม่บ้าน เอง เหมือนกัน อืม ซึ่งมันก็ เล็กเกินไป"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "Garbage collectors using excessive force (feet) leads to damaged waste bins.",
+        "marker": "null",
+        "entities": [
+            "Garbage collectors using excessive force",
+            "Damaged waste bins"
+        ],
+        "source_text": "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย โซฟาเปิดอยู่ ตึง ตึง แตกหมด ไปดูดิ มือถือถุงอยู่งะ ตีนตบ โป๊ะ เนี่ย พังหมด"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Limited budget leads to the current constrained design of the waste cage.",
+        "marker": "มันก็เลย",
+        "entities": [
+            "Limited budget",
+            "Current constrained design of waste cage"
+        ],
+        "source_text": "งบมัน จำกัด ด้วยแหละ อืม ใช่ เพราะ อย่างของพี่ ทำเนี่ย พี่ทำของ ถังขยะเนี่ย ที่เป็นกรงเนี่ย... มันก็เลย ออกมาเป็น แบบเนี้ย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "Renting reusable containers leads to significant reduction in waste weight.",
+        "marker": "null",
+        "entities": [
+            "Renting reusable containers",
+            "Significant reduction in waste weight"
+        ],
+        "source_text": "เขา ก็ มีการ ไปเช่า พวก อุปกรณ์ อ่า พวกแก้วน้ำ พวกชาม พวกจาน มา ลดขยะ ได้ อย่าง เยอะ เลย หายไป เป็น 100 โล ได้เลย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "relationship": "Convenience (proximity) leads to disposal without separation.",
+        "marker": "ก็",
+        "entities": [
+            "Convenience (proximity)",
+            "Disposal without separation"
+        ],
+        "source_text": "ใกล้มือ มั้ง บางที เดินมา ใกล้มือ กู ก็ทิ้ง นี่แหละ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "NR",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "relationship": "Systemic mental failure leads to inability to separate waste.",
+        "marker": "ถึง",
+        "entities": [
+            "Systemic mental failure",
+            "Inability to separate waste"
+        ],
+        "source_text": "กู ไม่เข้าใจ ว่า ตอน ทิ้ง ระบบ สมอง มัน ไม่ทำงาน เหรอวะ ถึง แยก ไม่ได้"
+    }
+]

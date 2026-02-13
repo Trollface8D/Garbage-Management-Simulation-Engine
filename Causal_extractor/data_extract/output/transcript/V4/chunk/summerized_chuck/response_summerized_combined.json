@@ -1,0 +1,233 @@
+[
+  {
+    "pattern_type": "A",
+    "sentence_type": "ES",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "The university -> Implements specific disposal protocols",
+    "marker": "null",
+    "subject": "The university",
+    "object": "Specific disposal protocols",
+    "source_text": "The university implements specific disposal protocols for different types of waste."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "General waste sent to BMA -> Disposal",
+    "marker": "for",
+    "subject": "General waste is collected and sent to the Bangkok Metropolitan Administration (BMA)",
+    "object": "Disposal",
+    "source_text": "General waste is collected and sent to the Bangkok Metropolitan Administration (BMA) for disposal."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Recyclable waste sold to antique shop -> Revenue returned to departments or central fund",
+    "marker": "with",
+    "subject": "Recyclable waste is separated and sold to a contracted antique shop",
+    "object": "Revenue returned to the respective departments or the central fund",
+    "source_text": "Recyclable waste is separated and sold to a contracted antique shop, with the revenue returned to the respective departments or the central fund."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Cleaned plastics and single-use items sent to N15 -> Used as refuse-derived fuel",
+    "marker": "to be used as",
+    "subject": "Cleaned plastics and single-use items sent to N15",
+    "object": "Refuse-derived fuel",
+    "source_text": "cleaned plastics and single-use items are sent to N15 to be used as refuse-derived fuel"
+  },
+  {
+    "pattern_type": "A",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Hazardous and infectious waste -> Sent to certified disposal companies",
+    "marker": "null",
+    "subject": "Hazardous and infectious waste (Red Bin)",
+    "object": "Certified disposal companies",
+    "source_text": "while hazardous and infectious waste (Red Bin) is sent to certified disposal companies."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Electronic waste is repairable -> Donated to the Mirror Foundation",
+    "marker": "if",
+    "subject": "Electronic waste is repairable",
+    "object": "Donated to the Mirror Foundation",
+    "source_text": "Electronic waste is either donated to the Mirror Foundation if repairable"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Electronic waste is hazardous -> Disposed of via standardized methods",
+    "marker": "if",
+    "subject": "Electronic waste is hazardous",
+    "object": "Disposed of via standardized methods",
+    "source_text": "or disposed of via standardized methods if it is hazardous."
+  },
+  {
+    "pattern_type": "F",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "The collection process -> Consists of internal and external rounds",
+    "marker": "null",
+    "subject": "The collection process",
+    "object": "Internal and external rounds",
+    "source_text": "The collection process consists of internal and external rounds."
+  },
+  {
+    "pattern_type": "A",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Housekeepers -> Collect, weigh, record, and move waste to external points",
+    "marker": "null",
+    "subject": "Housekeepers",
+    "object": "Waste",
+    "source_text": "Housekeepers collect waste from inside buildings, are supposed to weigh and record it, and then move it to external collection points or \"cages\"."
+  },
+  {
+    "pattern_type": "A",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Central team -> Collects waste from points and transports to sorting plant",
+    "marker": "null",
+    "subject": "A central team",
+    "object": "Waste",
+    "source_text": "A central team then drives around the campus to collect waste from these points and transport it to the central sorting plant."
+  },
+  {
+    "pattern_type": "F",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Large items (furniture, debris) -> Not collected daily",
+    "marker": "null",
+    "subject": "Large items",
+    "object": "Daily collection schedule",
+    "source_text": "Large items, such as furniture or construction debris, are not collected daily"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SP",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Departments schedule specific pickups -> Avoid cluttering regular collection points",
+    "marker": "to avoid",
+    "subject": "Departments",
+    "object": "Regular collection points",
+    "source_text": "departments must schedule specific pickups for these materials to avoid cluttering the regular collection points."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Timing mismatches between housekeepers and collection trucks -> Major logistical issue",
+    "marker": "arises from",
+    "subject": "Timing mismatches between housekeepers and collection trucks",
+    "object": "A major logistical issue",
+    "source_text": "Operational Challenges and Timing Conflicts A major logistical issue arises from timing mismatches between housekeepers and collection trucks."
+  },
+  {
+    "pattern_type": "F",
+    "sentence_type": "SB",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Collection trucks -> Finish rounds at 3:00–4:00 PM; Housekeepers -> Finish shifts at 5:00 PM",
+    "marker": "null",
+    "subject": "Collection trucks, Housekeepers",
+    "object": "Rounds, Shifts",
+    "source_text": "Collection trucks often complete their rounds around 3:00–4:00 PM, but housekeepers finish their shifts and dump the final load of waste at 5:00 PM"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Timing discrepancy (Trucks finish before Housekeepers) -> Waste left uncollected and overflowing",
+    "marker": "causing",
+    "subject": "Collection trucks finishing earlier than housekeepers",
+    "object": "Waste left uncollected and overflowing",
+    "source_text": "Collection trucks often complete their rounds around 3:00–4:00 PM, but housekeepers finish their shifts and dump the final load of waste at 5:00 PM, causing waste to be left uncollected and overflowing until the next morning."
+  },
+  {
+    "pattern_type": "F",
+    "sentence_type": "ES",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Waste cages -> Too small for waste volume",
+    "marker": "null",
+    "subject": "Waste cages",
+    "object": "Actual volume of waste generated by markets and dormitories",
+    "source_text": "the waste cages are often too small for the actual volume of waste generated by markets and dormitories"
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Rough handling during collection -> Waste cages damaged",
+    "marker": "by",
+    "subject": "Rough handling during collection",
+    "object": "Waste cages",
+    "source_text": "and they are frequently damaged by rough handling during collection."
+  },
+  {
+    "pattern_type": "F",
+    "sentence_type": "ES",
+    "marked_type": "N/A",
+    "explicit_type": "E",
+    "relationship": "Human behavior -> Most difficult factor to control",
+    "marker": "null",
+    "subject": "Human behavior",
+    "object": "Control factor",
+    "source_text": "The interviewee emphasizes that human behavior is the most difficult factor to control."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "ES",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Convenience, lack of discipline -> Students and staff mix waste",
+    "marker": "out of",
+    "subject": "Convenience, lack of discipline",
+    "object": "Waste separation",
+    "source_text": "Despite having separate bins and general knowledge about recycling, students and staff often mix waste out of convenience or lack of discipline."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Housekeepers guess or fabricate numbers -> Data accuracy is unreliable",
+    "marker": "because",
+    "subject": "Housekeepers guessing or fabricating numbers",
+    "object": "Data accuracy regarding waste weight",
+    "source_text": "Furthermore, data accuracy regarding waste weight is unreliable because housekeepers often guess or fabricate numbers rather than weighing the trash properly."
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SP",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "relationship": "Developing tools or systems -> Weighing and recording process becomes easier and more accurate",
+    "marker": "to make",
+    "subject": "Developing tools or systems",
+    "object": "Weighing and data recording process",
+    "source_text": "The interviewee suggests that the student's project could focus on developing tools or systems to make the weighing and data recording process easier and more accurate for the staff."
+  }
+]

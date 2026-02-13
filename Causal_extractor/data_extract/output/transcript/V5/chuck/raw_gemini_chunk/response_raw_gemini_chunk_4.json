@@ -1,0 +1,106 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Presence of large construction waste leads to scheduling specific pickup rounds",
+        "marker": "สมมติถ้า...ก็",
+        "entities": [
+            "Large construction waste",
+            "Scheduling specific pickup rounds"
+        ],
+        "source_text": "สมมติถ้ามีขยะเศษวัสดุ ที่เป็นชิ้นใหญ่ อะไรอย่างเงี้ย เราก็จะนับวัน เพื่อมาเก็บเป็นแต่ละรอบๆ ไป"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Students are the cause of disorganized waste piling",
+        "marker": "null",
+        "entities": [
+            "Students",
+            "Disorganized waste piling"
+        ],
+        "source_text": "แต่ถ้ามากอง อีเขเกขะ (เกะกะ) ขาดเลย นักศึกษาล้วนๆ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Unaffiliated personnel (students) leads to hard-to-control waste factors",
+        "marker": "เกิดจาก",
+        "entities": [
+            "Unaffiliated personnel (Students)",
+            "Hard-to-control waste factors"
+        ],
+        "source_text": "ส่วนที่เกิดปัญหาส่วนใหญ่ ก็จะเป็นปัจจัยที่ควบคุมได้ยาก... แล้วก็ ส่วนใหญ่ปัจจัยก็จะเกิดจากบุคลากรที่ไม่ได้มีสังกัดชัดเจน เช่น นักศึกษา"
+    },
+    {
+        "pattern_type": "SB",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "relationship": "Disposal of large durable goods (e.g., sofa) requires coordination with central management",
+        "marker": "null",
+        "entities": [
+            "Disposal of large durable goods",
+            "Coordination with central management"
+        ],
+        "source_text": "สมมติ วันเนี้ยเขาจะทิ้งโซฟา... เขาก็จะนัด พี่คนเนี้ยก็จะติดต่อไปทางพี่มอส เพื่อจะนัดวัน เพื่อจะเข้ามารับ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Large volume of recyclables leads to inability to pick up immediately (requires special appointment)",
+        "marker": "ถ้า...ก็",
+        "entities": [
+            "Large volume of recyclables",
+            "Special pickup appointment"
+        ],
+        "source_text": "ถ้ามีปริมาณที่เยอะ อย่างเช่น ขยะรีไซเคิลที่หน่วยงาน... เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน นอกเหนือจากวันพฤหัสบดี"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "University events (e.g., Sports Day) lead to accumulation of large waste (wood/plywood)",
+        "marker": "สมมุติถ้า...ก็จะมี",
+        "entities": [
+            "University events (e.g., Sports Day)",
+            "Accumulation of large waste (wood/plywood)"
+        ],
+        "source_text": "สมมุติถ้ามีพวกงานกีฬา หรืองานอะไรเงี้ย ก็จะมีพวกไม้ ไม้อัด ไม้อัด ใช่ไหม ที่น้องๆ ชอบเอามากองไว้"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Useless construction waste leads to transport to external landfill",
+        "marker": "ถ้า...ก็",
+        "entities": [
+            "Useless construction waste",
+            "Transport to external landfill"
+        ],
+        "source_text": "ขยะที่เป็นพวกเศษวัสดุ เนี่ย ถ้ามันไม่ได้... เอาไปใช้ประโยชน์อะไรไม่ได้แล้วเนี่ย เขาก็จะขี่ เอารถที่ขนขยะเนี่ย ขนเอาไปทิ้งด้านนอก"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Piling waste in front of the building leads to blocking the walkway",
+        "marker": "เพราะ",
+        "entities": [
+            "Piling waste in front of the building",
+            "Blocking the walkway"
+        ],
+        "source_text": "เขาคงไม่เอามากองไว้ข้างหน้า เพราะ มันก็ขวางทางคนหลบ (เดิน)"
+    }
+]

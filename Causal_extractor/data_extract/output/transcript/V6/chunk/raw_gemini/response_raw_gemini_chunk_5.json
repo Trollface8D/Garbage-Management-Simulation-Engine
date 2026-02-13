@@ -1,0 +1,198 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ทำให้ (makes/causes)",
+        "source_text": "ถ้าเราทำให้การส่งต่อ มันไม่เกิดการพลาดกันได้ เนี่ย ไอ้เรื่องของการที่เห็นขยะ แบบ... ล้น... มันก็จะน้อยลง",
+        "extracted": [
+            {
+                "head": "preventing errors in waste transfer",
+                "relationship": "leads to",
+                "tail": "reduction of overflowing waste",
+                "detail": "hypothetical condition"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "โดยแม่บ้านเองเนี่ย มันมีรอบวันเก็บ อ่า มีรอบ อ่า ช่วงอา 3 โมง 4 โมง",
+        "extracted": [
+            {
+                "head": "waste collection rounds",
+                "relationship": "occur at",
+                "tail": "3:00 PM to 4:00 PM",
+                "detail": "standard schedule"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "แต่แม่บ้าน เลิกงานกี่โมง 5 โมง เขาจะถือขยะลงมาทิ้ง ตอน 5 โมง",
+        "extracted": [
+            {
+                "head": "maids",
+                "relationship": "bring down",
+                "tail": "trash",
+                "detail": "at 5:00 PM (end of shift)"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ทำให้ (makes/causes)",
+        "source_text": "ซึ่งอันเนี้ยแหละ คือ ทำให้คาด... คลาดเคลื่อนได้... เพราะเก็บตอนเก็บมา 4 โมง",
+        "extracted": [
+            {
+                "head": "maids bringing trash at 5 PM",
+                "relationship": "causes",
+                "tail": "discrepancy in collection",
+                "detail": "because collection finishes at 4 PM"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ทำให้ (makes/causes)",
+        "source_text": "แต่มันก็ทำให้รอบการเก็บ มันพลาดกัน ทำให้เกิดปัญหา... มันก็เป็นขยะที่ตกค้าง",
+        "extracted": [
+            {
+                "head": "missing the collection round",
+                "relationship": "causes",
+                "tail": "operational problems",
+                "detail": "null"
+            },
+            {
+                "head": "missing the collection round",
+                "relationship": "results in",
+                "tail": "waste residue overnight",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ตกค้างเย็นนี้ พรุ่งนี้เช้า อ่า พวกคณะทำงาน หรือประธานมาเห็นเนี่ย เขาก็จะบอกละ เอ๊ะ ทำไมจุดนี้ขยะเยอะจัง",
+        "extracted": [
+            {
+                "head": "waste residue overnight",
+                "relationship": "leads to",
+                "tail": "complaints from the committee",
+                "detail": "null"
+            },
+            {
+                "head": "waste residue overnight",
+                "relationship": "leads to",
+                "tail": "complaints from the president",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "น้องๆ มีจัดกิจกรรม รับน้อง... ก็จะเกิดขยะ มหาศาล... เที่ยงคืน ตี 2 มึงยังไม่เลิกกันเลย มันก็มีขยะพวกเนี้ย เกิดขึ้น",
+        "extracted": [
+            {
+                "head": "student activities",
+                "relationship": "generate",
+                "tail": "massive amounts of waste",
+                "detail": "freshmen reception"
+            },
+            {
+                "head": "late night activities",
+                "relationship": "result in",
+                "tail": "waste accumulation at night",
+                "detail": "midnight to 2 AM"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "เขาจะมาขับรถเก็บตอนรอบ 5 โมง อีกรอบเหรอ... ซึ่งเขาต้องเสียเงินเพิ่ม",
+        "extracted": [
+            {
+                "head": "driving an additional collection round at 5 PM",
+                "relationship": "requires",
+                "tail": "paying extra money",
+                "detail": "overtime costs"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "กินข้าวบูด... อยู่ในออฟฟิศ หนู มด อ่า พวกเนี้ย ซึ่งต่อเนื่องมาอีก จัดการยากกว่าเดิมอีก",
+        "extracted": [
+            {
+                "head": "keeping food waste in the office",
+                "relationship": "attracts",
+                "tail": "rats",
+                "detail": "null"
+            },
+            {
+                "head": "keeping food waste in the office",
+                "relationship": "attracts",
+                "tail": "ants",
+                "detail": "null"
+            },
+            {
+                "head": "presence of pests",
+                "relationship": "makes",
+                "tail": "waste management more difficult",
+                "detail": "null"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ทำให้ (makes/causes)",
+        "source_text": "สุดท้ายเนี่ย ก็จะมีพวกแบบเนี้ย มา ทำให้แบบ เกิดเหตุ อะ ถ่ายเคมี 6 รั่วไหล 6 รดตัวเองบ้าง",
+        "extracted": [
+            {
+                "head": "ignoring lab regulations",
+                "relationship": "causes",
+                "tail": "chemical spills",
+                "detail": "analogy used by interviewee"
+            },
+            {
+                "head": "ignoring lab regulations",
+                "relationship": "causes",
+                "tail": "personal injury",
+                "detail": "spilling chemicals on oneself"
+            }
+        ]
+    }
+]

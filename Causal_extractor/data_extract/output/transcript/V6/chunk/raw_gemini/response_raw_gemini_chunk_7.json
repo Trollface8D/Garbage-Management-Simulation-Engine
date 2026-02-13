@@ -1,0 +1,180 @@
+[
+    {
+        "pattern_type": "OT",
+        "sentence_type": "SP",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "พี่ก็จะเปลี่ยน พี่อยากจะเปลี่ยน ใหม่ ให้มันมีขนาดที่ ใหญ่กว่าเนี้ย แล้วก็มีหลังคง หลังคา ปิด กันฝ่ง กันฝน ให้มันดูเป็น เหมือนกิจจะลักษณะ กว่าเนี้ย",
+        "extracted": [
+            {
+                "head": "The interviewer",
+                "relationship": "wants to redesign",
+                "tail": "the waste cage",
+                "detail": "to be larger and have a roof"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "มันจะไม่...ได้ไง (how could it not)",
+        "source_text": "มีทั้ง ตลาด โรงเรียน ตึก 14 ชั้น ที่เป็นโรงแรม มันจะไม่ล้นได้ไงอะ... รวมทิ้ง อยู่ตรงนั้นน่ะ มันก็ บาน",
+        "extracted": [
+            {
+                "head": "The market",
+                "relationship": "contributes to",
+                "tail": "waste overflow",
+                "detail": "at the Red Building area"
+            },
+            {
+                "head": "The school",
+                "relationship": "contributes to",
+                "tail": "waste overflow",
+                "detail": "at the Red Building area"
+            },
+            {
+                "head": "The 14-story hotel building",
+                "relationship": "contributes to",
+                "tail": "waste overflow",
+                "detail": "at the Red Building area"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "แต่มันก็ ยังไม่ได้ ตอบโจทย์ หรือมันก็ ไม่ง่าย ต่อแม่บ้าน เอง เหมือนกัน อืม ซึ่งมันก็ เล็กเกินไป",
+        "extracted": [
+            {
+                "head": "The compact design of the cage",
+                "relationship": "causes",
+                "tail": "difficulty for the cleaners",
+                "detail": "because it is too small"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "เลย (so/therefore)",
+        "source_text": "งบมัน จำกัด ด้วยแหละ อืม ใช่... ซึ่งมันมี งบจำกัด ไง มันก็เลย ออกมาเป็น แบบเนี้ย",
+        "extracted": [
+            {
+                "head": "Limited budget",
+                "relationship": "resulted in",
+                "tail": "the current waste cage design",
+                "detail": "which is problematic"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ทำให้ (makes/causes)",
+        "source_text": "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย... พังหมด",
+        "extracted": [
+            {
+                "head": "Garbage collectors using rough handling",
+                "relationship": "causes",
+                "tail": "equipment damage",
+                "detail": "using feet to hit bins"
+            }
+        ]
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SP",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "เวลา มีกิจกรรม ต่างๆ ก็จะมีพวก น้องๆ เนี่ย มายืน แยกขยะ ช่วยแยกขยะ",
+        "extracted": [
+            {
+                "head": "Student volunteers",
+                "relationship": "stand to help",
+                "tail": "separate waste",
+                "detail": "during events"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "บางคน มา ขนาด มีคนยืนบอก มันยัง ทิ้ง ลงไปเลย เออ ไม่สนใจอะ",
+        "extracted": [
+            {
+                "head": "Some people",
+                "relationship": "ignore",
+                "tail": "waste separation instructions",
+                "detail": "even when volunteers are present"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "marker": "ลด...ได้ (can reduce)",
+        "source_text": "เขา ก็ มีการ ไปเช่า พวก อุปกรณ์ อ่า พวกแก้วน้ำ พวกชาม พวกจาน มา ลดขยะ ได้ อย่าง เยอะ เลย หายไป เป็น 100 โล ได้เลย",
+        "extracted": [
+            {
+                "head": "Renting reusable equipment",
+                "relationship": "reduces",
+                "tail": "waste quantity",
+                "detail": "by approximately 100 kg"
+            }
+        ]
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "marker": "null",
+        "source_text": "ใกล้มือ มั้ง บางที เดินมา ใกล้มือ กู ก็ทิ้ง นี่แหละ",
+        "extracted": [
+            {
+                "head": "Convenience",
+                "relationship": "causes",
+                "tail": "indiscriminate dumping",
+                "detail": "throwing waste because it is near hand"
+            }
+        ]
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "marker": "null",
+        "source_text": "ทุกคน ใน ม. เนี่ย แยกขยะ ได้ พื้นฐาน เนี่ย แยกได้ อยู่แล้ว แต่ เวลา ทิ้ง มึง ถึง แยก ไม่ได้",
+        "extracted": [
+            {
+                "head": "Everyone in the university",
+                "relationship": "knows how to",
+                "tail": "separate waste",
+                "detail": "fundamentally"
+            },
+            {
+                "head": "Everyone in the university",
+                "relationship": "fails to",
+                "tail": "separate waste",
+                "detail": "during the actual act of throwing"
+            }
+        ]
+    }
+]

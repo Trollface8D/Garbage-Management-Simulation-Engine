@@ -2,8 +2,11 @@
 .env
 models/
 
-# Ignore output directories but allow validation_scores.json
+# Ignore output directories but allow validation_scores.json and response_v4_9.json
 output/*
 !output/validation_scores_saved.json
 **/output/*
-!**/output/validation_scores_saved.json
+!**/output/validation_scores.json
+!**/output/response_v4_9.json
+!**/output/transcript/
+!**/output/transcript/**

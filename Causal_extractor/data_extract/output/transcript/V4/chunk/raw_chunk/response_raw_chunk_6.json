@@ -1,0 +1,112 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "P'Moss specializes in collection details/time -> Interviewer suggests asking P'Moss for those specific details",
+        "marker": "ถ้า... พี่เขา เป็นคนดู ถนัด มากกว่า",
+        "subject": "P'Moss's specialization in collection details",
+        "object": "Asking P'Moss",
+        "source_text": "เดี๋ยว ก็ ลองไปถาม ที่ พี่บอก พี่มอส งานอาคาร ดู ถ้าเขา เรื่อง ระยะ เอ่อ เรื่องเวลา หรือรายละเอียด การเก็บเนี่ย พี่เขา เป็นคนดู ถนัด มากกว่า"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Events/Activities occur -> Students/Juniors stand to help separate trash",
+        "marker": "ที่ เวลา... ก็จะ",
+        "subject": "Events/Activities",
+        "object": "Students/Juniors helping separate trash",
+        "source_text": "ที่ เวลา มีกิจกรรม ต่างๆ ก็จะมีพวก น้องๆ เนี่ย มายืน แยกขยะ ช่วยแยกขยะ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "relationship": "Getting activity hours -> Students join to help separate trash",
+        "marker": "ก็คือ",
+        "subject": "Getting activity hours",
+        "object": "Students volunteering",
+        "source_text": "เขา เข้ามาทำกิจกรรม อ่า ก็คือ ได้ชั่วโมง อ่า จนมาทำกิจกรรม เป็น คนช่วย คอย เลือก คัดแยก ขยะ อะไรพวกเนี้ย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Students standing/advising -> Promotes correct waste separation (with mixed results)",
+        "marker": "null",
+        "subject": "Students standing/advising",
+        "object": "Promoting correct waste separation",
+        "source_text": "ก็ มาช่วย เอ่อ ส่งเสริม ในเรื่อง ของการ คัดแยกขยะ ให้ถูกต้อง ซึ่ง ได้ผล บ้าง ไม่ได้ผล บ้าง"
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Some people -> Throw trash incorrectly even when advised",
+        "marker": "null",
+        "subject": "Some people",
+        "object": "Throwing trash incorrectly",
+        "source_text": "บางคน มา ขนาด มีคนยืนบอก มันยัง ทิ้ง ลงไปเลย เออ ไม่สนใจอะ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Renting reusable equipment/containers -> Waste reduced by over 100 kg",
+        "marker": "มา... ได้",
+        "subject": "Renting reusable equipment/containers",
+        "object": "Waste reduced by over 100 kg",
+        "source_text": "เขา ก็ มีการ ไปเช่า พวก อุปกรณ์ อ่า พวกแก้วน้ำ พวกชาม พวกจาน มา ลดขยะ ได้ อย่าง เยอะ เลย หายไป เป็น 100 โล ได้เลย"
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "People -> Throw mixed waste into separated bins",
+        "marker": "null",
+        "subject": "People",
+        "object": "Bins (containing mixed waste)",
+        "source_text": "ขนาด ถัง เราแบ่ง 4 ขนาดนี้ ใช่ไหม มันก็ทิ้ง รวมกัน"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Bin is close to hand (convenience) -> User throws trash there (regardless of separation)",
+        "marker": "ก็",
+        "subject": "Bin is close to hand",
+        "object": "User throws trash",
+        "source_text": "เออ ใกล้มือ มั้ง บางที เดินมา ใกล้มือ กู ก็ทิ้ง นี่แหละ"
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Everyone in University -> Can theoretically separate trash correctly",
+        "marker": "null",
+        "subject": "Everyone in University",
+        "object": "Knowledge of waste separation",
+        "source_text": "ทุกคน ใน ม. เนี่ย แยกขยะ ได้ พื้นฐาน เนี่ย แยกได้ อยู่แล้ว"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Wanting more information -> Contact P'Moss or go to the Multi-purpose building",
+        "marker": "ก็",
+        "subject": "Wanting more information",
+        "object": "Contacting P'Moss / Going to the building",
+        "source_text": "ก็ ถ้า อยากได้ ข้อมูล เพิ่มเติม เนี่ย ก็ เอา เอาเบอร์ พี่มอส ให้... หรือ ไม่ ก็ เดินขึ้น ไป ถาม เขา ที่ อาคาร อเนกประสงค์"
+    }
+]

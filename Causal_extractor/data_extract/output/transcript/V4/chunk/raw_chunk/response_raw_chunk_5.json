@@ -1,0 +1,156 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Changing policy/system -> Improved efficiency (cost, time, feelings)",
+        "marker": "ให้",
+        "subject": "Changing policy, System modification",
+        "object": "Efficiency (Cost, Time, Employee satisfaction)",
+        "source_text": "ว่า เออ มันสามารถทำไง ให้มัน ประสิทธิภาพดีขึ้นได้ไหม อือหือ ซึ่งก็น่าจะคำนึงถึง พวก แบบ ปัจจัย พวก ต้นทุน หรือว่า เวลาที่ใช้ หรือแบบ ความรู้สึกของพนักงาน ที่ต้องใช้ ระบบหลังจานนะ ว่า เออ ถ้าเราเสนอ เปลี่ยน แบบเนี้ย มันจะดีขึ้น ได้ยังไงไหม"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Policy changes in simulation -> System improvement",
+        "marker": "null",
+        "subject": "Policy changes",
+        "object": "System improvement",
+        "source_text": "โดยที่ เราเอา เอ่อ เราสร้าง Simulation ขึ้นมา แล้วแบบ พยายามที่จะ ลอกเลียนแบบ สภาวะตอนนี้ แล้วดูว่า พอเปลี่ยน นโยบาย เล็กน้อยเนี่ย ในจุดๆ นึงเนี่ย มันดีขึ้นไหม"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Adding management personnel -> Increased cost and problems",
+        "marker": "ก็เลย",
+        "subject": "Adding management personnel",
+        "object": "Increased cost, Increased problems",
+        "source_text": "แต่ ถ้าเราจัดการขึ้น เราต้องไปหาคนอีกคน 2 คน มาเพื่อจัดการตรงนี้ ก่อน ให้แก๊งนั้น จัดการ มันก็เพิ่มเงิน ก็เลย เพิ่มปัญหาตรงนี้"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Personnel behavior -> Inaccurate waste weight data",
+        "marker": "เนื่องจาก",
+        "subject": "Personnel behavior",
+        "object": "Inaccurate waste weight data",
+        "source_text": "พี่พูดถึง ปัญหาเรื่องของการ ชั่งข้อมูลขยะ ที่มันมีอาการคลาดเคลื่อน เนื่องจาก ตัวบุคลากรเอง"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "relationship": "Weighing process is convenient -> Staff will use it (Solving the problem)",
+        "marker": "ต้อง",
+        "subject": "Weighing process is convenient",
+        "object": "Staff compliance/usage",
+        "source_text": "แต่ จะทำยังไงเนี่ย ให้เขาเนี่ย มาชั่งน้ำหนัก โดยการชั่งน้ำหนักเนี่ย มันต้องสะดวกกับ คนใช้งาน เออ อันเนี้ย คือปัญหา แก้ อยู่"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "F",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Maids' mood -> Data fabrication",
+        "marker": "null",
+        "subject": "Maids' mood",
+        "object": "Data fabrication",
+        "source_text": "คือเราอะ ต้องการข้อมูล ที่มันเป็น ข้อมูลจริง จริงๆ นะ ไม่ใช่ข้อมูลที่ แม่บ้านเขา แล้วแต่อารมณ์ อยากจะเขียนน่ะ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "Complicated weighing process -> Staff difficulty/Missing data",
+        "marker": "null",
+        "subject": "Complicated weighing process",
+        "object": "Staff difficulty, Missing data",
+        "source_text": "แต่ว่า ไอ้ขั้นตอนการ ชั่งขยะ ในปัจจุบัน มันก็ดูจะ ยุ่งยากเกินไป สำหรับ พนักงาน ปัจจุบัน ที่จะทำ"
+    },
+    {
+        "pattern_type": "F",
+        "sentence_type": "ES",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Trash truck staff -> Lift trash without weighing",
+        "marker": "null",
+        "subject": "Trash truck staff",
+        "object": "Lift trash without weighing",
+        "source_text": "เขาก็ ส่วนใหญ่ก็ ยกขึ้นรถเลย ไม่ต้องชั่ง ไม่ค่อยได้ชั่ง ประมาณเนี้ย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "F",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Maids picking favorite numbers -> Data Inaccuracy",
+        "marker": "null",
+        "subject": "Maids picking favorite numbers",
+        "object": "Data Inaccuracy",
+        "source_text": "อย่างอบรมแม่บ้าน เงี้ย พี่ก็อบรม ใช่ไหม พี่อะ แซวตลอดอะ ว่า วันนี้ชอบเลขอะไร ... เขาก็หัวเราะ คิกคัก คิกคัก ... เขาก็บอก ทำจริง ป่าว เราก็ทำ อืม อะไรประมาณนั้น"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Multiple sources (Market, School, Hotel, Shops) -> Trash overflow",
+        "marker": "null",
+        "subject": "Market, School, Hotel, Shops",
+        "object": "Trash overflow",
+        "source_text": "มันจะไม่ล้นได้ไงอะ มีทั้ง ตลาด โรงเรียน ตึก 14 ชั้น ที่เป็นโรงแรม มันจะไม่ล้นได้ไงอะ ... รวมทิ้ง อยู่ตรงนั้นน่ะ มันก็ บาน"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Current bin design (Small size) -> Not useful/Difficult for maids",
+        "marker": "null",
+        "subject": "Current bin design (Small size)",
+        "object": "Not useful/Difficult for maids",
+        "source_text": "กู ก็เลยทำให้มัน ใหญ่ ขยะสีเขียวเนี่ย อาจจะน้อยหน่อย ก็เล็ก สีเหลืองเนี่ย ส่วนใหญ่ ก็เป็นของหน่วยงาน อยู่แล้ว ... แต่มันก็ ยังไม่ได้ ตอบโจทย์ หรือมันก็ ไม่ง่าย ต่อแม่บ้าน เอง เหมือนกัน อืม ซึ่งมันก็ เล็กเกินไป"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "E",
+        "relationship": "Rough handling (feet/slapping) -> Bins/Cages broken",
+        "marker": "null",
+        "subject": "Rough handling, Collectors using feet",
+        "object": "Bins broken, Cages broken",
+        "source_text": "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย ... ตีนตบ โป๊ะ เนี่ย พังหมด"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Limited budget -> Current bin design choice",
+        "marker": "ก็เลย",
+        "subject": "Limited budget",
+        "object": "Current bin design choice",
+        "source_text": "ซึ่งมันมี งบจำกัด ไง มันก็เลย ออกมาเป็น แบบเนี้ย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Redesign (Roof, Bigger) -> Convenient usage",
+        "marker": "ให้",
+        "subject": "Redesign (Roof, Bigger)",
+        "object": "Convenient usage",
+        "source_text": "เดี๋ยวจะลอง ออกแบบ ดูใหม่ ทำ ให้มันมี หลังคง หลังคา อะไรเงี้ย ให้มันดู ใหญ่กว่านี้ หน่อย ให้แม่บ้าน มันทิ้ง ได้สะดวก อะไรเงี้ย"
+    }
+]

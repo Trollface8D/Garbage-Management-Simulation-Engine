@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "source_document": "Table 1 (TR-Series Locations)",
+    "period": "August 1-31, 2025",
+    "unit": "kg"
+  },
+  "nodes": [
+    {
+      "id": "TR-1",
+      "name_th": "อาคารหอพักนักศึกษาชาย หญิง",
+      "name_en": "Male & Female Dormitories",
+      "type": "Residential",
+      "waste": { "blue": 3030, "yellow": 329, "red": 417, "green": 5463, "total": 9239 }
+    },
+    {
+      "id": "TR-2",
+      "name_th": "อาคารวิศวกรรมอิเลคทรอนิคส์ฯ",
+      "name_en": "Electronic Engineering Bldg",
+      "type": "Building",
+      "waste": { "blue": 266, "yellow": 15, "red": 29, "green": 60, "total": 370 }
+    },
+    {
+      "id": "TR-3",
+      "name_th": "อาคารเรียนรวม 5",
+      "name_en": "Classroom Building 5 (CB5)",
+      "type": "Building",
+      "waste": { "blue": 957, "yellow": 90, "red": 137, "green": 523, "total": 1707 }
+    },
+    {
+      "id": "TR-4",
+      "name_th": "อาคารเรียนรวม 4",
+      "name_en": "Classroom Building 4 (CB4)",
+      "type": "Building",
+      "waste": { "blue": 1249, "yellow": 118, "red": 191, "green": 617, "total": 2175 }
+    },
+    {
+      "id": "TR-5",
+      "name_th": "อาคารเรียนรวม 3",
+      "name_en": "Classroom Building 3 (CB3)",
+      "type": "Building",
+      "waste": { "blue": 1161, "yellow": 111, "red": 177, "green": 548, "total": 1997 }
+    },
+    {
+      "id": "TR-6",
+      "name_th": "ด้านหน้าโรงคัดแยก",
+      "name_en": "Front of Waste Separation Plant",
+      "type": "Service",
+      "waste": { "blue": 1408, "yellow": 5, "red": 18, "green": 24, "total": 1455 }
+    },
+    {
+      "id": "TR-7",
+      "name_th": "อาคารคณะเทคโนโลยีสารสนเทศ",
+      "name_en": "School of Information Technology (SIT)",
+      "type": "Building",
+      "waste": { "blue": 762, "yellow": 39, "red": 94, "green": 192, "total": 1087 }
+    },
+    {
+      "id": "TR-8",
+      "name_th": "อาคารภาควิชาจุลชีววิทยา",
+      "name_en": "Microbiology Department",
+      "type": "Building",
+      "waste": { "blue": 984, "yellow": 127, "red": 155, "green": 395, "total": 1661 }
+    },
+    {
+      "id": "TR-9",
+      "name_th": "อาคารภาควิชาฟิสิกส์ - คณิตศาสตร์",
+      "name_en": "Physics & Mathematics Department",
+      "type": "Building",
+      "waste": { "blue": 1037, "yellow": 87, "red": 161, "green": 415, "total": 1700 }
+    },
+    {
+      "id": "TR-10",
+      "name_th": "อาคารสำนักหอสมุด",
+      "name_en": "KMUTT Library",
+      "type": "Building",
+      "waste": { "blue": 1483, "yellow": 211, "red": 267, "green": 814, "total": 2775 }
+    },
+    {
+      "id": "TR-11",
+      "name_th": "อาคารสำนักงานอธิการบดี",
+      "name_en": "Office of the President",
+      "type": "Building",
+      "waste": { "blue": 1157, "yellow": 129, "red": 286, "green": 593, "total": 2165 }
+    },
+    {
+      "id": "TR-12",
+      "name_th": "อาคารวิศววัฒนะ",
+      "name_en": "Wisawa Watana Bldg (Engineering)",
+      "type": "Building",
+      "waste": { "blue": 9289, "yellow": 450, "red": 545, "green": 2155, "total": 12439 }
+    }
+  ]
+}

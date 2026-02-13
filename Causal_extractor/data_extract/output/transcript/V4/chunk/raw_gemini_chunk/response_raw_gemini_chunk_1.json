@@ -1,0 +1,101 @@
+[
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Sorting plant -> Sends general waste to BMA for disposal",
+        "marker": "null",
+        "subject": "Sorting plant",
+        "object": "General waste",
+        "source_text": "ส่วนสถานที่อยู่ในภาพรวมที่มารวมอยู่ที่โรงคัดแยกขยะเนี่ย ก็จะถูกส่งให้กับ กทม. ก็คือส่ง กทม. กำจัดนั่นแหละ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Recording waste weight and details -> Sending data to Finance Division -> Transferring money to departments",
+        "marker": "เพื่อ",
+        "subject": "Recording waste data",
+        "object": "Finance Division / Money transfer",
+        "source_text": "เพื่อจดบันทึกว่าหน่วยงานนี้มีอะไรบ้าง ได้เท่าไหร่ๆ น้ำหนักเท่าไหร่ เพื่อส่งข้อมูลพวกเนี้ยให้กับทางกองคลัง เพื่อโอนเงินให้กับ จัดจ่ายเรื่องเงินให้กับแต่ละหน่วยงาน"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Waste originates from departments -> Revenue allocated 80% to department, 20% to university",
+        "marker": "แต่ถ้า... ก็",
+        "subject": "Waste from departments/offices",
+        "object": "Revenue allocation (80/20 split)",
+        "source_text": "แต่ถ้าเป็นของหน่วยงาน หรือสำนักงาน หรือภาคเนี่ย ก็จะเข้าหน่วยงาน 80 เข้ามหาวิทยาลัย 20 อะไรอย่างเงี้ย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Cleaning and separating specific waste (glass, spoons) -> Sent to N15 as fuel",
+        "marker": "เพื่อ",
+        "subject": "Cleaning and separating waste",
+        "object": "N15 (Refuse Derived Fuel)",
+        "source_text": "เราก็แยกออกมาเพื่อส่งให้ N15 เป็นขยะเชื้อเพลิง"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "COVID-19 situation -> Introduction of separate bins for infectious waste",
+        "marker": "null",
+        "subject": "COVID-19 situation",
+        "object": "Infectious waste bins (ATK, masks)",
+        "source_text": "อย่างเช่น ช่วงสถานการณ์โควิด ก็จะมีถังแยกออกมาอีก ที่เป็นถังขยะติดเชื้อ ที่คอยทิ้งพวกชุดตรวจ ATK แมสก์ กระดาษทิชชู่ อะไรต่างๆ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Donating electronic waste -> Exchange for activity hours",
+        "marker": "ก็เหมือน",
+        "subject": "Donating electronic waste",
+        "object": "Activity hours",
+        "source_text": "ก็คือใครเนี่ยที่มีขยะอิเล็กทรอนิกส์เนี่ย ก็มาบริจาคให้กับที่นี่ ก็เหมือนแลกชั่วโมงไป"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Electronic waste is reusable/spare parts -> Sent to Mirror Foundation for computer repair",
+        "marker": "ก็จะถูก",
+        "subject": "Reusable electronic waste",
+        "object": "Mirror Foundation",
+        "source_text": "ขยะอิเล็กทรอนิกส์บางส่วนที่มันยังสามารถเป็นอะไหล่ หรือสามารถใช้ได้เนี่ย ก็จะถูกส่งไปให้กับมูลนิธิกระจกเงา"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Waste is scrap metal -> Must be sold",
+        "marker": "แต่ถ้า... พวกนี้ต้อง",
+        "subject": "Scrap metal",
+        "object": "Selling process",
+        "source_text": "แต่ถ้าพวกเศษเหล็กเนี่ย พวกนี้ต้องขาย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "I",
+        "relationship": "Waste is tree scraps -> Processed into fertilizer",
+        "marker": "ก็",
+        "subject": "Tree scraps",
+        "object": "Fertilizer",
+        "source_text": "อย่างพวกเศษต้นไม้อย่างเงี้ย เราก็มาทำปุ๋ย"
+    }
+]

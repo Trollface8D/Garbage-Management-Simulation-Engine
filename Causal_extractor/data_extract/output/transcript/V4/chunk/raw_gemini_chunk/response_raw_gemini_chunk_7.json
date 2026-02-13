@@ -1,0 +1,101 @@
+[
+    {
+        "pattern_type": "C",
+        "sentence_type": "SP",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Renovating waste cage (larger size, roof) -> Looks more organized/proper",
+        "marker": "ให้",
+        "subject": "Renovating waste cage to be larger and have a roof",
+        "object": "Looks more organized/proper",
+        "source_text": "พี่อยากจะเปลี่ยน ใหม่ ให้มันมีขนาดที่ ใหญ่กว่าเนี้ย แล้วก็มีหลังคง หลังคา ปิด กันฝ่ง กันฝน ให้มันดูเป็น เหมือนกิจจะลักษณะ กว่าเนี้ย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Presence of markets, schools, hotels (high activity) -> Waste bins overflowing",
+        "marker": "เพราะว่า",
+        "subject": "Markets, schools, 14-story hotel building",
+        "object": "Waste bins overflowing",
+        "source_text": "เพราะว่า น่าจะ ใหญ่กว่าดิ แถวตึกแดง ตรง ฝั่ง ฝั่งนู้น เพราะว่า เครื่องกล พืช (พท) ใช่ครับ เพราะว่า ตอนเดินมา เดินผ่าน (สวน) ล้นๆ ทุกวันเลย มันจะไม่ล้นได้ไงอะ มีทั้ง ตลาด โรงเรียน ตึก 14 ชั้น ที่เป็นโรงแรม"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "General waste has highest volume -> Designed general waste section to be larger",
+        "marker": "เลย",
+        "subject": "General waste has the highest volume",
+        "object": "Designed general waste section to be larger",
+        "source_text": "อย่างสมมติ ขยะ อะไรขยะ เยอะที่สุด ขยะทั่วไป กู ก็เลยทำให้มัน ใหญ่"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "SB",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Designed for compactness -> Too small/Difficult for maids to use",
+        "marker": "null",
+        "subject": "Designed for compactness",
+        "object": "Too small, not easy for maids",
+        "source_text": "ก็ออกแบบ มา เพื่อ ให้มัน กะทัดรัด ใช่ป่ะ ... แต่มันก็ ยังไม่ได้ ตอบโจทย์ หรือมันก็ ไม่ง่าย ต่อแม่บ้าน เอง เหมือนกัน อืม ซึ่งมันก็ เล็กเกินไป"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Waste collectors using violence/feet -> Bins and cages broken",
+        "marker": "null",
+        "subject": "Waste collectors using violence/feet",
+        "object": "Bins and cages broken",
+        "source_text": "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย ... ตีนตบ โป๊ะ เนี่ย พังหมด"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "ES",
+        "marked_type": "M",
+        "explicit_type": "E",
+        "relationship": "Limited budget -> Current cage design (imperfect)",
+        "marker": "เลย",
+        "subject": "Limited budget",
+        "object": "Current cage design",
+        "source_text": "งบมัน จำกัด ด้วยแหละ อืม ใช่ เพราะ อย่างของพี่ ทำเนี่ย ... มันก็เลย ออกมาเป็น แบบเนี้ย"
+    },
+    {
+        "pattern_type": "A",
+        "sentence_type": "SB",
+        "marked_type": "N/A",
+        "explicit_type": "E",
+        "relationship": "Student volunteers -> Help separate waste during activities",
+        "marker": "null",
+        "subject": "Student volunteers",
+        "object": "Help separate waste",
+        "source_text": "อย่างเช่น เรื่อง ถังขยะจิตอาสา ที่เป็น สวิสกระบิน ที่ เวลา มีกิจกรรม ต่างๆ ก็จะมีพวก น้องๆ เนี่ย มายืน แยกขยะ ช่วยแยกขยะ"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "OT",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Renting reusable equipment (cups, plates) -> Reduced waste by hundreds of kilos",
+        "marker": "null",
+        "subject": "Renting reusable equipment (cups, plates)",
+        "object": "Reduced waste by hundreds of kilos",
+        "source_text": "เขา ก็ มีการ ไปเช่า พวก อุปกรณ์ อ่า พวกแก้วน้ำ พวกชาม พวกจาน มา ลดขยะ ได้ อย่าง เยอะ เลย หายไป เป็น 100 โล ได้เลย"
+    },
+    {
+        "pattern_type": "C",
+        "sentence_type": "F",
+        "marked_type": "U",
+        "explicit_type": "I",
+        "relationship": "Bin is close/convenient -> Throwing trash without separating",
+        "marker": "null",
+        "subject": "Bin is close/convenient",
+        "object": "Throwing trash without separating",
+        "source_text": "ใกล้มือ มั้ง บางที เดินมา ใกล้มือ กู ก็ทิ้ง นี่แหละ"
+    }
+]
