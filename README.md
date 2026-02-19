@@ -1,14 +1,17 @@
 # Framework_Simulation_Garbage
 ## file structure
 Experiment
-    |-causal extaraction
-    |   |-extract
-    |   |-NEC
+    |-causal_extraction
+    |   |- extraction
+    |   |- followup_question
     |
-    |-code_gen
-        |-Graph RAG
-        |-zeroshot
+    |-code_generation
+        |- entity_design
+        |- graph_RAG
+        |- zeroshot
         |- traditional
+    |- legacy
+        // old one
 Engine
     |-docker compose, env, webs something whatever
 Readme.md
@@ -18,5 +21,5 @@ note: these folder are sub- folder
 - Prompt
 - output
 - requirements.txt
-- REadme.md
+- Readme.md
 - *.excalidraw
