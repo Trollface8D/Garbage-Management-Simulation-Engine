@@ -1,0 +1,24 @@
+# --- Core Web Framework ---
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
+dash-cytoscape>=0.3.0
+flask-caching>=2.1.0
+
+# --- LLM & Data Extraction ---
+google-generativeai>=0.3.0
+pydantic>=2.5.0
+pypdf>=4.0.0
+moviepy>=1.0.3
+
+# --- Graph & Vector Operations ---
+networkx>=3.2.0
+numpy>=1.26.0
+scikit-learn>=1.3.0     # For dense retrieval (Cosine Similarity)
+pandas>=2.1.0
+torch
+sentence_transformers
+
+# --- Production & Packaging ---
+gunicorn>=21.2.0        # WSGI Server
+pyinstaller>=6.3.0      # To bundle into Windows .exe
+python-dotenv>=1.0.0    # For API Key management

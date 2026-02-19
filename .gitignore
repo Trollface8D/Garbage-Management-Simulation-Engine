@@ -10,3 +10,5 @@ output/*
 !**/output/response_v4_9.json
 !**/output/transcript/
 !**/output/transcript/**
+env*/
+__pychache__/
