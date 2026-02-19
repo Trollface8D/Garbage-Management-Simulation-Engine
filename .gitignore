@@ -12,3 +12,5 @@ output/*
 !**/output/transcript/**
 env*/
 __pychache__/
+graphdbc*.pt
+graphc*.pickle
