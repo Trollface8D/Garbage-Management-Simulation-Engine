@@ -1,0 +1,82 @@
+[
+  {
+    "source_text": "ส่วนสถานที่อยู่ในภาพรวมที่มารวมอยู่ที่โรงคัดแยกขยะเนี่ย ก็จะถูกส่งให้กับ กทม. ก็คือส่ง กทม. กำจัดนั่นแหละ",
+    "generated_questions": [
+      "How exactly does the system process [Waste at the sorting facility] to impact [BMA], and what are the known failure states?",
+      "The link between [Waste at the sorting facility] and [BMA] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Who is the specific decision-maker for [Waste at the sorting facility], and what data informed that action?"
+    ]
+  },
+  {
+    "source_text": "เขาก็จะเอาขยะจากหน่วยงาน หรือสำนักงานของตัวเองเนี่ยลงมาไว้ตามแต่ละตึก ตามใต้ตึกอะ ตามจุดที่เขาคุยกันไว้ เขาก็จะติดป้ายไว้ว่าเป็นของหน่วยงานใคร",
+    "generated_questions": [
+      "How exactly does the system process [Units and offices] to impact [waste], and what are the known failure states?",
+      "The link between [Units and offices] and [waste] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Who is the specific decision-maker for [Units and offices], and what data informed that action?"
+    ]
+  },
+  {
+    "source_text": "เพื่อส่งข้อมูลพวกเนี้ยให้กับทางกองคลัง เพื่อโอนเงินให้กับ จัดจ่ายเรื่องเงินให้กับแต่ละหน่วยงาน",
+    "generated_questions": [
+      "How exactly does the system process [Sending waste data to Finance Division] to impact [money transfer to units], and what are the known failure states?",
+      "The text explicitly states that [Sending waste data to Finance Division] leads to [money transfer to units]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Sending waste data to Finance Division] entirely, would [money transfer to units] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "แต่ถ้าเป็นของหน่วยงาน หรือสำนักงาน หรือภาคเนี่ย ก็จะเข้าหน่วยงาน 80 เข้ามหาวิทยาลัย 20",
+    "generated_questions": [
+      "How exactly does the system process [Revenue from unit waste] to impact [the Unit], and what are the known failure states?",
+      "The link between [Revenue from unit waste] and [the Unit] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Is this statement about [Revenue from unit waste] a static fact, or is it subject to change over time?"
+    ]
+  },
+  {
+    "source_text": "การแยกขยะทั่วไป เอามาล้าง... เราก็แยกออกมาเพื่อส่งให้ N15 เป็นขยะเชื้อเพลิง",
+    "generated_questions": [
+      "What specific KPI defines the success of [N15], and how is [Separating and cleaning waste] quantified?",
+      "The text explicitly states that [Separating and cleaning waste] leads to [N15]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Separating and cleaning waste] entirely, would [N15] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ช่วงสถานการณ์โควิด ก็จะมีถังแยกออกมาอีก ที่เป็นถังขยะติดเชื้อ ที่คอยทิ้งพวกชุดตรวจ ATK แมสก์",
+    "generated_questions": [
+      "Is [separation of infectious waste bins] solely influenced by [COVID-19 situation], or do other environmental factors play a role?",
+      "The link between [COVID-19 situation] and [separation of infectious waste bins] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [COVID-19 situation] entirely, would [separation of infectious waste bins] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ใครเนี่ยที่มีขยะอิเล็กทรอนิกส์เนี่ย ก็มาบริจาคให้กับที่นี่ ก็เหมือนแลกชั่วโมงไป",
+    "generated_questions": [
+      "How exactly does the system process [Donating e-waste] to impact [receiving activity hours], and what are the known failure states?",
+      "The link between [Donating e-waste] and [receiving activity hours] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Donating e-waste] entirely, would [receiving activity hours] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ขยะอิเล็กทรอนิกส์บางส่วนที่มันยังสามารถเป็นอะไหล่ หรือสามารถใช้ได้เนี่ย ก็จะถูกส่งไปให้กับมูลนิธิกระจกเงา",
+    "generated_questions": [
+      "How exactly does the system process [Reusable e-waste] to impact [Mirror Foundation], and what are the known failure states?",
+      "The link between [Reusable e-waste] and [Mirror Foundation] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Who is the specific decision-maker for [Reusable e-waste], and what data informed that action?"
+    ]
+  },
+  {
+    "source_text": "เขาก็จะนำไปเป็นวัตถุดิบ เป็นอะไหล่ ให้กับในการซ่อมอุปกรณ์คอมพิวเตอร์ ที่จะส่งให้กับน้องๆ ที่อยู่ตามชนบท",
+    "generated_questions": [
+      "How exactly does the system process [Mirror Foundation] to impact [computers], and what are the known failure states?",
+      "The link between [Mirror Foundation] and [computers] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Who is the specific decision-maker for [Mirror Foundation], and what data informed that action?"
+    ]
+  },
+  {
+    "source_text": "อย่างพวกเศษต้นไม้อย่างเงี้ย เราก็มาทำปุ๋ย",
+    "generated_questions": [
+      "How exactly does the system process [Tree debris] to impact [fertilizer], and what are the known failure states?",
+      "The link between [Tree debris] and [fertilizer] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Who is the specific decision-maker for [Tree debris], and what data informed that action?"
+    ]
+  }
+]

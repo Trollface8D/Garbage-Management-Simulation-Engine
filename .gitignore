@@ -10,6 +10,8 @@ output/*
 !**/output/response_v4_9.json
 !**/output/transcript/
 !**/output/transcript/**
+!**/output/v2.json
+!**/output/v3_chunk/
 env*/
 __pychache__/
 graphdbc*.pt

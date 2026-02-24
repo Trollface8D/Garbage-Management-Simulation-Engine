@@ -1,0 +1,42 @@
+[
+  {
+    "source_text": "โดยปัญหาที่ขยะล้นจุดพักขยะเนี่ย จะเป็นช่วงตอนเช้าเลย เพราะว่าแม่บ้านเนี่ยจะเก็บขยะรอบเช้าเนี่ย มาอัด",
+    "generated_questions": [
+      "Is trash overflow at collection points solely influenced by Housekeepers collecting and compressing morning trash, or do other environmental factors play a role?",
+      "The text explicitly states that Housekeepers collecting and compressing morning trash leads to trash overflow at collection points. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed Housekeepers collecting and compressing morning trash entirely, would trash overflow at collection points still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "อย่างสมมติ รถรอบเนี่ยมาเก็บตอน 3 โมง แม่บ้านที่อยู่ในอาคารเอามาทิ้งตอน 4 โมง ซึ่งก็จะมีขยะล้น ขยะเหลืออยู่ในนั้น ก็คือขยะตกค้าง",
+    "generated_questions": [
+      "How exactly does the system process Housekeepers disposing trash at 4 PM after collection time to impact trash overflow and residual waste, and what are the known failure states?",
+      "The text explicitly states that Housekeepers disposing trash at 4 PM after collection time leads to trash overflow and residual waste. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed Housekeepers disposing trash at 4 PM after collection time entirely, would trash overflow and residual waste still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ตอนเช้าเก็บไปแล้ว ภาคเช้าเนี่ย ที่แม่บ้านมาเก็บขยะอีก ก็เอามาลงอีก สรุปขยะมันก็จะถูกอัด อัดๆๆ มาจนล้นตลอด",
+    "generated_questions": [
+      "How exactly does the system process Adding more trash in the morning round to impact constant trash overflow, and what are the known failure states?",
+      "The text explicitly states that Adding more trash in the morning round leads to constant trash overflow. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed Adding more trash in the morning round entirely, would constant trash overflow still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ก็จะถูกฟ้องอะไรเงี้ย ก็คือจากบุคลากรบ้าง จากนักศึกษาบ้าง ว่าขยะแต่ละจุดเนี่ยมันล้น",
+    "generated_questions": [
+      "Is complaints from staff and students solely influenced by Trash overflow at various points, or do other environmental factors play a role?",
+      "The link between Trash overflow at various points and complaints from staff and students is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed Trash overflow at various points entirely, would complaints from staff and students still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "แต่ มันก็มีทางที่เขาเป็นคณะทำงานในเรื่องเนี้ย เขาก็จะตักเตือนอะไรเงี้ย ให้รีบจัดการ ให้มันล้นจนเกินไป",
+    "generated_questions": [
+      "What operational friction do you anticipate in implementing The working committee, and how will you ensure manage waste quickly is achieved?",
+      "The link between The working committee and manage waste quickly is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Who is the specific decision-maker for The working committee, and what data informed that action?"
+    ]
+  }
+]

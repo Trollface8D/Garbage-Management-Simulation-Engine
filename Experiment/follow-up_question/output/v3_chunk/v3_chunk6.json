@@ -1,0 +1,82 @@
+[
+  {
+    "source_text": "กะว่าจะเอาไปทำเป็น ตัวจบ โปรเจกต์จบ ความสำคัญของ ตัว โครงการ ทีสิส จบอะครับ อือหือ ว่าจะแบบ เออ มาช่วยแก้ปัญญา ยังไงได้บ้าง อย่างที่ เอ่อ พวกผมตั้งกันไว้ตอนแรก ก็คือจะทำเป็นพวก แบบ แนว อ่า Optimize ระบบ อะไรเงี้ยครับ ว่า เออ มันสามารถทำไง ให้มัน ประสิทธิภาพดีขึ้นได้ไหม",
+    "generated_questions": [
+      "What specific KPI defines the success of [efficiency], and how is [Optimizing the system] quantified?",
+      "The link between [Optimizing the system] and [efficiency] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Optimizing the system] entirely, would [efficiency] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "โดยที่ เราเอา เอ่อ เราสร้าง Simulation ขึ้นมา แล้วแบบ พยายามที่จะ ลอกเลียนแบบ สภาวะตอนนี้ แล้วดูว่า พอเปลี่ยน นโยบาย เล็กน้อยเนี่ย ในจุดๆ นึงเนี่ย มันดีขึ้นไหม",
+    "generated_questions": [
+      "What operational friction do you anticipate in implementing [Changing the policy], and how will you ensure [system state] is achieved?",
+      "The link between [Changing the policy] and [system state] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Changing the policy] entirely, would [system state] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "แต่ ถ้าเราจัดการขึ้น เราต้องไปหาคนอีกคน 2 คน มาเพื่อจัดการตรงนี้ ก่อน ให้แก๊งนั้น จัดการ มันก็เพิ่มเงิน ก็เลย เพิ่มปัญหาตรงนี้ ที่แบบ เอาขยะไปเก็บ",
+    "generated_questions": [
+      "Is [financial cost] solely influenced by [Hiring additional staff], or do other environmental factors play a role?",
+      "The text explicitly states that [Hiring additional staff] leads to [financial cost]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Hiring additional staff] entirely, would [financial cost] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "โดยถ้าพูดถึง ปัญหาตอนนี้ หรอ พี่พูดถึง ปัญหาเรื่องของการ ชั่งข้อมูลขยะ ที่มันมีอาการคลาดเคลื่อน เนื่องจาก ตัวบุคลากรเอง",
+    "generated_questions": [
+      "Is [trash weight data discrepancies] solely influenced by [Personnel behavior], or do other environmental factors play a role?",
+      "The text explicitly states that [Personnel behavior] leads to [trash weight data discrepancies]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Personnel behavior] entirely, would [trash weight data discrepancies] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "แต่ ตัวถังขยะเอง มันก็ ไม่ได้ซัพพอร์ต ขนาดนั้นนะ อย่างเช่น เรื่องของการชั่งน้ำหนัก หรือตัวของกิโล อะไรเงี้ย",
+    "generated_questions": [
+      "Is [weighing mechanisms] solely influenced by [Trash cans], or do other environmental factors play a role?",
+      "The link between [Trash cans] and [weighing mechanisms] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Is this statement about [Trash cans] a static fact, or is it subject to change over time?"
+    ]
+  },
+  {
+    "source_text": "คือเราอะ ต้องการข้อมูล ที่มันเป็น ข้อมูลจริง จริงๆ นะ ไม่ใช่ข้อมูลที่ แม่บ้านเขา แล้วแต่อารมณ์ อยากจะเขียนน่ะ",
+    "generated_questions": [
+      "Is [inaccurate data] solely influenced by [Maids relying on mood], or do other environmental factors play a role?",
+      "The link between [Maids relying on mood] and [inaccurate data] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Maids relying on mood] entirely, would [inaccurate data] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ปัญหาคือ เราอะ อยากจะเก็บ ให้มัน มันมีข้อมูล อย่างชัดเจน แบบ ที่มันจะมีข้อมูล ขาดหาย แต่ว่า ไอ้ขั้นตอนการ ชั่งขยะ ในปัจจุบัน มันก็ดูจะ ยุ่งยากเกินไป สำหรับ พนักงาน ปัจจุบัน ที่จะทำ",
+    "generated_questions": [
+      "Is [too complicated] solely influenced by [Current trash weighing process], or do other environmental factors play a role?",
+      "The link between [Current trash weighing process] and [too complicated] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Current trash weighing process] entirely, would [too complicated] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ซึ่งแต่ละอาคารเนี่ย แต่ละตึก ใต้ตึกเนี่ย จะมีกิโล ที่ทางพี่เอง ได้ซื้อให้ นี่แหละ ก็จะมีกิโล คนละตัวๆ ตัว ก็คือจะมาชั่งข้างล่าง แล้วก็จดใส่ สมุด บันทึกใส่สมุด",
+    "generated_questions": [
+      "How exactly does the system process [Staff] to impact [trash], and what are the known failure states?",
+      "The link between [Staff] and [trash] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Who is the specific decision-maker for [Staff], and what data informed that action?"
+    ]
+  },
+  {
+    "source_text": "เขาก็ ส่วนใหญ่ก็ ยกขึ้นรถเลย ไม่ต้องชั่ง ไม่ค่อยได้ชั่ง ประมาณเนี้ย",
+    "generated_questions": [
+      "How exactly does the system process [Lifting trash directly to the truck] to impact [not weighing the trash], and what are the known failure states?",
+      "The link between [Lifting trash directly to the truck] and [not weighing the trash] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Lifting trash directly to the truck] entirely, would [not weighing the trash] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "พี่อะ แซวตลอดอะ ว่า วันนี้ชอบเลขอะไร ยกโชก (ยกโชค/เสี่ยงโชค) ขยะลงมาทิ้งเนี่ย ชอบเลขอะไร วันนี้ชอบ เอ้ย ไม่เก้า ไม่เก้ากิโล อะไรเงี้ย... ซึ่งตอนนี้ มันคลาดเคลื่อน จนไม่รู้จะคลาดเคลื่อนยังไงละ",
+    "generated_questions": [
+      "Is [extreme data inaccuracy] solely influenced by [Maids guessing numbers], or do other environmental factors play a role?",
+      "The link between [Maids guessing numbers] and [extreme data inaccuracy] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Maids guessing numbers] entirely, would [extreme data inaccuracy] still occur via another pathway?"
+    ]
+  }
+]
