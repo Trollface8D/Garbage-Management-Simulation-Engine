@@ -20,4 +20,4 @@ Output Format:
 Crucial: Add comments in the code citing the specific "source_text" or "pattern" from the JSON that justifies each logic block (e.g., # Logic derived from: "Maids depend on mood... guessing numbers").
 
 Goal:
-The resulting code should not just be a static model, but a dynamic representation of the friction and human behaviors identified in the interview, allowing us to simulate why the current system fails.
+The resulting code should not just be a static model, but a dynamic representation of the friction and human behaviors identified in the interview, allowing us to simulate why the current system fails.  

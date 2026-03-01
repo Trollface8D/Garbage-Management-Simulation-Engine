@@ -1,0 +1,5 @@
+{
+    "filename": "agent.py",
+    "reasoning": "A 'janitor' is a classic example of an active agent. It perceives the environment (e.g., sees a full garbage bin), makes decisions (e.g., decides to empty the bin), and performs actions (e.g., interacts with the bin to collect waste). The 'Agent' class in agent.py is the most suitable template as it is designed for entities with active traits, providing the perceive(), decide_action(), and act() methods to implement this behavior.",
+    "suggestion": "Implement a new class `Janitor(Agent)` that inherits from the `Agent` class. You should override the `perceive()`, `decide_action()`, and `act()` methods to define the janitor's specific logic."
+}
