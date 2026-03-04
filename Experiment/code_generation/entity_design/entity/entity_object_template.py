@@ -2,8 +2,8 @@ from abc import ABC
 from typing import TYPE_CHECKING, Optional, List
 
 if TYPE_CHECKING:
-    from .environment import SimulationEnvironment
-    from .policy import Policy
+    from .environment_template import SimulationEnvironment
+    from .policy_template import Policy
 
 # ---------------------------------------------------------
 # UNIFIED entity_object TEMPLATE

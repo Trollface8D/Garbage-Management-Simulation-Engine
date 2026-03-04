@@ -2,8 +2,8 @@ from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from .environment import SimulationEnvironment
-    from .entity_object import entity_object
+    from .environment_template import SimulationEnvironment
+    from .entity_object_template import entity_object
 
 # ---------------------------------------------------------
 # POLICY TEMPLATE (Strategy Pattern)

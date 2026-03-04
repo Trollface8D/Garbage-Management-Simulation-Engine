@@ -2,8 +2,8 @@ from typing import Any, Dict, List, Optional
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .entity_object import entity_object
-    from .policy import Policy
+    from .entity_object_template import entity_object
+    from .policy_template import Policy
     from .system_behavior import SystemBehavior
 
 # ---------------------------------------------------------

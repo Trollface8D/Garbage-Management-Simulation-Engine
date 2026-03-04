@@ -4,7 +4,7 @@ Task:
 Analyze the name of the object. And pick the most suitable available code template. If there is no suitable template available, output suggestion.
 
 Input Context:
-Template in file attachments
+Templates in file attachments
 
 Output Format:  
 - JSON format, output only string of the filename, i.e "filename": [code].py.

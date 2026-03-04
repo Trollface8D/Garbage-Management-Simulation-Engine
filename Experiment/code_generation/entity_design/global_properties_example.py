@@ -7,8 +7,8 @@ This example demonstrates how:
 3. All agents can observe the environment state
 """
 
-from Experiment.code_generation.entity_design.entity.entity_object import Agent
-from entity.environment import SimulationEnvironment
+from Experiment.code_generation.entity_design.entity.entity_object_template import Agent
+from Experiment.code_generation.entity_design.entity.environment_template import SimulationEnvironment
 from typing import Optional
 
 

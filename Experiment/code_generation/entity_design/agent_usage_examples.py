@@ -5,8 +5,8 @@ This file shows how to use the unified Agent class for code generation.
 Simply override the methods that match your agent's capabilities.
 """
 
-from Experiment.code_generation.entity_design.entity.entity_object import Agent
-from entity.environment import SimulationEnvironment
+from Experiment.code_generation.entity_design.entity.entity_object_template import Agent
+from Experiment.code_generation.entity_design.entity.environment_template import SimulationEnvironment
 
 
 # ==============================================================================
