@@ -3,20 +3,20 @@ from typing import Any, TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .environment import SimulationEnvironment
-    from .agent import Agent
+    from .entity_object import entity_object
 
 # ---------------------------------------------------------
 # POLICY TEMPLATE (Strategy Pattern)
 # ---------------------------------------------------------
 class Policy(ABC):
     """
-    Template for Policies that can be applied to Agents.
-    Policies define behaviors or rules that agents follow (Strategy Pattern).
+    Template for Policies that can be applied to entity_objects.
+    Policies define behaviors or rules that entity_objects follow (Strategy Pattern).
     
     Examples:
     - WasteRevenuePolicy: Determines how waste collection revenue is divided
-    - CollectionSchedulePolicy: Defines when and how agents collect waste
-    - CapacityManagementPolicy: Rules for handling agent capacity limits
+    - CollectionSchedulePolicy: Defines when and how entity_objects collect waste
+    - CapacityManagementPolicy: Rules for handling entity_object capacity limits
     """
     
     @property
@@ -26,12 +26,12 @@ class Policy(ABC):
         pass
 
     @abstractmethod
-    def apply(self, agent: 'Agent', context: dict, env: Optional['SimulationEnvironment'] = None) -> dict:
+    def apply(self, entity_object: 'entity_object', context: dict, env: Optional['SimulationEnvironment'] = None) -> dict:
         """
-        Applies the policy to a specific agent with given context.
+        Applies the policy to a specific entity_object with given context.
         
         Args:
-            agent: The agent this policy is being applied to
+            entity_object: The entity_object this policy is being applied to
             context: Relevant information for the policy (e.g., {'waste_amount': 100, 'waste_type': 'general'})
             env: Optional simulation environment for accessing global state
             
@@ -40,15 +40,15 @@ class Policy(ABC):
         """
         pass
 
-    def is_applicable_to(self, agent: 'Agent') -> bool:
+    def is_applicable_to(self, entity_object: 'entity_object') -> bool:
         """
-        Checks if this policy can be applied to the given agent.
-        Override this to restrict policies to specific agent types.
+        Checks if this policy can be applied to the given entity_object.
+        Override this to restrict policies to specific entity_object types.
         
         Args:
-            agent: The agent to check
+            entity_object: The entity_object to check
             
         Returns:
-            bool: True if policy can be applied to this agent
+            bool: True if policy can be applied to this entity_object
         """
-        return True  # Default: applicable to all agents
+        return True  # Default: applicable to all entity_objects

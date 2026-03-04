@@ -7,8 +7,8 @@ class Janitor(Stakeholder):
     Responsible for collecting, partially sorting, weighing (or guessing), and disposing of waste.
     """
     
-    def __init__(self, agent_id, name):
-        super().__init__(agent_id, name)
+    def __init__(self, entity_object_id, name):
+        super().__init__(entity_object_id, name)
         # Shift end time influences disposal behavior leading to missed collections
         self.shift_end_time = 17  # 17:00 or 5:00 PM
         

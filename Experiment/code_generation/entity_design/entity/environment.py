@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .agent import Agent
+    from .entity_object import entity_object
     from .policy import Policy
     from .system_behavior import SystemBehavior
 
@@ -14,72 +14,72 @@ class SimulationEnvironment:
     Acts as the Mediator. All entities can talk to the environment.
     
     The environment maintains:
-    1. Agents (both active and passive)
-    2. Global properties that affect all agents
+    1. entity_objects (both active and passive)
+    2. Global properties that affect all entity_objects
     3. Global policies and system behaviors
     
-    Active agents can modify global properties through set_property().
-    All agents can observe global properties through get_property().
+    Active entity_objects can modify global properties through set_property().
+    All entity_objects can observe global properties through get_property().
     """
     def __init__(self):
-        self.agents: List['Agent'] = []
+        self.entity_objects: List['entity_object'] = []
         self.policies: List['Policy'] = []
         self.behaviors: List['SystemBehavior'] = []
         
-        # Global properties that affect all agents
+        # Global properties that affect all entity_objects
         # Examples: weather, time_of_day, waste_price, collection_schedule, etc.
         self._global_properties: Dict[str, Any] = {}
         
         # Backward compatibility
-        self.stakeholders = []  # Deprecated: use agents instead
-        self.objects = []  # Deprecated: use agents instead
+        self.stakeholders = []  # Deprecated: use entity_objects instead
+        self.objects = []  # Deprecated: use entity_objects instead
     
     # ==================== ENTITY MANAGEMENT ====================
     
-    def register_agent(self, agent: 'Agent'):
+    def register_entity_object(self, entity_object: 'entity_object'):
         """
-        Register an agent (active or passive) in the environment.
+        Register an entity_object (active or passive) in the environment.
         
         Args:
-            agent: The agent to register
+            entity_object: The entity_object to register
         """
-        if agent not in self.agents:
-            self.agents.append(agent)
+        if entity_object not in self.entity_objects:
+            self.entity_objects.append(entity_object)
     
-    def unregister_agent(self, agent_id: str):
+    def unregister_entity_object(self, entity_object_id: str):
         """
-        Remove an agent from the environment by ID.
+        Remove an entity_object from the environment by ID.
         
         Args:
-            agent_id: ID of the agent to remove
+            entity_object_id: ID of the entity_object to remove
         """
-        self.agents = [a for a in self.agents if a.agent_id != agent_id]
+        self.entity_objects = [a for a in self.entity_objects if a.entity_object_id != entity_object_id]
     
-    def get_agent(self, agent_id: str) -> Optional['Agent']:
+    def get_entity_object(self, entity_object_id: str) -> Optional['entity_object']:
         """
-        Retrieve an agent by ID.
+        Retrieve an entity_object by ID.
         
         Args:
-            agent_id: ID of the agent to retrieve
+            entity_object_id: ID of the entity_object to retrieve
             
         Returns:
-            The agent, or None if not found
+            The entity_object, or None if not found
         """
-        for agent in self.agents:
-            if agent.agent_id == agent_id:
-                return agent
+        for entity_object in self.entity_objects:
+            if entity_object.entity_object_id == entity_object_id:
+                return entity_object
         return None
     
-    def get_all_agents(self) -> List['Agent']:
-        """Returns all registered agents."""
-        return self.agents.copy()
+    def get_all_entity_objects(self) -> List['entity_object']:
+        """Returns all registered entity_objects."""
+        return self.entity_objects.copy()
     
     # ==================== GLOBAL PROPERTY MANAGEMENT ====================
     
     def set_property(self, key: str, value: Any):
         """
         Set a global property that affects the simulation.
-        Active agents can call this to modify the environment state.
+        Active entity_objects can call this to modify the environment state.
         
         Examples:
         - env.set_property('waste_collection_price', 5.0)
@@ -95,7 +95,7 @@ class SimulationEnvironment:
     def get_property(self, key: str, default: Any = None) -> Any:
         """
         Get a global property value.
-        All agents can call this to observe the environment state.
+        All entity_objects can call this to observe the environment state.
         
         Args:
             key: Property name
@@ -174,7 +174,7 @@ class SimulationEnvironment:
     
     def register_entity(self, entity):
         """
-        Deprecated: Use register_agent() instead.
+        Deprecated: Use register_entity_object() instead.
         Logic to add entity to the appropriate list.
         """
-        self.register_agent(entity)
+        self.register_entity_object(entity)

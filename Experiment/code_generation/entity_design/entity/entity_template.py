@@ -5,10 +5,10 @@ This module now imports from the modular structure for backward compatibility.
 
 from .environment import SimulationEnvironment
 from .policy import Policy
-from .agent import Agent
+from .entity_object import entity_object
 
 __all__ = [
     'SimulationEnvironment',
     'Policy',
-    'Agent'
+    'entity_object'
 ]
