@@ -1,0 +1,1 @@
+in short, inconsistence, costly, not effective by gemini 3 pro. inconsistence replication and prompt can be found here
