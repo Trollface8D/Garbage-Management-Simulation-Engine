@@ -32,6 +32,7 @@ class Building(entity_object):
         self.is_overflowing = False
         self.has_residual_waste = False
         self.complaint_count = 0
+        self.action_intent = None
         
         self.state = "Operational"
 
@@ -94,13 +95,13 @@ class Building(entity_object):
         
         # Logic derived from: "แต่ มันก็มีทางที่เขาเป็นคณะทำงาน... เขาก็จะตักเตือนอะไรเงี้ย ให้รีบจัดการ"
         if self.is_overflowing and self.state != "Warning_Issued":
-            return "issue_management_warning"
-            
+            self.action_intent = "issue_management_warning"
         # Logic derived from: "ตกค้างเย็นนี้ พรุ่งนี้เช้า... คณะทำงาน หรือประธานมาเห็นเนี่ย เขาก็จะบอกละ เอ๊ะ ทำไมจุดนี้ขยะเยอะจัง"
-        if self.has_residual_waste:
-            return "trigger_executive_complaint"
-
-        return "idle"
+        elif self.has_residual_waste:
+            self.action_intent = "trigger_executive_complaint"
+        else:
+            self.action_intent = "idle"
+        return self.action_intent
 
     def act(self, env: Optional['SimulationEnvironment'] = None):
         """Executes administrative or environmental reporting."""

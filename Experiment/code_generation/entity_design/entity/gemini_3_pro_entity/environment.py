@@ -1,7 +1,11 @@
 # ===== waste_environment.py =====
 
+import csv
+import heapq
+import json
+import os
 import random
-from typing import TYPE_CHECKING, Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, Dict, Any, List, Tuple
 from environment_template import SimulationEnvironment
 
 if TYPE_CHECKING:
@@ -42,10 +46,86 @@ class WasteManagementEnvironment(SimulationEnvironment):
             "units": {}
         }
         
+        # Spatial graph loaded from physical_map data files.
+        # _graph: node_id -> list of (neighbour_id, weight) edges (undirected)
+        # _node_data: node_id -> full JSON node dict (waste amounts, name, type, etc.)
+        # _entity_location: entity_object_id -> map node_id
+        self._graph: Dict[str, List[Tuple[str, float]]] = {}
+        self._node_data: Dict[str, Dict[str, Any]] = {}
+        self._entity_location: Dict[str, str] = {}
+        self._load_physical_map()
+        
         # Initialize default properties based on interview context
         self.set_property("time_of_day", "morning")
         self.set_property("time_index", 0)
         self.set_property("day_of_week", "monday")
+
+    # ==================== PHYSICAL MAP LOADING ====================
+
+    def _load_physical_map(self):
+        """
+        Loads the campus spatial graph and per-node waste baseline data from the
+        three physical_map files:
+          - building_trashbuffer.json  (TR-series indoor buffer nodes)
+          - outdoor_trashbuffer.json   (L-series outdoor collection-point nodes)
+          - extracted_adjacent_travesal_path.csv  (weighted adjacency edges)
+        """
+        map_dir = os.path.normpath(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         '..', '..', '..', 'physical_map')
+        )
+
+        # --- node data (TR + L series) ---
+        for filename in ('building_trashbuffer.json', 'outdoor_trashbuffer.json'):
+            path = os.path.join(map_dir, filename)
+            if not os.path.exists(path):
+                continue
+            with open(path, encoding='utf-8') as f:
+                data = json.load(f)
+            for node in data.get('nodes', []):
+                self._node_data[node['id']] = node
+
+        # --- adjacency graph (undirected, weighted) ---
+        csv_path = os.path.join(map_dir, 'extracted_adjacent_travesal_path.csv')
+        if os.path.exists(csv_path):
+            with open(csv_path, encoding='utf-8', newline='') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    src, tgt, w = row['Source'], row['Target'], float(row['Weight'])
+                    self._graph.setdefault(src, []).append((tgt, w))
+                    self._graph.setdefault(tgt, []).append((src, w))  # undirected
+
+    def register_entity_location(self, entity_id: str, node_id: str):
+        """
+        Associates a simulation entity with a physical map node so that
+        spatial queries (nearest bin, nearest cage, etc.) can use real
+        campus distances instead of falling back to list-order.
+
+        Call this after registering an entity::
+
+            env.register_entity(my_building)
+            env.register_entity_location('my_building', 'TR-3')
+        """
+        self._entity_location[entity_id] = node_id
+
+    def _dijkstra(self, start_node: str) -> Dict[str, float]:
+        """
+        Returns the shortest-path distances from *start_node* to every
+        reachable node in the campus graph (edge weights are traversal costs
+        from extracted_adjacent_travesal_path.csv).
+        """
+        dist: Dict[str, float] = {start_node: 0.0}
+        heap: List[Tuple[float, str]] = [(0.0, start_node)]
+        while heap:
+            d, u = heapq.heappop(heap)
+            if d > dist.get(u, float('inf')):
+                continue
+            for v, w in self._graph.get(u, []):
+                nd = d + w
+                if nd < dist.get(v, float('inf')):
+                    dist[v] = nd
+                    heapq.heappush(heap, (nd, v))
+        return dist
 
     # ==================== TIME & SIMULATION LOOP ====================
 
@@ -69,17 +149,26 @@ class WasteManagementEnvironment(SimulationEnvironment):
         # 1. All entities perceive their environment
         for entity in self.entity_objects:
             if hasattr(entity, 'perceive'):
-                entity.perceive(self)
+                try:
+                    entity.perceive(self)
+                except NotImplementedError:
+                    pass  # passive-only entity has no perception
 
         # 2. All entities decide their actions
         for entity in self.entity_objects:
             if hasattr(entity, 'decide_action'):
-                entity.decide_action()
+                try:
+                    entity.decide_action()
+                except NotImplementedError:
+                    pass
 
         # 3. All entities act upon the environment
         for entity in self.entity_objects:
             if hasattr(entity, 'act'):
-                entity.act(self)
+                try:
+                    entity.act(self)
+                except NotImplementedError:
+                    pass
 
     # ==================== HELPERS & MEDIATOR FUNCTIONS ====================
 
@@ -130,18 +219,67 @@ class WasteManagementEnvironment(SimulationEnvironment):
     # ==================== SPATIAL & QUERY HELPERS ====================
 
     def get_nearest_waste_cage(self, entity_id: str) -> Optional['entity_object']:
-        """Returns the nearest CollectionPoint/Cage. (Simplified to return the first available for now)"""
-        for obj in self.entity_objects:
-            if obj.__class__.__name__ == "CollectionPoint":
-                return obj
-        return None
+        """
+        Returns the CollectionPoint entity closest to *entity_id* by campus
+        traversal distance (Dijkstra on the physical map graph).
+
+        Outdoor L-series nodes are the primary candidates; TR-series building
+        cages are also considered.  Falls back to the first registered
+        CollectionPoint if the entity has no map location assigned.
+        """
+        cage_entities = [
+            obj for obj in self.entity_objects
+            if obj.__class__.__name__ == "CollectionPoint"
+        ]
+        if not cage_entities:
+            return None
+
+        start_node = self._entity_location.get(entity_id)
+        if start_node and start_node in self._graph:
+            distances = self._dijkstra(start_node)
+            best_cage, best_dist = None, float('inf')
+            for cage in cage_entities:
+                cage_node = self._entity_location.get(cage.entity_object_id)
+                if cage_node:
+                    d = distances.get(cage_node, float('inf'))
+                    if d < best_dist:
+                        best_dist = d
+                        best_cage = cage
+            if best_cage:
+                return best_cage
+
+        return cage_entities[0]  # fallback: first registered cage
 
     def get_nearest_bin(self, entity_id: str) -> Optional['entity_object']:
-        """Returns the nearest TrashCan."""
-        for obj in self.entity_objects:
-            if obj.__class__.__name__ == "TrashCan":
-                return obj
-        return None
+        """
+        Returns the TrashCan entity closest to *entity_id* by campus traversal
+        distance (Dijkstra on the physical map graph).
+
+        TrashCans are located inside buildings (TR-series nodes).  If the
+        requesting entity has no map location, returns the first registered bin.
+        """
+        bin_entities = [
+            obj for obj in self.entity_objects
+            if obj.__class__.__name__ == "TrashCan"
+        ]
+        if not bin_entities:
+            return None
+
+        start_node = self._entity_location.get(entity_id)
+        if start_node and start_node in self._graph:
+            distances = self._dijkstra(start_node)
+            best_bin, best_dist = None, float('inf')
+            for bin_obj in bin_entities:
+                bin_node = self._entity_location.get(bin_obj.entity_object_id)
+                if bin_node:
+                    d = distances.get(bin_node, float('inf'))
+                    if d < best_dist:
+                        best_dist = d
+                        best_bin = bin_obj
+            if best_bin:
+                return best_bin
+
+        return bin_entities[0]  # fallback: first registered bin
 
     def get_entity_by_type(self, entity_type: str) -> Optional['entity_object']:
         """Retrieves specific disposal sites or singleton entities."""
@@ -151,22 +289,90 @@ class WasteManagementEnvironment(SimulationEnvironment):
         return None
 
     def check_building_waste_level(self, entity_id: str) -> bool:
-        """Helper for janitors to check if a building has generated waste."""
+        """
+        Returns True if the building assigned to this janitor/entity has waste
+        that needs to be collected.
+
+        Resolution order:
+        1. If a Building entity lists *entity_id* in its ``assigned_janitors``,
+           check that building's ``internal_waste_volume``.
+        2. If the entity has a map location (register via
+           ``register_entity_location``), check the physical-map node's baseline
+           total waste for that TR-series node.
+        3. Fall back to any Building entity with non-zero internal waste.
+        """
+        # 1. Check the building that explicitly lists this janitor
+        for obj in self.entity_objects:
+            if obj.__class__.__name__ == "Building":
+                if entity_id in getattr(obj, 'assigned_janitors', []):
+                    return obj.internal_waste_volume > 0
+
+        # 2. Use the physical map baseline for the janitor's assigned node
+        node_id = self._entity_location.get(entity_id)
+        if node_id and node_id in self._node_data:
+            baseline = self._node_data[node_id].get('waste', {}).get('total', 0)
+            return baseline > 0
+
+        # 3. Fallback: any building with accumulated runtime waste
         for obj in self.entity_objects:
             if obj.__class__.__name__ == "Building" and obj.internal_waste_volume > 0:
                 return True
         return False
 
-    def get_collection_points_with_waste(self) -> bool:
-        """Helper for garbage trucks to see if any standard pickup points have waste."""
-        for obj in self.entity_objects:
-            if obj.__class__.__name__ == "CollectionPoint" and obj.current_waste_kg > 0:
-                return True
-        return False
+    def get_collection_points_with_waste(self) -> List['entity_object']:
+        """
+        Returns a list of CollectionPoint entities that currently hold waste,
+        sorted by descending waste volume so trucks service the fullest points
+        first.
 
-    def get_special_pickup_requests(self) -> bool:
-        """Helper for garbage trucks to check for special departmental requests."""
-        return len(self.special_pickup_requests) > 0
+        An entity is included when *either*:
+        - its runtime ``current_waste_kg`` is above zero, **or**
+        - it has no runtime waste yet but its physical-map baseline shows
+          historically positive waste (seeding initial state).
+
+        Active outdoor L-nodes from the map that have no entity registered are
+        also logged as warnings so they can be wired up.
+        """
+        active_points: List['entity_object'] = []
+        registered_nodes = {
+            self._entity_location.get(obj.entity_object_id)
+            for obj in self.entity_objects
+        }
+
+        for obj in self.entity_objects:
+            if obj.__class__.__name__ != "CollectionPoint":
+                continue
+            if obj.current_waste_kg > 0:
+                active_points.append(obj)
+            else:
+                # Seed from physical-map baseline when runtime is zero
+                node_id = self._entity_location.get(obj.entity_object_id)
+                if node_id:
+                    baseline = self._node_data.get(node_id, {}).get('waste', {}).get('total', 0)
+                    if baseline > 0:
+                        active_points.append(obj)
+
+        # Warn about active map nodes that have no entity yet
+        for node_id, node in self._node_data.items():
+            if (node_id.startswith('L')
+                    and node.get('status') == 'active'
+                    and node_id not in registered_nodes
+                    and node.get('waste', {}).get('total', 0) > 0):
+                self.log_event(
+                    f"WARNING: Map node {node_id} ({node.get('name_en', '')}) "
+                    f"has waste but no CollectionPoint entity is registered."
+                )
+
+        return sorted(active_points, key=lambda x: x.current_waste_kg, reverse=True)
+
+    def get_special_pickup_requests(self) -> List[Dict[str, Any]]:
+        """
+        Returns the full list of pending special-pickup request dicts submitted
+        by Department entities via ``trigger_event('schedule_special_pickup', ...)``.  
+        Returns an empty list when none are pending (falsy, so existing
+        ``if self.special_requests:`` checks in GarbageTruck still work).
+        """
+        return list(self.special_pickup_requests)
 
     # ==================== INTERNAL BUSINESS LOGIC ====================
 

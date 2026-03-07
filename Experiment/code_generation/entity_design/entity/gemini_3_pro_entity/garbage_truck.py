@@ -120,23 +120,40 @@ class GarbageTruck(entity_object):
             # Logic derived from: "เขาจะมาขับรถเก็บตอนรอบ 5 โมง อีกรอบเหรอ... ซึ่งเขาต้องเสียเงินเพิ่ม"
             self.accumulated_extra_costs += 1000.0  # Arbitrary extra cost penalty for the simulation
         
-        # In a full simulation, this would iterate over physical cages in `env`
-        collected_volume = random.uniform(200.0, 500.0) 
-        
-        if self.current_load_kg + collected_volume <= self.capacity_kg:
-            self.current_load_kg += collected_volume
-            
+        # Use the real CollectionPoint entities perceived in perceive() instead of random amounts.
+        # pending_collection_points is a list[CollectionPoint] sorted by descending waste load.
+        collection_points = getattr(self, 'pending_collection_points', [])
+        if not collection_points or not isinstance(collection_points, list):
+            return
+
+        for cp in collection_points:
+            if self.current_load_kg >= self.capacity_kg:
+                break
+
+            available_kg = cp.current_waste_kg + cp.piled_waste_kg
+            if available_kg <= 0:
+                continue
+
+            space_remaining = self.capacity_kg - self.current_load_kg
+            collected = min(available_kg, space_remaining)
+
+            self.current_load_kg += collected
             # Logic derived from: "แล้วก็เวลาเราขนส่ง เราก็คือ เราใส่รวมกันอยู่แล้ว... แล้วเราค่อยไปแยกปลายทางใช่ไหมครับ"
             # The transport process involves mixing waste types initially in the truck.
-            self.collected_waste_items.append("mixed_transport_waste")
-            
+            self.collected_waste_items.append({
+                "amount": collected,
+                "source": cp.entity_object_id,
+                "type": "mixed_transport_waste",
+            })
+
+            # Empty the physical cage
+            if env:
+                env.interact_with_object(cp, "empty_cage")
+
             # Logic derived from: "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย... พังหมด"
             # Garbage collectors using rough handling causes equipment damage.
-            # We trigger a potential damage event on the passive objects (bins) in the environment.
             if env and random.random() < 0.3:  # 30% chance of rough handling
                 env.trigger_event("equipment_damaged_by_collectors", severity="high")
-        else:
-            self.current_load_kg = self.capacity_kg
 
     def _perform_special_collection(self, env: Optional['SimulationEnvironment']):
         """
@@ -144,11 +161,26 @@ class GarbageTruck(entity_object):
         """
         self.state = "Special_Collection"
         
+        # Consume the first pending special-pickup request submitted by a Department.
         # Logic derived from: "บางพื้นที่ของอาคารเนี้ย มีพื้นที่อยู่ในช็อป ใช่ไหม เขาก็จะอาจมากองลงตรงนี้ไว้ก่อน... เขาก็จะเข้ามาคุย เข้าไปเก็บในช็อปเลย"
         # Waste collectors collect waste directly from the shop.
-        collected_volume = random.uniform(100.0, 300.0)
-        self.current_load_kg += collected_volume
+        if env and env.special_pickup_requests:
+            request = env.special_pickup_requests.pop(0)
+            requested_kg = float(request.get('waste_volume', 200.0))
+        else:
+            requested_kg = random.uniform(100.0, 300.0)
+            request = {}
+
+        space_remaining = self.capacity_kg - self.current_load_kg
+        collected = min(requested_kg, space_remaining)
+        self.current_load_kg += collected
         self.has_large_debris = True
+
+        if env and request:
+            env.log_event(
+                f"Truck {self.entity_object_id} completed special pickup for "
+                f"{request.get('requester', '?')} ({collected:.1f} kg)."
+            )
 
     def _dump_at_destination(self, env: Optional['SimulationEnvironment']):
         """
@@ -156,18 +188,41 @@ class GarbageTruck(entity_object):
         """
         self.state = "Transporting_and_Dumping"
         
+        if self.current_load_kg <= 0:
+            self.state = "Idle"
+            return
+
         if self.has_large_debris:
             # Logic derived from: "เศษวัสดุ เนี่ย ถ้ามันไม่ได้... เอาไปใช้ประโยชน์อะไรไม่ได้แล้วเนี่ย เขาก็จะขี่ เอารถที่ขนขยะเนี่ย ขนเอาไปทิ้งด้านนอก"
-            # Unusable construction waste leads to transportation to external landfill.
-            destination = "External_Landfill"
+            # Unusable construction waste leads to transportation to external landfill / BMA disposal.
+            destination_label = "BMA_Disposal"
+            target = next(
+                (obj for obj in env.entity_objects
+                 if getattr(obj, 'site_type', None) == 'bma_disposal'),
+                None
+            ) if env else None
+            action = "receive_waste"
             self.has_large_debris = False
         else:
             # Logic derived from: "พอเก็บรวบรวมครบเสร็จ เขาก็จะไปที่โรงคัดแยกขยะ"
             # Completion of regular waste collection leads to transporting waste to the sorting plant.
-            destination = "Sorting_Plant"
-            
+            destination_label = "Sorting_Plant"
+            target = next(
+                (obj for obj in env.entity_objects
+                 if obj.__class__.__name__ == 'SortingFacility'),
+                None
+            ) if env else None
+            action = "receive_mixed_waste"
+
+        payload = {"amount": self.current_load_kg, "source": self.entity_object_id}
+
         if env:
-            env.log_event(f"Truck {self.entity_object_id} dumped {self.current_load_kg}kg at {destination}.")
+            if target:
+                env.interact_with_object(target, action, payload=payload)
+            env.log_event(
+                f"Truck {self.entity_object_id} dumped {self.current_load_kg:.1f}kg "
+                f"at {destination_label}."
+            )
             
         # Reset state after dumping
         self.current_load_kg = 0.0

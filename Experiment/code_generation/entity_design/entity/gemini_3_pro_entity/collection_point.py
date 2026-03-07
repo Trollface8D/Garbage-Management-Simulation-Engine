@@ -76,10 +76,13 @@ class CollectionPoint(entity_object):
         """Handles interactions such as receiving waste, compressing waste, or being emptied."""
         
         if action == "deposit_waste":
-            self._receive_waste(payload)
+            # payload may be a float (direct kg) or a dict with an 'amount' key
+            amount = payload.get("amount", 0.0) if isinstance(payload, dict) else payload
+            self._receive_waste(amount)
             
         elif action == "compress_and_add_waste":
-            self._receive_and_compress(payload)
+            amount = payload.get("amount", 0.0) if isinstance(payload, dict) else payload
+            self._receive_and_compress(amount)
             
         elif action == "pile_waste_outside":
             self._pile_waste(payload)
