@@ -1,0 +1,146 @@
+[
+  {
+    "item": 1,
+    "questions": [
+      "How exactly does the system formalize the agreement on The truck schedule between Bangkok and the university, and what are the known failure states in this communication process?",
+      "The text states the schedule is agreed upon. Is this a formal, binding contract, or an informal understanding that could have exceptions?",
+      "Is this statement about The truck schedule being agreed upon a static fact, or is it subject to change over time?"
+    ]
+  },
+  {
+    "item": 2,
+    "questions": [
+      "How exactly does Some event generate An unusual amount of trash, and what systemic threshold defines 'unusual'?",
+      "The text explicitly states that Some event causes An unusual amount of trash. Is this result deterministic for any event, or are there types of events that do not cause a significant increase in trash?",
+      "If we removed Some event entirely, would An unusual amount of trash still occur via another pathway?"
+    ]
+  },
+  {
+    "item": 3,
+    "questions": [
+      "How exactly does the system process the presence of An unusual amount of trash to trigger the action that University staff call for trash trucks, and what are the known failure states (e.g., trash is high but no call is made)?",
+      "The link between An unusual amount of trash and University staff call for trash trucks is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed the condition of An unusual amount of trash entirely, would the University staff call for trash trucks for other reasons?"
+    ]
+  },
+  {
+    "item": 4,
+    "questions": [
+      "Is the creation of the garbage buffer solely influenced by limited space in our university, or do other environmental factors like waste volume trends or collection frequency play a role?",
+      "The text explicitly states that limited space in our university led to the creation of the garbage buffer. Is this result deterministic, or were there alternative solutions to limited space that were considered and rejected?",
+      "If we removed the constraint of limited space in our university, would the garbage buffer still be necessary for other reasons?"
+    ]
+  },
+  {
+    "item": 5,
+    "questions": [
+      "How exactly does the system of a Garbage buffer storing trash physically prevent Normal collection points overflowing, and what are the known failure states of this buffer system?",
+      "The link between the Garbage buffer storing trash and preventing Normal collection points overflowing is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed the Garbage buffer storing trash entirely, would Normal collection points overflowing still occur, or could it be prevented via another pathway like increased collection frequency?"
+    ]
+  },
+  {
+    "item": 6,
+    "questions": [
+      "Are Challenges solely influenced by the fact that Universities accept more students, or do other environmental factors like changes in curriculum, campus infrastructure, or student demographics also play a role?",
+      "The link between Universities accept more students and the emergence of Challenges is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation with other growth factors?",
+      "If Universities accept more students was halted, would new Challenges still emerge from other pathways?"
+    ]
+  },
+  {
+    "item": 7,
+    "questions": [
+      "Is the increase in The number of trash producers solely influenced by the Increase in the number of students, or do other environmental factors like the addition of new staff or campus vendors also play a role?",
+      "The link between the Increase in the number of students and The number of trash producers is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If the Increase in the number of students was reversed, would The number of trash producers still increase via another pathway, such as changing consumption habits?"
+    ]
+  },
+  {
+    "item": 8,
+    "questions": [
+      "What specific KPI defines the failure of The project in general fail, and how is The most important factor (economic feasibility) quantified and measured against that KPI?",
+      "The link between The most important factor and making The project in general fail is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed The most important factor (economic infeasibility), would The project in general fail still occur via another pathway?"
+    ]
+  },
+  {
+    "item": 9,
+    "questions": [
+      "What specific KPI defines more monthly cost, and how are the gains after employing developed policy quantified to compare against this cost?",
+      "The link between gains after employing developed policy and consuming more monthly cost is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If the gains after employing developed policy were removed entirely, would more monthly cost still occur via another pathway?"
+    ]
+  },
+  {
+    "item": 10,
+    "questions": [
+      "What specific KPI defines insignificant improvement, and how are the gains after employing developed policy quantified against this KPI?",
+      "The link between gains after employing developed policy and insignificant improvement is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If the gains after employing developed policy were removed, would the result still be an insignificant improvement due to other factors?"
+    ]
+  },
+  {
+    "item": 11,
+    "questions": [
+      "What operational friction do you anticipate in implementing the inclusion of financial factor and staff sentiment, and how will you ensure the reward function is accurately updated?",
+      "The text doesn't explicitly link the subjects to the object, but suggests an action. What is the expected causal relationship between including financial factor and staff sentiment and improving the reward function?",
+      "Who is the specific decision-maker for including financial factor and staff sentiment in the reward function, and what data informed that proposed action?"
+    ]
+  },
+  {
+    "item": 12,
+    "questions": [
+      "How exactly does the system process a request when the University calls BMA (Bangkok Metropolitan Administration), and what are the known failure states in this on-demand collection system?",
+      "The link between the University and calling the BMA (Bangkok Metropolitan Administration) is implicit—what evidence exists to prove this is a direct causal relationship (an established process) rather than a correlation?",
+      "Who are the specific decision-makers at the University for calling the BMA (Bangkok Metropolitan Administration), and what data informs that action?"
+    ]
+  },
+  {
+    "item": 13,
+    "questions": [
+      "Is the Increase in people solely influenced by the Number of people in the university, or do other environmental factors like campus events or visitor policies play a role?",
+      "The link between the Number of people in the university and an Increase is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation over time?",
+      "Is this statement about the Number of people in the university being subject to an Increase a static fact, or is it a dynamic trend that could change over time?"
+    ]
+  },
+  {
+    "item": 14,
+    "questions": [
+      "What operational friction do you anticipate when Management (ผู้บริหาร) changes Policy, and how will you ensure the new policy is achieved?",
+      "The link between Management (ผู้บริหาร) and Policy changes is implicit—what evidence exists to prove this is a direct causal relationship where management is the sole driver, rather than a correlation with external pressures?",
+      "If we removed Management (ผู้บริหาร) entirely, would Policy still change via another pathway, such as regulatory requirements?"
+    ]
+  },
+  {
+    "item": 15,
+    "questions": [
+      "How exactly does the system process waste collection when Housekeepers (แม่บ้าน) collect Waste from buildings, and what are the known failure states in this process?",
+      "The link between Housekeepers (แม่บ้าน) and Waste from buildings is implicitly a statement of duty. Is there evidence confirming this is their direct and sole responsibility?",
+      "Is this statement about Housekeepers (แม่บ้าน) collecting Waste from buildings a static fact, or is this role subject to change over time?"
+    ]
+  },
+  {
+    "item": 16,
+    "questions": [
+      "How exactly does the system of overlapping Staff working hours, Housekeeper working hours lead to Garbage overflowing, and what are the known failure states in this timing?",
+      "The link between the overlap of Staff working hours, Housekeeper working hours and Garbage overflowing is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation with high trash volume periods?",
+      "If we removed the overlap between Staff working hours, Housekeeper working hours, would Garbage overflowing still occur via another pathway?"
+    ]
+  },
+  {
+    "item": 17,
+    "questions": [
+      "How exactly does the system process measurements by Personnel (บุคลากร) to impact Inaccurate weight measurements (การคาดเคลื่อนการชั่งน้ำหนัก), and what are the known failure states in this measurement process?",
+      "The text explicitly states that Personnel (บุคลากร) cause Inaccurate weight measurements (การคาดเคลื่อนการชั่งน้ำหนัก). Is this result deterministic (i.e., every measurement is inaccurate), or are there exceptions and degrees of inaccuracy?",
+      "If we removed Personnel (บุคลากร) from the weighing process (e.g., through automation), would Inaccurate weight measurements (การคาดเคลื่อนการชั่งน้ำหนัก) still occur via another pathway, like equipment malfunction?"
+    ]
+  },
+  {
+    "item": 18,
+    "questions": [
+      "Is the status of the Waste collection cage size being Too small a constant environmental factor, or does its \"smallness\" vary depending on other factors like the day of the week or time of year?",
+      "The text doesn't provide a causal link, but states a fact. What is the evidence or measurement standard used to determine the Waste collection cage size is Too small?",
+      "Is this statement about the Waste collection cage size being Too small a static fact, or is it subject to change over time (e.g., have the cages been replaced or modified)?"
+    ]
+  }
+]

@@ -1,0 +1,2 @@
+can you list all possible subject and object from these relationship
+output it as a csv file, with name, description and type as coluns

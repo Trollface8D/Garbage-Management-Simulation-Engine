@@ -1,0 +1,98 @@
+[
+  {
+    "source_text": "ถังขยะ ถังเทาอะครับ ที่เป็นเศษวัสดุ พวกเหล็ก ปูน อะไรพวกเนี้ย",
+    "generated_questions": [
+      "Are there edge cases where the definition of Gray bins overlaps with other concepts?",
+      "The text explicitly states that Gray bins leads to construction waste. Is this result deterministic (100% chance), or are there exceptions?",
+      "Is this statement about Gray bins a static fact, or is it subject to change over time?"
+    ]
+  },
+  {
+    "source_text": "แล้วก็เวลาเราขนส่ง เราก็คือ เราใส่รวมกันอยู่แล้ว... แล้วเราค่อยไปแยกปลายทางใช่ไหมครับ",
+    "generated_questions": [
+      "How exactly does the system process The transport process to impact mixing waste types, and what are the known failure states?",
+      "The link between The transport process and mixing waste types is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed The transport process entirely, would mixing waste types still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ว่าสมมติถ้ามีขยะเศษวัสดุ ที่เป็นชิ้นใหญ่ อะไรอย่างเงี้ย เราก็จะนับวัน เพื่อมาเก็บเป็นแต่ละรอบๆ ไป",
+    "generated_questions": [
+      "How exactly does the system process Presence of large construction waste to impact scheduling specific pickup rounds, and what are the known failure states?",
+      "The link between Presence of large construction waste and scheduling specific pickup rounds is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed Presence of large construction waste entirely, would scheduling specific pickup rounds still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ที่เห็นมาตรงกองเนี่ย ส่วนใหญ่จะเป็นนักศึกษากอง",
+    "generated_questions": [
+      "Is waste piles solely influenced by Students, or do other environmental factors play a role?",
+      "The text explicitly states that Students leads to waste piles. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed Students entirely, would waste piles still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ถ้าเป็นของหน่วยงาน หรือเป็นของทางคณะ อะไรพวกเนี้ย เขาก็จะเรียกเป็นรอบๆ",
+    "generated_questions": [
+      "How exactly does the system process Departments to impact pickup rounds, and what are the known failure states?",
+      "The text explicitly states that Departments leads to pickup rounds. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed Departments entirely, would pickup rounds still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ส่วนที่เกิดปัญหาส่วนใหญ่ ก็จะเป็นปัจจัยที่ควบคุมได้ยาก เช่น... ปัจจัยก็จะเกิดจากบุคลากรที่ไม่ได้มีสังกัดชัดเจน เช่น นักศึกษา",
+    "generated_questions": [
+      "Is waste management problems solely influenced by Unaffiliated personnel, or do other environmental factors play a role?",
+      "The text explicitly states that Unaffiliated personnel leads to waste management problems. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed Unaffiliated personnel entirely, would waste management problems still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "สมมุติขยะที่นี่มี เขาก็จะติดต่อคนนี้... พี่คนเนี้ยก็จะติดต่อไปทางพี่มอส เพื่อจะนัดวัน เพื่อจะเข้ามารับ",
+    "generated_questions": [
+      "How exactly does the system process Building PM to impact the coordinator, and what are the known failure states?",
+      "The link between Building PM and the coordinator is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed Building PM entirely, would the coordinator still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "แต่มีปริมาณที่เยอะมากๆ เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน นอกเหนือจากวันพฤหัสบดี ท้ายเดือน",
+    "generated_questions": [
+      "How exactly does the system process High volume of recyclable waste to impact immediate pickup, and what are the known failure states?",
+      "The link between High volume of recyclable waste and immediate pickup is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed High volume of recyclable waste entirely, would immediate pickup still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "สมมุติถ้ามีพวกงานกีฬา หรืองานอะไรเงี้ย ก็จะมีพวกไม้ ไม้อัด",
+    "generated_questions": [
+      "Is wood waste solely influenced by Sports events, or do other environmental factors play a role?",
+      "The link between Sports events and wood waste is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed Sports events entirely, would wood waste still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "เศษวัสดุ เนี่ย ถ้ามันไม่ได้... เอาไปใช้ประโยชน์อะไรไม่ได้แล้วเนี่ย เขาก็จะขี่ เอารถที่ขนขยะเนี่ย ขนเอาไปทิ้งด้านนอก",
+    "generated_questions": [
+      "How exactly does the system process Unusable construction waste to impact transportation to external landfill, and what are the known failure states?",
+      "The text explicitly states that Unusable construction waste leads to transportation to external landfill. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed Unusable construction waste entirely, would transportation to external landfill still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "บางพื้นที่ของอาคารเนี้ย มีพื้นที่อยู่ในช็อป ใช่ไหม เขาก็จะอาจมากองลงตรงนี้ไว้ก่อน... เขาก็จะเข้ามาคุย เข้าไปเก็บในช็อปเลย",
+    "generated_questions": [
+      "How exactly does the system process Faculties with shop space to impact waste, and what are the known failure states?",
+      "The link between Faculties with shop space and waste is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed Faculties with shop space entirely, would waste still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "แต่ถ้าเป็นพวกของขยะรีไซเคิล ที่เป็นตาม ตามรอบของเดือนอะไรเงี้ย เขาก็จะวางกองไว้หน้าตึก",
+    "generated_questions": [
+      "How exactly does the system process Monthly recycle rounds to impact piling waste in front of buildings, and what are the known failure states?",
+      "The link between Monthly recycle rounds and piling waste in front of buildings is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed Monthly recycle rounds entirely, would piling waste in front of buildings still occur via another pathway?"
+    ]
+  }
+]

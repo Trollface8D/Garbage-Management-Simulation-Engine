@@ -1,0 +1,82 @@
+[
+  {
+    "source_text": "ถ้าเราทำให้การส่งต่อ มันไม่เกิดการพลาดกันได้ เนี่ย ไอ้เรื่องของการที่เห็นขยะ แบบ... ล้น... มันก็จะน้อยลง",
+    "generated_questions": [
+      "How exactly does the system process [preventing errors in waste transfer] to impact [reduction of overflowing waste], and what are the known failure states?",
+      "The text explicitly states that [preventing errors in waste transfer] leads to [reduction of overflowing waste]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [preventing errors in waste transfer] entirely, would [reduction of overflowing waste] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "โดยแม่บ้านเองเนี่ย มันมีรอบวันเก็บ อ่า มีรอบ อ่า ช่วงอา 3 โมง 4 โมง",
+    "generated_questions": [
+      "How exactly does the system process [waste collection rounds] to impact [3:00 PM to 4:00 PM], and what are the known failure states?",
+      "The link between [waste collection rounds] and [3:00 PM to 4:00 PM] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "Is this statement about [waste collection rounds] a static fact, or is it subject to change over time?"
+    ]
+  },
+  {
+    "source_text": "แต่แม่บ้าน เลิกงานกี่โมง 5 โมง เขาจะถือขยะลงมาทิ้ง ตอน 5 โมง",
+    "generated_questions": [
+      "How exactly does the system process [maids] to impact [trash], and what are the known failure states?",
+      "The text explicitly states that [maids] leads to [trash]. Is this result deterministic (100% chance), or are there exceptions?",
+      "Who is the specific decision-maker for [maids], and what data informed that action?"
+    ]
+  },
+  {
+    "source_text": "ซึ่งอันเนี้ยแหละ คือ ทำให้คาด... คลาดเคลื่อนได้... เพราะเก็บตอนเก็บมา 4 โมง",
+    "generated_questions": [
+      "How exactly does the system process [maids bringing trash at 5 PM] to impact [discrepancy in collection], and what are the known failure states?",
+      "The text explicitly states that [maids bringing trash at 5 PM] leads to [discrepancy in collection]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [maids bringing trash at 5 PM] entirely, would [discrepancy in collection] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "แต่มันก็ทำให้รอบการเก็บ มันพลาดกัน ทำให้เกิดปัญหา... มันก็เป็นขยะที่ตกค้าง",
+    "generated_questions": [
+      "How exactly does the system process [missing the collection round] to impact [operational problems], and what are the known failure states?",
+      "The text explicitly states that [missing the collection round] leads to [operational problems]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [missing the collection round] entirely, would [operational problems] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ตกค้างเย็นนี้ พรุ่งนี้เช้า อ่า พวกคณะทำงาน หรือประธานมาเห็นเนี่ย เขาก็จะบอกละ เอ๊ะ ทำไมจุดนี้ขยะเยอะจัง",
+    "generated_questions": [
+      "How exactly does the system process [waste residue overnight] to impact [complaints from the committee], and what are the known failure states?",
+      "The link between [waste residue overnight] and [complaints from the committee] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [waste residue overnight] entirely, would [complaints from the committee] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "น้องๆ มีจัดกิจกรรม รับน้อง... ก็จะเกิดขยะ มหาศาล... เที่ยงคืน ตี 2 มึงยังไม่เลิกกันเลย มันก็มีขยะพวกเนี้ย เกิดขึ้น",
+    "generated_questions": [
+      "Is [massive amounts of waste] solely influenced by [student activities], or do other environmental factors play a role?",
+      "The link between [student activities] and [massive amounts of waste] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [student activities] entirely, would [massive amounts of waste] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "เขาจะมาขับรถเก็บตอนรอบ 5 โมง อีกรอบเหรอ... ซึ่งเขาต้องเสียเงินเพิ่ม",
+    "generated_questions": [
+      "What specific KPI defines the success of [paying extra money], and how is [driving an additional collection round at 5 PM] quantified?",
+      "The link between [driving an additional collection round at 5 PM] and [paying extra money] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [driving an additional collection round at 5 PM] entirely, would [paying extra money] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "กินข้าวบูด... อยู่ในออฟฟิศ หนู มด อ่า พวกเนี้ย ซึ่งต่อเนื่องมาอีก จัดการยากกว่าเดิมอีก",
+    "generated_questions": [
+      "Is [rats] solely influenced by [keeping food waste in the office], or do other environmental factors play a role?",
+      "The link between [keeping food waste in the office] and [rats] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [keeping food waste in the office] entirely, would [rats] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "สุดท้ายเนี่ย ก็จะมีพวกแบบเนี้ย มา ทำให้แบบ เกิดเหตุ อะ ถ่ายเคมี 6 รั่วไหล 6 รดตัวเองบ้าง",
+    "generated_questions": [
+      "What operational friction do you anticipate in implementing [ignoring lab regulations], and how will you ensure [chemical spills] is achieved?",
+      "The text explicitly states that [ignoring lab regulations] leads to [chemical spills]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [ignoring lab regulations] entirely, would [chemical spills] still occur via another pathway?"
+    ]
+  }
+]

@@ -1,0 +1,82 @@
+[
+  {
+    "source_text": "พี่ก็จะเปลี่ยน พี่อยากจะเปลี่ยน ใหม่ ให้มันมีขนาดที่ ใหญ่กว่าเนี้ย แล้วก็มีหลังคง หลังคา ปิด กันฝ่ง กันฝน ให้มันดูเป็น เหมือนกิจจะลักษณะ กว่าเนี้ย",
+    "generated_questions": [
+      "What operational friction do you anticipate in implementing [The interviewer], and how will you ensure [the waste cage] is achieved?",
+      "The text explicitly states that [The interviewer] leads to [the waste cage]. Is this result deterministic (100% chance), or are there exceptions?",
+      "Who is the specific decision-maker for [The interviewer], and what data informed that action?"
+    ]
+  },
+  {
+    "source_text": "มีทั้ง ตลาด โรงเรียน ตึก 14 ชั้น ที่เป็นโรงแรม มันจะไม่ล้นได้ไงอะ... รวมทิ้ง อยู่ตรงนั้นน่ะ มันก็ บาน",
+    "generated_questions": [
+      "Is [waste overflow] solely influenced by [The market], or do other environmental factors play a role?",
+      "The text explicitly states that [The market] leads to [waste overflow]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [The market] entirely, would [waste overflow] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "แต่มันก็ ยังไม่ได้ ตอบโจทย์ หรือมันก็ ไม่ง่าย ต่อแม่บ้าน เอง เหมือนกัน อืม ซึ่งมันก็ เล็กเกินไป",
+    "generated_questions": [
+      "How exactly does the system process [The compact design of the cage] to impact [difficulty for the cleaners], and what are the known failure states?",
+      "The link between [The compact design of the cage] and [difficulty for the cleaners] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [The compact design of the cage] entirely, would [difficulty for the cleaners] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "งบมัน จำกัด ด้วยแหละ อืม ใช่... ซึ่งมันมี งบจำกัด ไง มันก็เลย ออกมาเป็น แบบเนี้ย",
+    "generated_questions": [
+      "Is [the current waste cage design] solely influenced by [Limited budget], or do other environmental factors play a role?",
+      "The text explicitly states that [Limited budget] leads to [the current waste cage design]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Limited budget] entirely, would [the current waste cage design] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย... พังหมด",
+    "generated_questions": [
+      "How exactly does the system process [Garbage collectors using rough handling] to impact [equipment damage], and what are the known failure states?",
+      "The text explicitly states that [Garbage collectors using rough handling] leads to [equipment damage]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Garbage collectors using rough handling] entirely, would [equipment damage] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "เวลา มีกิจกรรม ต่างๆ ก็จะมีพวก น้องๆ เนี่ย มายืน แยกขยะ ช่วยแยกขยะ",
+    "generated_questions": [
+      "What operational friction do you anticipate in implementing [Student volunteers], and how will you ensure [separate waste] is achieved?",
+      "The text explicitly states that [Student volunteers] leads to [separate waste]. Is this result deterministic (100% chance), or are there exceptions?",
+      "Who is the specific decision-maker for [Student volunteers], and what data informed that action?"
+    ]
+  },
+  {
+    "source_text": "บางคน มา ขนาด มีคนยืนบอก มันยัง ทิ้ง ลงไปเลย เออ ไม่สนใจอะ",
+    "generated_questions": [
+      "Is [waste separation instructions] solely influenced by [Some people], or do other environmental factors play a role?",
+      "The text explicitly states that [Some people] leads to [waste separation instructions]. Is this result deterministic (100% chance), or are there exceptions?",
+      "Is this statement about [Some people] a static fact, or is it subject to change over time?"
+    ]
+  },
+  {
+    "source_text": "เขา ก็ มีการ ไปเช่า พวก อุปกรณ์ อ่า พวกแก้วน้ำ พวกชาม พวกจาน มา ลดขยะ ได้ อย่าง เยอะ เลย หายไป เป็น 100 โล ได้เลย",
+    "generated_questions": [
+      "What specific KPI defines the success of [waste quantity], and how is [Renting reusable equipment] quantified?",
+      "The text explicitly states that [Renting reusable equipment] leads to [waste quantity]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Renting reusable equipment] entirely, would [waste quantity] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ใกล้มือ มั้ง บางที เดินมา ใกล้มือ กู ก็ทิ้ง นี่แหละ",
+    "generated_questions": [
+      "Is [indiscriminate dumping] solely influenced by [Convenience], or do other environmental factors play a role?",
+      "The link between [Convenience] and [indiscriminate dumping] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Convenience] entirely, would [indiscriminate dumping] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ทุกคน ใน ม. เนี่ย แยกขยะ ได้ พื้นฐาน เนี่ย แยกได้ อยู่แล้ว แต่ เวลา ทิ้ง มึง ถึง แยก ไม่ได้",
+    "generated_questions": [
+      "Is [separate waste] solely influenced by [Everyone in the university], or do other environmental factors play a role?",
+      "The text explicitly states that [Everyone in the university] leads to [separate waste]. Is this result deterministic (100% chance), or are there exceptions?",
+      "Is this statement about [Everyone in the university] a static fact, or is it subject to change over time?"
+    ]
+  }
+]

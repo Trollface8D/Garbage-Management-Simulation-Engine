@@ -1,0 +1,58 @@
+[
+  {
+    "source_text": "แม่บ้านที่จะคอยดูแล ก็คือจะมาคอยเก็บ ช่วยคัดแยกในระดับนึง จากการที่นักศึกษา หรือบุคลากรทิ้ง",
+    "generated_questions": [
+      "How exactly does the system process [Students discarding waste] to impact [Housekeepers sorting], and what are the known failure states?",
+      "The text explicitly states that [Students discarding waste] leads to [Housekeepers sorting]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Students discarding waste] entirely, would [Housekeepers sorting] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "เขาก็จะเก็บรวบรวมแต่ละถัง ชั่งน้ำหนัก แล้วก็เอาไปไว้ที่กรงพักขยะ",
+    "generated_questions": [
+      "How exactly does the system process [Housekeepers] to impact [waste bins], and what are the known failure states?",
+      "The text explicitly states that [Housekeepers] leads to [waste bins]. Is this result deterministic (100% chance), or are there exceptions?",
+      "Who is the specific decision-maker for [Housekeepers], and what data informed that action?"
+    ]
+  },
+  {
+    "source_text": "ซึ่งขยะภายนอกเนี่ย ก็จะเป็นทีมของงานสวน ที่ดูแลสวนภายนอกเนี่ย เขาจะมีฝ่ายที่เป็นฝ่ายจัดการขยะ เขาก็จะขับรถเนี่ย เก็บรอบ ม.",
+    "generated_questions": [
+      "How exactly does the system process [Garden team] to impact [external waste], and what are the known failure states?",
+      "The text explicitly states that [Garden team] leads to [external waste]. Is this result deterministic (100% chance), or are there exceptions?",
+      "Who is the specific decision-maker for [Garden team], and what data informed that action?"
+    ]
+  },
+  {
+    "source_text": "พอเก็บรวบรวมครบเสร็จ เขาก็จะไปที่โรงคัดแยกขยะ",
+    "generated_questions": [
+      "How exactly does the system process [Completion of waste collection] to impact [transporting waste], and what are the known failure states?",
+      "The link between [Completion of waste collection] and [transporting waste] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Completion of waste collection] entirely, would [transporting waste] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "ขยะที่เกิดขึ้น บางส่วนที่คนเนี่ยสามารถคัดแยกได้ เขาก็จะกองไว้อีกส่วนนึง",
+    "generated_questions": [
+      "How exactly does the system process [Waste being sortable] to impact [piling separately], and what are the known failure states?",
+      "The link between [Waste being sortable] and [piling separately] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Waste being sortable] entirely, would [piling separately] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "อีกส่วนนึงที่คัดแยกไม่ได้เนี่ย เขาก็จะอัดเข้าถังสีเหลือง ที่เป็นถังบีบอัดขยะ ของ กทม.",
+    "generated_questions": [
+      "How exactly does the system process [Waste being unsortable] to impact [compression into yellow BMA bins], and what are the known failure states?",
+      "The link between [Waste being unsortable] and [compression into yellow BMA bins] is implicit—what evidence exists to prove this is a direct causal relationship rather than a correlation?",
+      "If we removed [Waste being unsortable] entirely, would [compression into yellow BMA bins] still occur via another pathway?"
+    ]
+  },
+  {
+    "source_text": "จากคน 3 คนในการคัดแยกขยะเนี่ย มันคงไม่ success กันอยู่แล้ว ซึ่งไม่เพียงพออยู่แล้ว",
+    "generated_questions": [
+      "What specific KPI defines the success of [unsuccessful sorting process], and how is [Limited number of sorters] quantified?",
+      "The text explicitly states that [Limited number of sorters] leads to [unsuccessful sorting process]. Is this result deterministic (100% chance), or are there exceptions?",
+      "If we removed [Limited number of sorters] entirely, would [unsuccessful sorting process] still occur via another pathway?"
+    ]
+  }
+]
