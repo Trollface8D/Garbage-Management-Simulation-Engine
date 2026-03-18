@@ -12,6 +12,9 @@ output/*
 !**/output/transcript/**
 !**/output/v2.json
 !**/output/v3_chunk/
+!**/output/v4*.json
+!**/output/classify_questions.py
+
 env*/
 __pychache__/
 graphdbc*.pt

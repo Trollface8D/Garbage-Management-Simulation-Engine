@@ -1,0 +1,257 @@
+[
+  {
+    "source_text": "เขาก็จะเอาขยะจากหน่วยงาน หรือสำนักงานของตัวเองเนี่ยลงมาไว้ตามแต่ละตึก ตามใต้ตึกอะ ตามจุดที่เขาคุยกันไว้ เขาก็จะติดป้ายไว้ว่าเป็นของหน่วยงานใคร",
+    "question": "What implicit factors or agreements require Units and offices to bring down waste to designated spots?",
+    "category": "expert"
+  },
+  {
+    "source_text": "เขาก็จะเอาขยะจากหน่วยงาน หรือสำนักงานของตัวเองเนี่ยลงมาไว้ตามแต่ละตึก ตามใต้ตึกอะ ตามจุดที่เขาคุยกันไว้ เขาก็จะติดป้ายไว้ว่าเป็นของหน่วยงานใคร",
+    "question": "What are the unstated assumptions or rules governing how Units and offices label waste to identify ownership?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ช่วงสถานการณ์โควิด ก็จะมีถังแยกออกมาอีก ที่เป็นถังขยะติดเชื้อ ที่คอยทิ้งพวกชุดตรวจ ATK แมสก์",
+    "question": "How exactly did the COVID-19 situation cause the separation of infectious waste bins?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ช่วงสถานการณ์โควิด ก็จะมีถังแยกออกมาอีก ที่เป็นถังขยะติดเชื้อ ที่คอยทิ้งพวกชุดตรวจ ATK แมสก์",
+    "question": "What are the unstated safety or regulatory assumptions linking the COVID-19 situation to the separation of infectious waste bins?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ใครเนี่ยที่มีขยะอิเล็กทรอนิกส์เนี่ย ก็มาบริจาคให้กับที่นี่ ก็เหมือนแลกชั่วโมงไป",
+    "question": "What implicit mechanism or tracking system ensures Donating e-waste results in receiving activity hours?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ใครเนี่ยที่มีขยะอิเล็กทรอนิกส์เนี่ย ก็มาบริจาคให้กับที่นี่ ก็เหมือนแลกชั่วโมงไป",
+    "question": "Are there any hidden conditions or thresholds required for Donating e-waste to successfully lead to receiving activity hours?",
+    "category": "expert"
+  },
+  {
+    "source_text": "พอเก็บรวบรวมครบเสร็จ เขาก็จะไปที่โรงคัดแยกขยะ",
+    "question": "What implicit criteria or thresholds define the Completion of waste collection before it leads to transporting waste?",
+    "category": "expert"
+  },
+  {
+    "source_text": "พอเก็บรวบรวมครบเสร็จ เขาก็จะไปที่โรงคัดแยกขยะ",
+    "question": "Are there any unstated logistical or scheduling factors connecting the Completion of waste collection to transporting waste?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ขยะที่เกิดขึ้น บางส่วนที่คนเนี่ยสามารถคัดแยกได้ เขาก็จะกองไว้อีกส่วนนึง",
+    "question": "What unstated definitions or guidelines determine what qualifies as Waste being sortable before it results in piling separately?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ขยะที่เกิดขึ้น บางส่วนที่คนเนี่ยสามารถคัดแยกได้ เขาก็จะกองไว้อีกส่วนนึง",
+    "question": "Are there any implicit spatial or handling constraints when Waste being sortable results in piling separately?",
+    "category": "expert"
+  },
+  {
+    "source_text": "อีกส่วนนึงที่คัดแยกไม่ได้เนี่ย เขาก็จะอัดเข้าถังสีเหลือง ที่เป็นถังบีบอัดขยะ ของ กทม.",
+    "question": "What are the unstated rules or municipal agreements determining why Waste being unsortable specifically results in compression into yellow BMA bins?",
+    "category": "expert"
+  },
+  {
+    "source_text": "อีกส่วนนึงที่คัดแยกไม่ได้เนี่ย เขาก็จะอัดเข้าถังสีเหลือง ที่เป็นถังบีบอัดขยะ ของ กทม.",
+    "question": "Are there any hidden capacity or safety constraints when Waste being unsortable results in compression into yellow BMA bins?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ก็จะถูกฟ้องอะไรเงี้ย ก็คือจากบุคลากรบ้าง จากนักศึกษาบ้าง ว่าขยะแต่ละจุดเนี่ยมันล้น",
+    "question": "What underlying assumptions connect Trash overflow at various points to complaints from staff?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ก็จะถูกฟ้องอะไรเงี้ย ก็คือจากบุคลากรบ้าง จากนักศึกษาบ้าง ว่าขยะแต่ละจุดเนี่ยมันล้น",
+    "question": "Are there specific thresholds where Trash overflow at various points triggers complaints from students?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ก็จะถูกฟ้องอะไรเงี้ย ก็คือจากบุคลากรบ้าง จากนักศึกษาบ้าง ว่าขยะแต่ละจุดเนี่ยมันล้น",
+    "question": "What implicit conditions or intermediary steps must exist for Trash overflow at various points to effectively result in complaints from staff and students?",
+    "category": "expert"
+  },
+  {
+    "source_text": "แล้วก็เวลาเราขนส่ง เราก็คือ เราใส่รวมกันอยู่แล้ว... แล้วเราค่อยไปแยกปลายทางใช่ไหมครับ",
+    "question": "What operational constraints dictate that The transport process involves mixing waste types initially?",
+    "category": "expert"
+  },
+  {
+    "source_text": "แล้วก็เวลาเราขนส่ง เราก็คือ เราใส่รวมกันอยู่แล้ว... แล้วเราค่อยไปแยกปลายทางใช่ไหมครับ",
+    "question": "How does the workflow ensure that The waste management team efficiently separates the waste at the destination after it has been mixed?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ว่าสมมติถ้ามีขยะเศษวัสดุ ที่เป็นชิ้นใหญ่ อะไรอย่างเงี้ย เราก็จะนับวัน เพื่อมาเก็บเป็นแต่ละรอบๆ ไป",
+    "question": "How does the Presence of large construction waste result in scheduling specific pickup rounds rather than integrating them into regular daily collections?",
+    "category": "internet"
+  },
+  {
+    "source_text": "สมมุติขยะที่นี่มี เขาก็จะติดต่อคนนี้... พี่คนเนี้ยก็จะติดต่อไปทางพี่มอส เพื่อจะนัดวัน เพื่อจะเข้ามารับ",
+    "question": "Why is it necessary that the Building PM contacts the coordinator rather than communicating directly with the collection team?",
+    "category": "expert"
+  },
+  {
+    "source_text": "สมมุติขยะที่นี่มี เขาก็จะติดต่อคนนี้... พี่คนเนี้ยก็จะติดต่อไปทางพี่มอส เพื่อจะนัดวัน เพื่อจะเข้ามารับ",
+    "question": "What protocol or approval process requires that The coordinator contacts Mr. Moss to schedule pickup?",
+    "category": "expert"
+  },
+  {
+    "source_text": "แต่มีปริมาณที่เยอะมากๆ เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน นอกเหนือจากวันพฤหัสบดี ท้ายเดือน",
+    "question": "What exact threshold determines when a High volume of recyclable waste prevents immediate pickup?",
+    "category": "expert"
+  },
+  {
+    "source_text": "แต่มีปริมาณที่เยอะมากๆ เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน นอกเหนือจากวันพฤหัสบดี ท้ายเดือน",
+    "question": "What specific resource limitations mean a High volume of recyclable waste necessitates scheduling a special pickup date outside of normal rounds?",
+    "category": "expert"
+  },
+  {
+    "source_text": "สมมุติถ้ามีพวกงานกีฬา หรืองานอะไรเงี้ย ก็จะมีพวกไม้ ไม้อัด",
+    "question": "What specific activities or structures mean that Sports events generate wood waste?",
+    "category": "expert"
+  },
+  {
+    "source_text": "สมมุติถ้ามีพวกงานกีฬา หรืองานอะไรเงี้ย ก็จะมีพวกไม้ ไม้อัด",
+    "question": "Is it an unavoidable outcome or a specific design choice that Sports events generate plywood waste?",
+    "category": "internet"
+  },
+  {
+    "source_text": "บางพื้นที่ของอาคารเนี้ย มีพื้นที่อยู่ในช็อป ใช่ไหม เขาก็จะอาจมากองลงตรงนี้ไว้ก่อน... เขาก็จะเข้ามาคุย เข้าไปเก็บในช็อปเลย",
+    "question": "What structural or policy factors allow Faculties with shop space to store waste internally rather than using external bins?",
+    "category": "expert"
+  },
+  {
+    "source_text": "บางพื้นที่ของอาคารเนี้ย มีพื้นที่อยู่ในช็อป ใช่ไหม เขาก็จะอาจมากองลงตรงนี้ไว้ก่อน... เขาก็จะเข้ามาคุย เข้าไปเก็บในช็อปเลย",
+    "question": "Does the fact that Waste collectors collect waste directly from the shop imply a specialized handling protocol for shop materials?",
+    "category": "expert"
+  },
+  {
+    "source_text": "แต่ถ้าเป็นพวกของขยะรีไซเคิล ที่เป็นตาม ตามรอบของเดือนอะไรเงี้ย เขาก็จะวางกองไว้หน้าตึก",
+    "question": "What underlying assumptions or space limitations make Monthly recycle rounds involve piling waste in front of buildings an acceptable practice despite potential visual impact?",
+    "category": "expert"
+  },
+  {
+    "source_text": "โดยแม่บ้านเองเนี่ย มันมีรอบวันเก็บ อ่า มีรอบ อ่า ช่วงอา 3 โมง 4 โมง",
+    "question": "What operational factors dictate that waste collection rounds occur at 3:00 PM to 4:00 PM?",
+    "category": "expert"
+  },
+  {
+    "source_text": "โดยแม่บ้านเองเนี่ย มันมีรอบวันเก็บ อ่า มีรอบ อ่า ช่วงอา 3 โมง 4 โมง",
+    "question": "Are there implicit limitations preventing waste collection rounds from happening outside the window of 3:00 PM to 4:00 PM?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ตกค้างเย็นนี้ พรุ่งนี้เช้า อ่า พวกคณะทำงาน หรือประธานมาเห็นเนี่ย เขาก็จะบอกละ เอ๊ะ ทำไมจุดนี้ขยะเยอะจัง",
+    "question": "What specific conditions or thresholds cause waste residue overnight to lead to complaints from the committee?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ตกค้างเย็นนี้ พรุ่งนี้เช้า อ่า พวกคณะทำงาน หรือประธานมาเห็นเนี่ย เขาก็จะบอกละ เอ๊ะ ทำไมจุดนี้ขยะเยอะจัง",
+    "question": "What are the implicit communication channels through which waste residue overnight leads to complaints from the president?",
+    "category": "expert"
+  },
+  {
+    "source_text": "น้องๆ มีจัดกิจกรรม รับน้อง... ก็จะเกิดขยะ มหาศาล... เที่ยงคืน ตี 2 มึงยังไม่เลิกกันเลย มันก็มีขยะพวกเนี้ย เกิดขึ้น",
+    "question": "What unstated aspects of student activities generate massive amounts of waste compared to normal daily functions?",
+    "category": "expert"
+  },
+  {
+    "source_text": "น้องๆ มีจัดกิจกรรม รับน้อง... ก็จะเกิดขยะ มหาศาล... เที่ยงคืน ตี 2 มึงยังไม่เลิกกันเลย มันก็มีขยะพวกเนี้ย เกิดขึ้น",
+    "question": "Why do late night activities specifically result in waste accumulation at night without immediate mitigation strategies?",
+    "category": "internet"
+  },
+  {
+    "source_text": "เขาจะมาขับรถเก็บตอนรอบ 5 โมง อีกรอบเหรอ... ซึ่งเขาต้องเสียเงินเพิ่ม",
+    "question": "What budgetary constraints or contractual agreements implicitly state that driving an additional collection round at 5 PM requires paying extra money?",
+    "category": "expert"
+  },
+  {
+    "source_text": "กินข้าวบูด... อยู่ในออฟฟิศ หนู มด อ่า พวกเนี้ย ซึ่งต่อเนื่องมาอีก จัดการยากกว่าเดิมอีก",
+    "question": "How exactly does keeping food waste in the office attract rats in this specific environment?",
+    "category": "internet"
+  },
+  {
+    "source_text": "กินข้าวบูด... อยู่ในออฟฟิศ หนู มด อ่า พวกเนี้ย ซึ่งต่อเนื่องมาอีก จัดการยากกว่าเดิมอีก",
+    "question": "What are the unstated timelines or conditions under which keeping food waste in the office attracts ants?",
+    "category": "internet"
+  },
+  {
+    "source_text": "กินข้าวบูด... อยู่ในออฟฟิศ หนู มด อ่า พวกเนี้ย ซึ่งต่อเนื่องมาอีก จัดการยากกว่าเดิมอีก",
+    "question": "In what specific ways does the presence of pests make waste management more difficult than standard collection?",
+    "category": "expert"
+  },
+  {
+    "source_text": "โดยที่ เราเอา เอ่อ เราสร้าง Simulation ขึ้นมา แล้วแบบ พยายามที่จะ ลอกเลียนแบบ สภาวะตอนนี้ แล้วดูว่า พอเปลี่ยน นโยบาย เล็กน้อยเนี่ย ในจุดๆ นึงเนี่ย มันดีขึ้นไหม",
+    "question": "How exactly does Changing the policy lead to improvements in the system state within the simulation?",
+    "category": "internet"
+  },
+  {
+    "source_text": "โดยที่ เราเอา เอ่อ เราสร้าง Simulation ขึ้นมา แล้วแบบ พยายามที่จะ ลอกเลียนแบบ สภาวะตอนนี้ แล้วดูว่า พอเปลี่ยน นโยบาย เล็กน้อยเนี่ย ในจุดๆ นึงเนี่ย มันดีขึ้นไหม",
+    "question": "What specific assumptions are made when predicting how Changing the policy affects the system state?",
+    "category": "internet"
+  },
+  {
+    "source_text": "คือเราอะ ต้องการข้อมูล ที่มันเป็น ข้อมูลจริง จริงๆ นะ ไม่ใช่ข้อมูลที่ แม่บ้านเขา แล้วแต่อารมณ์ อยากจะเขียนน่ะ",
+    "question": "In what specific ways does Maids relying on mood directly result in inaccurate data?",
+    "category": "expert"
+  },
+  {
+    "source_text": "คือเราอะ ต้องการข้อมูล ที่มันเป็น ข้อมูลจริง จริงๆ นะ ไม่ใช่ข้อมูลที่ แม่บ้านเขา แล้วแต่อารมณ์ อยากจะเขียนน่ะ",
+    "question": "Are there other procedural factors besides Maids relying on mood that contribute to the inaccurate data?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ปัญหาคือ เราอะ อยากจะเก็บ ให้มัน มันมีข้อมูล อย่างชัดเจน แบบ ที่มันจะมีข้อมูล ขาดหาย แต่ว่า ไอ้ขั้นตอนการ ชั่งขยะ ในปัจจุบัน มันก็ดูจะ ยุ่งยากเกินไป สำหรับ พนักงาน ปัจจุบัน ที่จะทำ",
+    "question": "What specific aspects of the Current trash weighing process make it too complicated for the current staff?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ปัญหาคือ เราอะ อยากจะเก็บ ให้มัน มันมีข้อมูล อย่างชัดเจน แบบ ที่มันจะมีข้อมูล ขาดหาย แต่ว่า ไอ้ขั้นตอนการ ชั่งขยะ ในปัจจุบัน มันก็ดูจะ ยุ่งยากเกินไป สำหรับ พนักงาน ปัจจุบัน ที่จะทำ",
+    "question": "How does a Complicated weighing process directly cause missing data in the recording system?",
+    "category": "internet"
+  },
+  {
+    "source_text": "เขาก็ ส่วนใหญ่ก็ ยกขึ้นรถเลย ไม่ต้องชั่ง ไม่ค่อยได้ชั่ง ประมาณเนี้ย",
+    "question": "Does Lifting trash directly to the truck always guarantee not weighing the trash, or are there alternative measurement methods?",
+    "category": "internet"
+  },
+  {
+    "source_text": "เขาก็ ส่วนใหญ่ก็ ยกขึ้นรถเลย ไม่ต้องชั่ง ไม่ค่อยได้ชั่ง ประมาณเนี้ย",
+    "question": "What operational barriers prevent the staff from weighing the waste before Lifting trash directly to the truck?",
+    "category": "expert"
+  },
+  {
+    "source_text": "พี่อะ แซวตลอดอะ ว่า วันนี้ชอบเลขอะไร ยกโชก (ยกโชค/เสี่ยงโชค) ขยะลงมาทิ้งเนี่ย ชอบเลขอะไร วันนี้ชอบ เอ้ย ไม่เก้า ไม่เก้ากิโล อะไรเงี้ย... ซึ่งตอนนี้ มันคลาดเคลื่อน จนไม่รู้จะคลาดเคลื่อนยังไงละ",
+    "question": "To what extent does Maids guessing numbers account for the extreme data inaccuracy observed in the records?",
+    "category": "expert"
+  },
+  {
+    "source_text": "พี่อะ แซวตลอดอะ ว่า วันนี้ชอบเลขอะไร ยกโชก (ยกโชค/เสี่ยงโชค) ขยะลงมาทิ้งเนี่ย ชอบเลขอะไร วันนี้ชอบ เอ้ย ไม่เก้า ไม่เก้ากิโล อะไรเงี้ย... ซึ่งตอนนี้ มันคลาดเคลื่อน จนไม่รู้จะคลาดเคลื่อนยังไงละ",
+    "question": "Are there systemic or management issues driving Maids guessing numbers that ultimately lead to extreme data inaccuracy?",
+    "category": "expert"
+  },
+  {
+    "source_text": "แต่มันก็ ยังไม่ได้ ตอบโจทย์ หรือมันก็ ไม่ง่าย ต่อแม่บ้าน เอง เหมือนกัน อืม ซึ่งมันก็ เล็กเกินไป",
+    "question": "How exactly does The compact design of the cage result in difficulty for the cleaners during their daily operations?",
+    "category": "internet"
+  },
+  {
+    "source_text": "แต่มันก็ ยังไม่ได้ ตอบโจทย์ หรือมันก็ ไม่ง่าย ต่อแม่บ้าน เอง เหมือนกัน อืม ซึ่งมันก็ เล็กเกินไป",
+    "question": "Are there structural or workflow assumptions embedded in the claim that The compact design of the cage causes difficulty for the cleaners?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ใกล้มือ มั้ง บางที เดินมา ใกล้มือ กู ก็ทิ้ง นี่แหละ",
+    "question": "To what extent does Convenience act as the primary catalyst for indiscriminate dumping compared to a lack of awareness?",
+    "category": "internet"
+  },
+  {
+    "source_text": "ใกล้มือ มั้ง บางที เดินมา ใกล้มือ กู ก็ทิ้ง นี่แหละ",
+    "question": "What underlying behavioral assumptions are made when linking Convenience directly to indiscriminate dumping?",
+    "category": "expert"
+  }
+]

@@ -1,0 +1,209 @@
+[
+  {
+    "source_text": "เขาก็จะเอาขยะจากหน่วยงาน หรือสำนักงานของตัวเองเนี่ยลงมาไว้ตามแต่ละตึก ตามใต้ตึกอะ ตามจุดที่เขาคุยกันไว้ เขาก็จะติดป้ายไว้ว่าเป็นของหน่วยงานใคร",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What implicit factors or agreements require Units and offices to bring down waste to designated spots?",
+      "What are the unstated assumptions or rules governing how Units and offices label waste to identify ownership?"
+    ]
+  },
+  {
+    "source_text": "ช่วงสถานการณ์โควิด ก็จะมีถังแยกออกมาอีก ที่เป็นถังขยะติดเชื้อ ที่คอยทิ้งพวกชุดตรวจ ATK แมสก์",
+    "sentence_type": "ES",
+    "generated_questions": [
+      "How exactly did the COVID-19 situation cause the separation of infectious waste bins?",
+      "What are the unstated safety or regulatory assumptions linking the COVID-19 situation to the separation of infectious waste bins?"
+    ]
+  },
+  {
+    "source_text": "ใครเนี่ยที่มีขยะอิเล็กทรอนิกส์เนี่ย ก็มาบริจาคให้กับที่นี่ ก็เหมือนแลกชั่วโมงไป",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What implicit mechanism or tracking system ensures Donating e-waste results in receiving activity hours?",
+      "Are there any hidden conditions or thresholds required for Donating e-waste to successfully lead to receiving activity hours?"
+    ]
+  },
+  {
+    "source_text": "พอเก็บรวบรวมครบเสร็จ เขาก็จะไปที่โรงคัดแยกขยะ",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What implicit criteria or thresholds define the Completion of waste collection before it leads to transporting waste?",
+      "Are there any unstated logistical or scheduling factors connecting the Completion of waste collection to transporting waste?"
+    ]
+  },
+  {
+    "source_text": "ขยะที่เกิดขึ้น บางส่วนที่คนเนี่ยสามารถคัดแยกได้ เขาก็จะกองไว้อีกส่วนนึง",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What unstated definitions or guidelines determine what qualifies as Waste being sortable before it results in piling separately?",
+      "Are there any implicit spatial or handling constraints when Waste being sortable results in piling separately?"
+    ]
+  },
+  {
+    "source_text": "อีกส่วนนึงที่คัดแยกไม่ได้เนี่ย เขาก็จะอัดเข้าถังสีเหลือง ที่เป็นถังบีบอัดขยะ ของ กทม.",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What are the unstated rules or municipal agreements determining why Waste being unsortable specifically results in compression into yellow BMA bins?",
+      "Are there any hidden capacity or safety constraints when Waste being unsortable results in compression into yellow BMA bins?"
+    ]
+  },
+  {
+    "source_text": "ก็จะถูกฟ้องอะไรเงี้ย ก็คือจากบุคลากรบ้าง จากนักศึกษาบ้าง ว่าขยะแต่ละจุดเนี่ยมันล้น",
+    "sentence_type": "ES",
+    "generated_questions": [
+      "What underlying assumptions connect Trash overflow at various points to complaints from staff?",
+      "Are there specific thresholds where Trash overflow at various points triggers complaints from students?",
+      "What implicit conditions or intermediary steps must exist for Trash overflow at various points to effectively result in complaints from staff and students?"
+    ]
+  },
+  {
+    "source_text": "แล้วก็เวลาเราขนส่ง เราก็คือ เราใส่รวมกันอยู่แล้ว... แล้วเราค่อยไปแยกปลายทางใช่ไหมครับ",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What operational constraints dictate that The transport process involves mixing waste types initially?",
+      "How does the workflow ensure that The waste management team efficiently separates the waste at the destination after it has been mixed?"
+    ]
+  },
+  {
+    "source_text": "ว่าสมมติถ้ามีขยะเศษวัสดุ ที่เป็นชิ้นใหญ่ อะไรอย่างเงี้ย เราก็จะนับวัน เพื่อมาเก็บเป็นแต่ละรอบๆ ไป",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "How does the Presence of large construction waste result in scheduling specific pickup rounds rather than integrating them into regular daily collections?"
+    ]
+  },
+  {
+    "source_text": "สมมุติขยะที่นี่มี เขาก็จะติดต่อคนนี้... พี่คนเนี้ยก็จะติดต่อไปทางพี่มอส เพื่อจะนัดวัน เพื่อจะเข้ามารับ",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "Why is it necessary that the Building PM contacts the coordinator rather than communicating directly with the collection team?",
+      "What protocol or approval process requires that The coordinator contacts Mr. Moss to schedule pickup?"
+    ]
+  },
+  {
+    "source_text": "แต่มีปริมาณที่เยอะมากๆ เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน นอกเหนือจากวันพฤหัสบดี ท้ายเดือน",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What exact threshold determines when a High volume of recyclable waste prevents immediate pickup?",
+      "What specific resource limitations mean a High volume of recyclable waste necessitates scheduling a special pickup date outside of normal rounds?"
+    ]
+  },
+  {
+    "source_text": "สมมุติถ้ามีพวกงานกีฬา หรืองานอะไรเงี้ย ก็จะมีพวกไม้ ไม้อัด",
+    "sentence_type": "ES",
+    "generated_questions": [
+      "What specific activities or structures mean that Sports events generate wood waste?",
+      "Is it an unavoidable outcome or a specific design choice that Sports events generate plywood waste?"
+    ]
+  },
+  {
+    "source_text": "บางพื้นที่ของอาคารเนี้ย มีพื้นที่อยู่ในช็อป ใช่ไหม เขาก็จะอาจมากองลงตรงนี้ไว้ก่อน... เขาก็จะเข้ามาคุย เข้าไปเก็บในช็อปเลย",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What structural or policy factors allow Faculties with shop space to store waste internally rather than using external bins?",
+      "Does the fact that Waste collectors collect waste directly from the shop imply a specialized handling protocol for shop materials?"
+    ]
+  },
+  {
+    "source_text": "แต่ถ้าเป็นพวกของขยะรีไซเคิล ที่เป็นตาม ตามรอบของเดือนอะไรเงี้ย เขาก็จะวางกองไว้หน้าตึก",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What underlying assumptions or space limitations make Monthly recycle rounds involve piling waste in front of buildings an acceptable practice despite potential visual impact?"
+    ]
+  },
+  {
+    "source_text": "โดยแม่บ้านเองเนี่ย มันมีรอบวันเก็บ อ่า มีรอบ อ่า ช่วงอา 3 โมง 4 โมง",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What operational factors dictate that waste collection rounds occur at 3:00 PM to 4:00 PM?",
+      "Are there implicit limitations preventing waste collection rounds from happening outside the window of 3:00 PM to 4:00 PM?"
+    ]
+  },
+  {
+    "source_text": "ตกค้างเย็นนี้ พรุ่งนี้เช้า อ่า พวกคณะทำงาน หรือประธานมาเห็นเนี่ย เขาก็จะบอกละ เอ๊ะ ทำไมจุดนี้ขยะเยอะจัง",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "What specific conditions or thresholds cause waste residue overnight to lead to complaints from the committee?",
+      "What are the implicit communication channels through which waste residue overnight leads to complaints from the president?"
+    ]
+  },
+  {
+    "source_text": "น้องๆ มีจัดกิจกรรม รับน้อง... ก็จะเกิดขยะ มหาศาล... เที่ยงคืน ตี 2 มึงยังไม่เลิกกันเลย มันก็มีขยะพวกเนี้ย เกิดขึ้น",
+    "sentence_type": "ES",
+    "generated_questions": [
+      "What unstated aspects of student activities generate massive amounts of waste compared to normal daily functions?",
+      "Why do late night activities specifically result in waste accumulation at night without immediate mitigation strategies?"
+    ]
+  },
+  {
+    "source_text": "เขาจะมาขับรถเก็บตอนรอบ 5 โมง อีกรอบเหรอ... ซึ่งเขาต้องเสียเงินเพิ่ม",
+    "sentence_type": "OT",
+    "generated_questions": [
+      "What budgetary constraints or contractual agreements implicitly state that driving an additional collection round at 5 PM requires paying extra money?"
+    ]
+  },
+  {
+    "source_text": "กินข้าวบูด... อยู่ในออฟฟิศ หนู มด อ่า พวกเนี้ย ซึ่งต่อเนื่องมาอีก จัดการยากกว่าเดิมอีก",
+    "sentence_type": "ES",
+    "generated_questions": [
+      "How exactly does keeping food waste in the office attract rats in this specific environment?",
+      "What are the unstated timelines or conditions under which keeping food waste in the office attracts ants?",
+      "In what specific ways does the presence of pests make waste management more difficult than standard collection?"
+    ]
+  },
+  {
+    "source_text": "โดยที่ เราเอา เอ่อ เราสร้าง Simulation ขึ้นมา แล้วแบบ พยายามที่จะ ลอกเลียนแบบ สภาวะตอนนี้ แล้วดูว่า พอเปลี่ยน นโยบาย เล็กน้อยเนี่ย ในจุดๆ นึงเนี่ย มันดีขึ้นไหม",
+    "sentence_type": "SP",
+    "generated_questions": [
+      "How exactly does Changing the policy lead to improvements in the system state within the simulation?",
+      "What specific assumptions are made when predicting how Changing the policy affects the system state?"
+    ]
+  },
+  {
+    "source_text": "คือเราอะ ต้องการข้อมูล ที่มันเป็น ข้อมูลจริง จริงๆ นะ ไม่ใช่ข้อมูลที่ แม่บ้านเขา แล้วแต่อารมณ์ อยากจะเขียนน่ะ",
+    "sentence_type": "ES",
+    "generated_questions": [
+      "In what specific ways does Maids relying on mood directly result in inaccurate data?",
+      "Are there other procedural factors besides Maids relying on mood that contribute to the inaccurate data?"
+    ]
+  },
+  {
+    "source_text": "ปัญหาคือ เราอะ อยากจะเก็บ ให้มัน มันมีข้อมูล อย่างชัดเจน แบบ ที่มันจะมีข้อมูล ขาดหาย แต่ว่า ไอ้ขั้นตอนการ ชั่งขยะ ในปัจจุบัน มันก็ดูจะ ยุ่งยากเกินไป สำหรับ พนักงาน ปัจจุบัน ที่จะทำ",
+    "sentence_type": "ES",
+    "generated_questions": [
+      "What specific aspects of the Current trash weighing process make it too complicated for the current staff?",
+      "How does a Complicated weighing process directly cause missing data in the recording system?"
+    ]
+  },
+  {
+    "source_text": "เขาก็ ส่วนใหญ่ก็ ยกขึ้นรถเลย ไม่ต้องชั่ง ไม่ค่อยได้ชั่ง ประมาณเนี้ย",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "Does Lifting trash directly to the truck always guarantee not weighing the trash, or are there alternative measurement methods?",
+      "What operational barriers prevent the staff from weighing the waste before Lifting trash directly to the truck?"
+    ]
+  },
+  {
+    "source_text": "พี่อะ แซวตลอดอะ ว่า วันนี้ชอบเลขอะไร ยกโชก (ยกโชค/เสี่ยงโชค) ขยะลงมาทิ้งเนี่ย ชอบเลขอะไร วันนี้ชอบ เอ้ย ไม่เก้า ไม่เก้ากิโล อะไรเงี้ย... ซึ่งตอนนี้ มันคลาดเคลื่อน จนไม่รู้จะคลาดเคลื่อนยังไงละ",
+    "sentence_type": "ES",
+    "generated_questions": [
+      "To what extent does Maids guessing numbers account for the extreme data inaccuracy observed in the records?",
+      "Are there systemic or management issues driving Maids guessing numbers that ultimately lead to extreme data inaccuracy?"
+    ]
+  },
+  {
+    "source_text": "แต่มันก็ ยังไม่ได้ ตอบโจทย์ หรือมันก็ ไม่ง่าย ต่อแม่บ้าน เอง เหมือนกัน อืม ซึ่งมันก็ เล็กเกินไป",
+    "sentence_type": "SB",
+    "generated_questions": [
+      "How exactly does The compact design of the cage result in difficulty for the cleaners during their daily operations?",
+      "Are there structural or workflow assumptions embedded in the claim that The compact design of the cage causes difficulty for the cleaners?"
+    ]
+  },
+  {
+    "source_text": "ใกล้มือ มั้ง บางที เดินมา ใกล้มือ กู ก็ทิ้ง นี่แหละ",
+    "sentence_type": "ES",
+    "generated_questions": [
+      "To what extent does Convenience act as the primary catalyst for indiscriminate dumping compared to a lack of awareness?",
+      "What underlying behavioral assumptions are made when linking Convenience directly to indiscriminate dumping?"
+    ]
+  }
+]
