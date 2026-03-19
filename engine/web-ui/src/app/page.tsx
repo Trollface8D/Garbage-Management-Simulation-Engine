@@ -28,7 +28,15 @@ type StageEvent = {
   message?: string;
 };
 
+type JobCreatedResponse = {
+  jobId: string;
+  streamUrl: string;
+  statusUrl: string;
+  resultUrl: string;
+};
+
 export default function Home() {
+  const engineApiBase = process.env.NEXT_PUBLIC_ENGINE_API_BASE || "http://127.0.0.1:8000";
   const [inputMode, setInputMode] = useState<"file" | "text">("file");
   const [fileMode, setFileMode] = useState<"audio" | "textFile">("audio");
   const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
@@ -101,18 +109,28 @@ export default function Home() {
         formData.append("inputText", inputText);
       }
 
-      const response = await fetch("/api/pipeline/run", {
+      const createResponse = await fetch(`${engineApiBase}/pipeline/jobs`, {
         method: "POST",
         body: formData,
       });
 
-      const contentType = response.headers.get("content-type") || "";
-      if (!response.ok && contentType.includes("application/json")) {
-        const payload = (await response.json()) as { error?: string };
-        throw new Error(payload.error || "Pipeline execution failed.");
+      const contentType = createResponse.headers.get("content-type") || "";
+      if (!createResponse.ok) {
+        if (contentType.includes("application/json")) {
+          const payload = (await createResponse.json()) as { error?: string };
+          throw new Error(payload.error || "Pipeline execution failed.");
+        }
+        throw new Error("Failed to create pipeline job.");
       }
 
-      const reader = response.body?.getReader();
+      const created = (await createResponse.json()) as JobCreatedResponse;
+      const streamResponse = await fetch(`${engineApiBase}${created.streamUrl}`);
+
+      if (!streamResponse.ok) {
+        throw new Error("Failed to start pipeline stream.");
+      }
+
+      const reader = streamResponse.body?.getReader();
       if (!reader) {
         throw new Error("No response stream from pipeline API.");
       }

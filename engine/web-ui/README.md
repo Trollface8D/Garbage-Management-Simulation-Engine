@@ -1,11 +1,11 @@
 ## Pipeline Web UI (Next.js)
 
-This app provides a browser interface for your existing Python pipeline in `Engine/pipeline_engine.py`.
+This app provides a browser interface for your Python pipeline using a FastAPI sidecar service (`Engine/backend`).
 
 Features:
 - Upload transcript/audio input files or paste raw text.
 - Configure model and chunking settings.
-- Run the Python pipeline from a Next.js API route.
+- Run the Python pipeline through a local FastAPI microservice (`localhost`).
 - Display summary, entities, follow-up questions, causal output, and generated entity files.
 
 ## Prerequisites
@@ -15,11 +15,17 @@ Features:
 3. API key is available for Gemini (`API_KEY` or `GOOGLE_API_KEY`) in the repository root `.env`.
 
 Optional:
-- Set `PYTHON_EXECUTABLE` if you want to override Python command detection.
+- Set `NEXT_PUBLIC_ENGINE_API_BASE` to change API base URL (default: `http://127.0.0.1:8000`).
 
 ## Run
 
-From this `web-ui` folder:
+1. Start FastAPI sidecar (from workspace root):
+
+```bash
+python -m Engine.backend.cli --serve-api --host 127.0.0.1 --port 8000
+```
+
+2. Start the web UI (from this `web-ui` folder):
 
 ```bash
 npm install
@@ -31,16 +37,15 @@ Open `http://localhost:3000`.
 ## How It Works
 
 - Frontend page: `src/app/page.tsx`
-- Backend route: `src/app/api/pipeline/run/route.ts`
+- Sidecar API: `Engine/backend/api.py`
 
-The API route:
+The FastAPI sidecar:
 1. Accepts multipart form data (file or text input).
-2. Creates a request-specific output directory under `Engine/output/web_ui_runs`.
-3. Executes `Engine/pipeline_engine.py`.
-4. Reads generated artifacts from the newest `run_*` directory.
-5. Returns structured JSON to render in the UI.
+2. Runs pipeline stages with callback-based progress events.
+3. Streams stage updates and final result via SSE (`/pipeline/run/stream`).
+4. Returns generated artifacts to render in the UI.
 
 ## Notes
 
 - Large inputs may take time because pipeline stages call external model APIs.
-- Generated files and run outputs remain on disk under `Engine/output/web_ui_runs`.
+- Generated files and run outputs remain on disk under `Engine/output/pipeline_runs/fastapi_runs`.

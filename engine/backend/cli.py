@@ -24,6 +24,14 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument(
+        "--serve-api",
+        action="store_true",
+        help="Start FastAPI sidecar server instead of running a single CLI pipeline job.",
+    )
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+
+    parser.add_argument(
         "--input-type",
         choices=["auto", "audio", "mp3", "text"],
         default="auto",
@@ -55,6 +63,15 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+
+    if args.serve_api:
+        import uvicorn
+
+        from .api import app
+
+        uvicorn.run(app, host=args.host, port=args.port, reload=False)
+        return
+
     api_key = resolve_api_key()
 
     engine = PipelineEngine(

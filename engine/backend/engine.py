@@ -4,7 +4,7 @@ import re
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .io_utils import preview, read_text, slugify, write_json, write_text
 from .llm_client import GeminiGateway
@@ -35,6 +35,7 @@ class PipelineEngine:
         entity_generation_prompt_path: Path,
         entity_template_dir: Path,
         output_root: Path,
+        stage_callback: Callable[[str, str], None] | None = None,
     ) -> None:
         if not api_key:
             raise ValueError(
@@ -63,9 +64,12 @@ class PipelineEngine:
         self.generated_entities_dir.mkdir(parents=True, exist_ok=True)
 
         self._log_rows: list[dict[str, str]] = []
+        self._stage_callback = stage_callback
 
     def _emit_stage(self, stage: str, message: str = "") -> None:
         payload = {"stage": stage, "message": message}
+        if self._stage_callback is not None:
+            self._stage_callback(stage, message)
         print(f"[PIPELINE_STAGE]{json.dumps(payload, ensure_ascii=False)}", flush=True)
 
     def run(

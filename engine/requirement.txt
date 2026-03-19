@@ -23,3 +23,6 @@ sentence_transformers
 gunicorn>=21.2.0        # WSGI Server
 pyinstaller>=6.3.0      # To bundle into Windows .exe
 python-dotenv>=1.0.0    # For API Key management
+fastapi>=0.115.0
+uvicorn>=0.30.0
+python-multipart>=0.0.9
