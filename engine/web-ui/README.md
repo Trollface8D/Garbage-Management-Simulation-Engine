@@ -22,7 +22,7 @@ Optional:
 1. Start FastAPI sidecar (from workspace root):
 
 ```bash
-python -m Engine.backend.cli --serve-api --host 127.0.0.1 --port 8000
+python -m Engine.backend --serve-api --host 127.0.0.1 --port 8000
 ```
 
 2. Start the web UI (from this `web-ui` folder):
@@ -37,7 +37,7 @@ Open `http://localhost:3000`.
 ## How It Works
 
 - Frontend page: `src/app/page.tsx`
-- Sidecar API: `Engine/backend/api.py`
+- Sidecar API: `Engine/backend/app/api.py`
 
 The FastAPI sidecar:
 1. Accepts multipart form data (file or text input).

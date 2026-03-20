@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from .io_utils import preview, read_text, slugify, write_json, write_text
+from ..infra.io_utils import preview, read_text, slugify, write_json, write_text
 from .llm_client import GeminiGateway
 from .steps import (
     chunk_text_with_topic_summaries,
@@ -97,9 +97,10 @@ class PipelineEngine:
             chunk_overlap_words=self.chunk_overlap_words,
         )
         write_json(self.run_dir / "chunks.json", [asdict(c) for c in chunks])
+        words = re.findall(r"\S+", transcript_text)
         self._log(
             "chunking",
-            f"words={len(re.findall(r'\\S+', transcript_text))}",
+            f"words={len(words)}",
             "chunks.json",
         )
 

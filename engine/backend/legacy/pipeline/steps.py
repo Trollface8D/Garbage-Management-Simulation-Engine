@@ -5,14 +5,14 @@ from typing import Any
 
 from google.genai.types import Part
 
-from .constants import (
+from ..infra.io_utils import read_text, to_class_name
+from ..infra.paths import (
     AUDIO_MIME_MAP,
     DEFAULT_EXAMPLE_TEXT_INPUT,
     DEFAULT_MEDIA_DIR,
     ROOT_DIR,
     SUPPORTED_AUDIO_EXTENSIONS,
 )
-from .io_utils import read_text, to_class_name
 from .llm_client import GeminiGateway
 from .types import ChunkRecord
 

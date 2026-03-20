@@ -2,7 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .constants import (
+from .infra.paths import (
     DEFAULT_CAUSAL_PROMPT,
     DEFAULT_ENTITY_EXTRACTION_PROMPT,
     DEFAULT_ENTITY_GENERATION_PROMPT,
@@ -12,8 +12,8 @@ from .constants import (
     DEFAULT_MODEL_NAME,
     DEFAULT_OUTPUT_ROOT,
 )
-from .engine import PipelineEngine
-from .io_utils import resolve_api_key
+from .infra.io_utils import resolve_api_key
+from .pipelines.c4 import C4PipelineEngine
 
 
 def parse_args() -> argparse.Namespace:
@@ -67,14 +67,14 @@ def main() -> None:
     if args.serve_api:
         import uvicorn
 
-        from .api import app
+        from .app.api import app
 
         uvicorn.run(app, host=args.host, port=args.port, reload=False)
         return
 
     api_key = resolve_api_key()
 
-    engine = PipelineEngine(
+    engine = C4PipelineEngine(
         api_key=api_key or "",
         model_name=args.model,
         chunk_size_words=args.chunk_size_words,
