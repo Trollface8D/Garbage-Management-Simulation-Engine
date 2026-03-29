@@ -1,406 +1,209 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import {
+  categoryPath,
+  filterOptions,
+  getProjectName,
+  isComparisonComponent,
+  isProjectScopedComponent,
+  simulationComponents,
+  simulationProjects,
+  type FilterOption,
+  type SimulationProject,
+} from "@/lib/simulation-components";
 
-type PipelineSummary = {
-  run_dir: string;
-  transcript_file: string;
-  chunks_file: string;
-  causal_by_chunk_file: string;
-  causal_combined_file: string;
-  follow_up_file: string;
-  entities_file: string;
-  generated_entities_dir: string;
-  generated_entity_count: number;
-};
+function FileThumbPlaceholder() {
+  return (
+    <div className="relative h-40 w-full overflow-hidden rounded-t-xl border-b border-neutral-700 bg-neutral-800 p-3">
+      <div className="mb-2 h-3 w-24 rounded bg-neutral-600/80" />
+      <div className="grid h-[calc(100%-1.25rem)] grid-cols-3 gap-2">
+        <div className="rounded bg-neutral-700/90 p-2">
+          <div className="mb-1 h-1.5 w-8 rounded bg-neutral-500" />
+          <div className="h-1.5 w-12 rounded bg-neutral-500" />
+        </div>
+        <div className="rounded bg-neutral-700/90 p-2">
+          <div className="mb-1 h-1.5 w-9 rounded bg-neutral-500" />
+          <div className="mb-1 h-1.5 w-11 rounded bg-neutral-500" />
+          <div className="h-1.5 w-8 rounded bg-neutral-500" />
+        </div>
+        <div className="rounded bg-neutral-700/90 p-2">
+          <div className="mb-1 h-1.5 w-10 rounded bg-neutral-500" />
+          <div className="h-6 w-full rounded bg-neutral-600/80" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
-type PipelineResult = {
-  summary: PipelineSummary;
-  entities: string[];
-  followUpQuestions: unknown;
-  causalCombined: unknown[];
-  generatedEntityFiles: Array<{ entity: string; file: string }>;
-  stdout: string;
-};
-
-type StageEvent = {
-  stage: string;
-  message?: string;
-};
-
-type JobCreatedResponse = {
-  jobId: string;
-  streamUrl: string;
-  statusUrl: string;
-  resultUrl: string;
-};
+function FileTypeIcon() {
+  return (
+    <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-sky-600/20 text-xs font-semibold text-sky-300">
+      F
+    </span>
+  );
+}
 
 export default function Home() {
-  const engineApiBase = process.env.NEXT_PUBLIC_ENGINE_API_BASE || "http://127.0.0.1:8000";
-  const [inputMode, setInputMode] = useState<"file" | "text">("file");
-  const [fileMode, setFileMode] = useState<"audio" | "textFile">("audio");
-  const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
-  const [selectedTextFile, setSelectedTextFile] = useState<File | null>(null);
-  const [inputText, setInputText] = useState("");
-  const [model, setModel] = useState("gemini-3.1-pro");
-  const [chunkSizeWords, setChunkSizeWords] = useState("900");
-  const [chunkOverlapWords, setChunkOverlapWords] = useState("180");
+  const [projects, setProjects] = useState<SimulationProject[]>(simulationProjects);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(simulationProjects[0]?.id ?? "");
+  const [activeFilter, setActiveFilter] = useState<FilterOption>("All");
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PipelineResult | null>(null);
-  const [currentStage, setCurrentStage] = useState<string | null>(null);
-  const [stageMessage, setStageMessage] = useState<string>("");
-  const [stageHistory, setStageHistory] = useState<StageEvent[]>([]);
+  const filteredComponents = useMemo(() => {
+    return simulationComponents.filter((component) => {
+      const matchesFilter = activeFilter === "All" || component.category === activeFilter;
+      if (!matchesFilter) {
+        return false;
+      }
 
-  const canSubmit = useMemo(() => {
-    if (loading) {
-      return false;
+      if (isProjectScopedComponent(component)) {
+        return component.projectId === selectedProjectId;
+      }
+
+      return component.leftProjectId === selectedProjectId || component.rightProjectId === selectedProjectId;
+    });
+  }, [activeFilter, selectedProjectId]);
+
+  const selectedProjectName = useMemo(() => {
+    return projects.find((project) => project.id === selectedProjectId)?.name ?? "Unselected project";
+  }, [projects, selectedProjectId]);
+
+  const handleProjectChange = (value: string) => {
+    if (value !== "__add_new__") {
+      setSelectedProjectId(value);
+      return;
     }
-    if (inputMode === "file") {
-      if (fileMode === "audio") {
-        return Boolean(selectedAudioFile);
-      }
-      return Boolean(selectedTextFile);
+
+    const nextNameRaw = window.prompt("Enter new project name:");
+    const nextName = nextNameRaw?.trim();
+    if (!nextName) {
+      return;
     }
-    return inputText.trim().length > 0;
-  }, [fileMode, inputMode, inputText, loading, selectedAudioFile, selectedTextFile]);
 
-  const onAudioFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    setSelectedAudioFile(file);
-  };
-
-  const onTextFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    setSelectedTextFile(file);
-  };
-
-  const submitPipeline = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError(null);
-    setResult(null);
-    setCurrentStage(null);
-    setStageMessage("");
-    setStageHistory([]);
-    setLoading(true);
-
-    try {
-      const formData = new FormData();
-      formData.append("inputMode", inputMode);
-      formData.append("model", model.trim());
-      formData.append("chunkSizeWords", chunkSizeWords.trim());
-      formData.append("chunkOverlapWords", chunkOverlapWords.trim());
-
-      if (inputMode === "file") {
-        formData.append("fileMode", fileMode);
-        if (fileMode === "audio") {
-          if (!selectedAudioFile) {
-            throw new Error("Please select an audio file.");
-          }
-          formData.append("audioFile", selectedAudioFile);
-        } else {
-          if (!selectedTextFile) {
-            throw new Error("Please select a text file.");
-          }
-          formData.append("textFile", selectedTextFile);
-        }
-      } else {
-        formData.append("inputText", inputText);
-      }
-
-      const createResponse = await fetch(`${engineApiBase}/pipeline/jobs`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const contentType = createResponse.headers.get("content-type") || "";
-      if (!createResponse.ok) {
-        if (contentType.includes("application/json")) {
-          const payload = (await createResponse.json()) as { error?: string };
-          throw new Error(payload.error || "Pipeline execution failed.");
-        }
-        throw new Error("Failed to create pipeline job.");
-      }
-
-      const created = (await createResponse.json()) as JobCreatedResponse;
-      const streamResponse = await fetch(`${engineApiBase}${created.streamUrl}`);
-
-      if (!streamResponse.ok) {
-        throw new Error("Failed to start pipeline stream.");
-      }
-
-      const reader = streamResponse.body?.getReader();
-      if (!reader) {
-        throw new Error("No response stream from pipeline API.");
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let streamError: string | null = null;
-      let streamResult: PipelineResult | null = null;
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const blocks = buffer.split("\n\n");
-        buffer = blocks.pop() || "";
-
-        for (const block of blocks) {
-          const lines = block.split("\n");
-          const eventLine = lines.find((line) => line.startsWith("event:"));
-          const dataLine = lines.find((line) => line.startsWith("data:"));
-          if (!eventLine || !dataLine) {
-            continue;
-          }
-
-          const eventName = eventLine.replace("event:", "").trim();
-          const dataRaw = dataLine.replace("data:", "").trim();
-          let data: unknown = null;
-          try {
-            data = JSON.parse(dataRaw);
-          } catch {
-            continue;
-          }
-
-          if (eventName === "stage") {
-            const stage = data as StageEvent;
-            setCurrentStage(stage.stage);
-            setStageMessage(stage.message || "");
-            setStageHistory((previous) => [...previous, stage]);
-          }
-
-          if (eventName === "result") {
-            streamResult = data as PipelineResult;
-          }
-
-          if (eventName === "error") {
-            const payload = data as { error?: string };
-            streamError = payload.error || "Pipeline execution failed.";
-          }
-        }
-      }
-
-      if (streamError) {
-        throw new Error(streamError);
-      }
-
-      if (!streamResult) {
-        throw new Error("Pipeline completed without a result payload.");
-      }
-
-      setResult(streamResult);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unknown error");
-    } finally {
-      setLoading(false);
+    const existingByName = projects.find((project) => project.name.toLowerCase() === nextName.toLowerCase());
+    if (existingByName) {
+      setSelectedProjectId(existingByName.id);
+      return;
     }
+
+    const slugBase = nextName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+    let nextId = slugBase || `project-${String(projects.length + 1)}`;
+    let index = 2;
+    while (projects.some((project) => project.id === nextId)) {
+      nextId = `${slugBase || "project"}-${String(index)}`;
+      index += 1;
+    }
+
+    const nextProject: SimulationProject = { id: nextId, name: nextName };
+    setProjects((prev) => [nextProject, ...prev]);
+    setSelectedProjectId(nextProject.id);
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8">
-        <header className="rounded-xl border border-slate-800 bg-slate-900 p-6">
-          <h1 className="text-2xl font-bold">Pipeline Control Panel</h1>
-          <p className="mt-2 text-sm text-slate-300">
-            Upload transcript/audio files or paste text, then execute the existing Python pipeline and inspect generated artifacts.
-          </p>
+    <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+      <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
+        <header className="mb-10">
+          <h1 className="text-left text-3xl font-black uppercase tracking-tight text-neutral-100 md:text-5xl lg:text-6xl">
+            Garbage Flow Simulation Engine
+          </h1>
         </header>
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900 p-6">
-          <form onSubmit={submitPipeline} className="grid gap-4">
-            <div className="grid gap-2">
-              <label className="text-sm font-medium">Input mode</label>
-              <div className="flex gap-4 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="inputMode"
-                    checked={inputMode === "file"}
-                    onChange={() => setInputMode("file")}
-                  />
-                  File upload
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="inputMode"
-                    checked={inputMode === "text"}
-                    onChange={() => setInputMode("text")}
-                  />
-                  Direct text
-                </label>
-              </div>
-            </div>
-
-            {inputMode === "file" ? (
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <label className="text-sm font-medium">File type</label>
-                  <div className="flex gap-4 text-sm">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="fileMode"
-                        checked={fileMode === "audio"}
-                        onChange={() => setFileMode("audio")}
-                      />
-                      Audio file
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="fileMode"
-                        checked={fileMode === "textFile"}
-                        onChange={() => setFileMode("textFile")}
-                      />
-                      Text file
-                    </label>
-                  </div>
-                </div>
-
-                <div className="grid gap-2 rounded-md border border-slate-800 p-3">
-                  <label className="text-sm font-medium">Audio file upload block</label>
-                  <input
-                    className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                    type="file"
-                    accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,.oga,.webm,.mp4"
-                    onChange={onAudioFileChange}
-                    disabled={fileMode !== "audio"}
-                  />
-                  <p className="text-xs text-slate-400">Use this block for interview audio input.</p>
-                </div>
-
-                <div className="grid gap-2 rounded-md border border-slate-800 p-3">
-                  <label className="text-sm font-medium">Text file upload block</label>
-                  <input
-                    className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                    type="file"
-                    accept=".txt"
-                    onChange={onTextFileChange}
-                    disabled={fileMode !== "textFile"}
-                  />
-                  <p className="text-xs text-slate-400">Use this block for transcript text files.</p>
-                </div>
-              </div>
-            ) : (
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Input text</label>
-                <textarea
-                  className="min-h-48 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                  value={inputText}
-                  onChange={(event) => setInputText(event.target.value)}
-                  placeholder="Paste transcript text here..."
-                />
-              </div>
-            )}
-
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Model</label>
-                <input
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                  value={model}
-                  onChange={(event) => setModel(event.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Chunk size words</label>
-                <input
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                  value={chunkSizeWords}
-                  onChange={(event) => setChunkSizeWords(event.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Chunk overlap words</label>
-                <input
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                  value={chunkOverlapWords}
-                  onChange={(event) => setChunkOverlapWords(event.target.value)}
-                />
-              </div>
-            </div>
-
-            <button
-              className="inline-flex w-fit items-center justify-center rounded-md bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
-              type="submit"
-              disabled={!canSubmit}
+        <section className="mb-8 flex flex-col gap-4 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 backdrop-blur-sm md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <label htmlFor="team-project" className="text-sm font-medium text-neutral-300">
+              Project
+            </label>
+            <select
+              id="team-project"
+              value={selectedProjectId}
+              onChange={(event) => handleProjectChange(event.target.value)}
+              className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none ring-offset-0 transition focus:border-sky-500"
             >
-              {loading ? "Running pipeline..." : "Run pipeline"}
-            </button>
+              <option value="__add_new__">+ Add new project</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            {loading && currentStage ? (
-              <div className="rounded-md border border-cyan-700 bg-cyan-950/30 p-3 text-sm text-cyan-100">
-                <p className="font-semibold">Current stage: {currentStage}</p>
-                {stageMessage ? <p className="mt-1 text-cyan-200">{stageMessage}</p> : null}
-              </div>
-            ) : null}
+          <nav className="flex flex-wrap items-center gap-2" aria-label="Category filters">
+            {filterOptions.map((option) => {
+              const isActive = option === activeFilter;
 
-            {stageHistory.length > 0 ? (
-              <div className="rounded-md border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">
-                <p className="mb-2 font-semibold">Stage history</p>
-                <ul className="grid gap-1">
-                  {stageHistory.map((stage, index) => (
-                    <li key={`${stage.stage}-${String(index)}`}>
-                      {index + 1}. {stage.stage}
-                      {stage.message ? ` - ${stage.message}` : ""}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {error ? <p className="rounded-md bg-red-950 p-3 text-sm text-red-200">{error}</p> : null}
-          </form>
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setActiveFilter(option)}
+                  className={`rounded-md border px-3 py-1.5 text-sm font-semibold transition ${
+                    isActive
+                      ? "border-sky-500 bg-sky-500/20 text-sky-200"
+                      : "border-neutral-700 bg-neutral-800 text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                  }`}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </nav>
         </section>
 
-        {result ? (
-          <section className="grid gap-4 pb-10 md:grid-cols-2">
-            <article className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-              <h2 className="text-lg font-semibold">Run summary</h2>
-              <pre className="mt-3 overflow-x-auto rounded-md bg-slate-950 p-3 text-xs">
-                {JSON.stringify(result.summary, null, 2)}
-              </pre>
-            </article>
+        <section className="mb-8 rounded-xl border border-neutral-800 bg-neutral-900/50 px-4 py-3 text-sm text-neutral-300">
+          <p>
+            Active project: <span className="font-semibold text-neutral-100">{selectedProjectName}</span>
+          </p>
+          <p className="mt-1 text-xs text-neutral-400">
+            Comparison is a feature for comparing result between 2 projects.
+          </p>
+        </section>
 
-            <article className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-              <h2 className="text-lg font-semibold">Entities ({result.entities.length})</h2>
-              <ul className="mt-3 grid gap-2 text-sm text-slate-200">
-                {result.entities.map((entity) => (
-                  <li className="rounded-md bg-slate-950 px-3 py-2" key={entity}>
-                    {entity}
-                  </li>
-                ))}
-              </ul>
-            </article>
+        <section className="grid grid-cols-1 gap-5 md:grid-cols-3 lg:grid-cols-4 lg:gap-8">
+          {filteredComponents.map((component) => {
+            const isCausalCard = component.category === "Causal";
+            const targetPath = isCausalCard
+              ? {
+                  pathname: `/${categoryPath[component.category]}`,
+                  query: {
+                    componentId: component.id,
+                    title: component.title,
+                    projectId: isProjectScopedComponent(component) ? component.projectId : selectedProjectId,
+                  },
+                }
+              : `/${categoryPath[component.category]}/${component.id}`;
 
-            <article className="rounded-xl border border-slate-800 bg-slate-900 p-5 md:col-span-2">
-              <h2 className="text-lg font-semibold">Follow-up questions</h2>
-              <pre className="mt-3 max-h-72 overflow-auto rounded-md bg-slate-950 p-3 text-xs">
-                {JSON.stringify(result.followUpQuestions, null, 2)}
-              </pre>
-            </article>
+            const metaText = isComparisonComponent(component)
+              ? `Compare ${getProjectName(component.leftProjectId)} vs ${getProjectName(component.rightProjectId)}`
+              : `Project: ${projects.find((project) => project.id === component.projectId)?.name ?? getProjectName(component.projectId)}`;
 
-            <article className="rounded-xl border border-slate-800 bg-slate-900 p-5 md:col-span-2">
-              <h2 className="text-lg font-semibold">Causal combined (first 10)</h2>
-              <pre className="mt-3 max-h-72 overflow-auto rounded-md bg-slate-950 p-3 text-xs">
-                {JSON.stringify(result.causalCombined.slice(0, 10), null, 2)}
-              </pre>
-            </article>
+            return (
+              <Link
+                key={component.id}
+                href={targetPath}
+                className="group overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900/60 shadow-[0_0_0_1px_rgba(255,255,255,0.01)] transition duration-200 hover:scale-[1.02] hover:border-sky-500 hover:shadow-[0_0_0_2px_rgba(14,165,233,0.35)]"
+              >
+                <FileThumbPlaceholder />
 
-            <article className="rounded-xl border border-slate-800 bg-slate-900 p-5 md:col-span-2">
-              <h2 className="text-lg font-semibold">Generated entity files</h2>
-              <pre className="mt-3 max-h-72 overflow-auto rounded-md bg-slate-950 p-3 text-xs">
-                {JSON.stringify(result.generatedEntityFiles, null, 2)}
-              </pre>
-            </article>
-          </section>
-        ) : null}
+                <div className="flex items-end justify-between gap-3 bg-neutral-900 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <FileTypeIcon />
+                      <p className="truncate text-sm font-semibold text-neutral-100">{component.title}</p>
+                    </div>
+                    <p className="mt-1 text-xs text-neutral-400">Edited {component.lastEdited}</p>
+                    <p className="mt-1 text-xs text-neutral-500">{metaText}</p>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </section>
       </main>
     </div>
   );
