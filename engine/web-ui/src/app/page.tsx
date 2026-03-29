@@ -2,123 +2,17 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-
-type Category = "Causal" | "Map" | "Code" | "Comparison";
-type FilterOption = "All" | Category;
-
-type Collaborator = {
-  name: string;
-  initial: string;
-  colorClass: string;
-};
-
-type SimulationComponent = {
-  id: string;
-  title: string;
-  category: Category;
-  lastEdited: string;
-  collaborators: Collaborator[];
-};
-
-const filterOptions: FilterOption[] = ["All", "Causal", "Map", "Code", "Comparison"];
-
-const simulationComponents: SimulationComponent[] = [
-  {
-    id: "landfill-route-dynamics",
-    title: "Landfill Route Dynamics",
-    category: "Causal",
-    lastEdited: "2 hours ago",
-    collaborators: [
-      { name: "Ploy", initial: "P", colorClass: "bg-pink-500" },
-      { name: "Keen", initial: "K", colorClass: "bg-violet-500" },
-      { name: "Boss", initial: "B", colorClass: "bg-sky-500" },
-    ],
-  },
-  {
-    id: "district-transfer-overview",
-    title: "District Transfer Overview",
-    category: "Map",
-    lastEdited: "5 hours ago",
-    collaborators: [
-      { name: "Mint", initial: "M", colorClass: "bg-emerald-500" },
-      { name: "Jai", initial: "J", colorClass: "bg-amber-500" },
-      { name: "Ploy", initial: "P", colorClass: "bg-pink-500" },
-    ],
-  },
-  {
-    id: "optimization-engine-v2",
-    title: "Optimization Engine v2",
-    category: "Code",
-    lastEdited: "8 hours ago",
-    collaborators: [
-      { name: "Keen", initial: "K", colorClass: "bg-violet-500" },
-      { name: "Ball", initial: "L", colorClass: "bg-cyan-500" },
-      { name: "Boss", initial: "B", colorClass: "bg-sky-500" },
-    ],
-  },
-  {
-    id: "cost-vs-time-benchmark",
-    title: "Cost vs Time Benchmark",
-    category: "Comparison",
-    lastEdited: "10 hours ago",
-    collaborators: [
-      { name: "Nim", initial: "N", colorClass: "bg-orange-500" },
-      { name: "Jai", initial: "J", colorClass: "bg-amber-500" },
-      { name: "Keen", initial: "K", colorClass: "bg-violet-500" },
-    ],
-  },
-  {
-    id: "waste-source-feedback",
-    title: "Waste Source Feedback",
-    category: "Causal",
-    lastEdited: "14 hours ago",
-    collaborators: [
-      { name: "Ploy", initial: "P", colorClass: "bg-pink-500" },
-      { name: "Nim", initial: "N", colorClass: "bg-orange-500" },
-      { name: "Boss", initial: "B", colorClass: "bg-sky-500" },
-    ],
-  },
-  {
-    id: "satellite-drop-map",
-    title: "Satellite Drop Map",
-    category: "Map",
-    lastEdited: "16 hours ago",
-    collaborators: [
-      { name: "Mint", initial: "M", colorClass: "bg-emerald-500" },
-      { name: "Boss", initial: "B", colorClass: "bg-sky-500" },
-      { name: "Ploy", initial: "P", colorClass: "bg-pink-500" },
-    ],
-  },
-  {
-    id: "dispatcher-ruleset",
-    title: "Dispatcher Ruleset",
-    category: "Code",
-    lastEdited: "20 hours ago",
-    collaborators: [
-      { name: "Ball", initial: "L", colorClass: "bg-cyan-500" },
-      { name: "Jai", initial: "J", colorClass: "bg-amber-500" },
-      { name: "Nim", initial: "N", colorClass: "bg-orange-500" },
-    ],
-  },
-  {
-    id: "fuel-and-delay-analysis",
-    title: "Fuel and Delay Analysis",
-    category: "Comparison",
-    lastEdited: "24 hours ago",
-    collaborators: [
-      { name: "Keen", initial: "K", colorClass: "bg-violet-500" },
-      { name: "Mint", initial: "M", colorClass: "bg-emerald-500" },
-      { name: "Ploy", initial: "P", colorClass: "bg-pink-500" },
-    ],
-  },
-];
-
-const categoryPath: Record<Category, string> = {
-  Causal: "causal",
-  Map: "map",
-  Code: "code",
-  Comparison: "comparison",
-};
+import {
+  categoryPath,
+  filterOptions,
+  getProjectName,
+  isComparisonComponent,
+  isProjectScopedComponent,
+  simulationComponents,
+  simulationProjects,
+  type FilterOption,
+  type SimulationProject,
+} from "@/lib/simulation-components";
 
 function FileThumbPlaceholder() {
   return (
@@ -152,14 +46,63 @@ function FileTypeIcon() {
 }
 
 export default function Home() {
+  const [projects, setProjects] = useState<SimulationProject[]>(simulationProjects);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(simulationProjects[0]?.id ?? "");
   const [activeFilter, setActiveFilter] = useState<FilterOption>("All");
 
   const filteredComponents = useMemo(() => {
-    if (activeFilter === "All") {
-      return simulationComponents;
+    return simulationComponents.filter((component) => {
+      const matchesFilter = activeFilter === "All" || component.category === activeFilter;
+      if (!matchesFilter) {
+        return false;
+      }
+
+      if (isProjectScopedComponent(component)) {
+        return component.projectId === selectedProjectId;
+      }
+
+      return component.leftProjectId === selectedProjectId || component.rightProjectId === selectedProjectId;
+    });
+  }, [activeFilter, selectedProjectId]);
+
+  const selectedProjectName = useMemo(() => {
+    return projects.find((project) => project.id === selectedProjectId)?.name ?? "Unselected project";
+  }, [projects, selectedProjectId]);
+
+  const handleProjectChange = (value: string) => {
+    if (value !== "__add_new__") {
+      setSelectedProjectId(value);
+      return;
     }
-    return simulationComponents.filter((component) => component.category === activeFilter);
-  }, [activeFilter]);
+
+    const nextNameRaw = window.prompt("Enter new project name:");
+    const nextName = nextNameRaw?.trim();
+    if (!nextName) {
+      return;
+    }
+
+    const existingByName = projects.find((project) => project.name.toLowerCase() === nextName.toLowerCase());
+    if (existingByName) {
+      setSelectedProjectId(existingByName.id);
+      return;
+    }
+
+    const slugBase = nextName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+    let nextId = slugBase || `project-${String(projects.length + 1)}`;
+    let index = 2;
+    while (projects.some((project) => project.id === nextId)) {
+      nextId = `${slugBase || "project"}-${String(index)}`;
+      index += 1;
+    }
+
+    const nextProject: SimulationProject = { id: nextId, name: nextName };
+    setProjects((prev) => [nextProject, ...prev]);
+    setSelectedProjectId(nextProject.id);
+  };
 
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
@@ -173,16 +116,20 @@ export default function Home() {
         <section className="mb-8 flex flex-col gap-4 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 backdrop-blur-sm md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             <label htmlFor="team-project" className="text-sm font-medium text-neutral-300">
-              Team project
+              Project
             </label>
             <select
               id="team-project"
+              value={selectedProjectId}
+              onChange={(event) => handleProjectChange(event.target.value)}
               className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none ring-offset-0 transition focus:border-sky-500"
-              defaultValue="Garbage Management"
             >
-              <option>Garbage Management</option>
-              <option>Urban Waste Dynamics</option>
-              <option>Regional Routing Lab</option>
+              <option value="__add_new__">+ Add new project</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -208,9 +155,32 @@ export default function Home() {
           </nav>
         </section>
 
+        <section className="mb-8 rounded-xl border border-neutral-800 bg-neutral-900/50 px-4 py-3 text-sm text-neutral-300">
+          <p>
+            Active project: <span className="font-semibold text-neutral-100">{selectedProjectName}</span>
+          </p>
+          <p className="mt-1 text-xs text-neutral-400">
+            Comparison is a feature for comparing result between 2 projects.
+          </p>
+        </section>
+
         <section className="grid grid-cols-1 gap-5 md:grid-cols-3 lg:grid-cols-4 lg:gap-8">
           {filteredComponents.map((component) => {
-            const targetPath = `/${categoryPath[component.category]}/${component.id}`;
+            const isCausalCard = component.category === "Causal";
+            const targetPath = isCausalCard
+              ? {
+                  pathname: `/${categoryPath[component.category]}`,
+                  query: {
+                    componentId: component.id,
+                    title: component.title,
+                    projectId: isProjectScopedComponent(component) ? component.projectId : selectedProjectId,
+                  },
+                }
+              : `/${categoryPath[component.category]}/${component.id}`;
+
+            const metaText = isComparisonComponent(component)
+              ? `Compare ${getProjectName(component.leftProjectId)} vs ${getProjectName(component.rightProjectId)}`
+              : `Project: ${projects.find((project) => project.id === component.projectId)?.name ?? getProjectName(component.projectId)}`;
 
             return (
               <Link
@@ -227,18 +197,7 @@ export default function Home() {
                       <p className="truncate text-sm font-semibold text-neutral-100">{component.title}</p>
                     </div>
                     <p className="mt-1 text-xs text-neutral-400">Edited {component.lastEdited}</p>
-                  </div>
-
-                  <div className="flex items-center justify-end">
-                    {component.collaborators.map((collaborator, index) => (
-                      <span
-                        key={collaborator.name}
-                        className={`${collaborator.colorClass} ${index === 0 ? "" : "-ml-2"} inline-flex h-6 w-6 items-center justify-center rounded-full border border-neutral-900 text-[10px] font-bold text-white`}
-                        title={collaborator.name}
-                      >
-                        {collaborator.initial}
-                      </span>
-                    ))}
+                    <p className="mt-1 text-xs text-neutral-500">{metaText}</p>
                   </div>
                 </div>
               </Link>

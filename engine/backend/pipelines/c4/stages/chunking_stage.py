@@ -47,7 +47,7 @@ def chunk_text_with_topic_summaries(
                 start_word=start,
                 end_word=end,
                 topic_summary=topic_summary,
-                text=chunk_text,
+                text=chunk_textd,
             )
         )
 
