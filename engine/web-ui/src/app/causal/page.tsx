@@ -21,7 +21,7 @@ export default function CausalPage() {
             Generate analytical follow-up questions from implicit causal content.
           </p>
           <Link
-            href="/causal/follow_up"
+            href="/causal_extract/follow_up"
             className="mt-4 inline-flex rounded-lg border border-sky-500 bg-sky-500/20 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/30"
           >
             Open Follow-up Page

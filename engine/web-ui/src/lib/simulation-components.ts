@@ -98,7 +98,7 @@ export const simulationComponents: SimulationComponent[] = [
 ];
 
 export const categoryPath: Record<Category, string> = {
-    Causal: "casual_extract",
+    Causal: "causal_extract",
     Map: "map",
     Code: "code",
     Comparison: "comparison",
