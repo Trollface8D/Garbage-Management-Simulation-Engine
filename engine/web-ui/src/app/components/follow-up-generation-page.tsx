@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 export interface CausalTriple {
   head: string;
@@ -153,29 +153,46 @@ function GoogleGIcon() {
 
 function CausalCard({
   causal,
-  isSelected,
-  onToggle,
   index,
+  generatedQuestions,
+  isPanelOpen,
+  onTogglePanel,
+  onGenerateForCausal,
+  isGeneratingForCausal,
+  answers,
+  onAnswerChange,
+  onSubmitGroup,
+  groupSubmitMessage,
 }: {
   causal: CausalItem;
-  isSelected: boolean;
-  onToggle: () => void;
   index: number;
+  generatedQuestions: string[];
+  isPanelOpen: boolean;
+  onTogglePanel: () => void;
+  onGenerateForCausal: () => void;
+  isGeneratingForCausal: boolean;
+  answers: Record<string, string>;
+  onAnswerChange: (question: string, answer: string) => void;
+  onSubmitGroup: () => void;
+  groupSubmitMessage: string;
 }) {
   const extracted = causal.extracted[0];
+  const hasQuestions = generatedQuestions.length > 0;
+  const panelLabel = hasQuestions
+    ? `Generated questions (${String(generatedQuestions.length)})`
+    : "Generated questions";
 
   return (
-    <article className="min-h-44 rounded-xl border border-neutral-700 bg-neutral-900/80 p-4">
+    <article className="rounded-xl border-2 border-neutral-700 bg-neutral-900/80 p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onToggle}
-            className="h-4 w-4 accent-emerald-500"
-          />
-          Choose
-        </label>
+        <button
+          type="button"
+          onClick={onGenerateForCausal}
+          disabled={isGeneratingForCausal}
+          className="inline-flex items-center rounded-md border border-emerald-600 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+        >
+          {isGeneratingForCausal ? "Generating..." : "Generate question"}
+        </button>
         <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Causal {String(index + 1)}</span>
       </div>
 
@@ -184,44 +201,79 @@ function CausalCard({
       </p>
 
       {extracted ? (
-        <div className="space-y-1 text-xs text-neutral-300">
-          <p>
+        <div className="grid gap-2 text-xs text-neutral-300 sm:grid-cols-2">
+          <p className="rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
             <span className="font-semibold text-neutral-100">Head:</span> {extracted.head}
           </p>
-          <p>
+          <p className="rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
             <span className="font-semibold text-neutral-100">Relation:</span> {extracted.relationship}
           </p>
-          <p>
+          <p className="rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
             <span className="font-semibold text-neutral-100">Tail:</span> {extracted.tail}
           </p>
-          <p>
+          <p className="rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
             <span className="font-semibold text-neutral-100">Detail:</span> {extracted.detail}
           </p>
         </div>
       ) : null}
-    </article>
-  );
-}
 
-function GeneratedResultCard({ result }: { result: GeneratedQuestionsData }) {
-  return (
-    <article className="relative min-h-40 rounded-xl border border-sky-700/40 bg-neutral-900/85 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-sky-300">
-        {result.sentence_type} | Generated Questions
-      </p>
-      <p className="mt-2 text-xs text-neutral-400">Source: {result.source_text}</p>
+      <div className="mt-4 overflow-hidden rounded-lg border border-sky-700/40 bg-neutral-900/85">
+        <button
+          type="button"
+          onClick={onTogglePanel}
+          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-neutral-800/60"
+          aria-expanded={isPanelOpen}
+        >
+          <span className="text-xs font-semibold uppercase tracking-wide text-sky-300">{panelLabel}</span>
+          <span className="text-xs text-neutral-300">{isPanelOpen ? "Hide" : "Show"}</span>
+        </button>
 
-      <div className="mt-3 max-h-52 space-y-2 overflow-y-auto pr-5">
-        {result.generated_questions.map((question) => (
-          <p key={question} className="rounded-lg border border-neutral-700 bg-neutral-950/90 p-2 text-sm text-neutral-100">
-            {question}
-          </p>
-        ))}
+        {isPanelOpen ? (
+          <div className="border-t border-neutral-700 p-3">
+            {isGeneratingForCausal ? (
+              <p className="text-sm text-neutral-400">Generating questions...</p>
+            ) : null}
+
+            {!isGeneratingForCausal && !hasQuestions ? (
+              <p className="text-sm text-amber-200">No generated questions for this causal yet.</p>
+            ) : null}
+
+            {hasQuestions ? (
+              <div className="space-y-2">
+                {generatedQuestions.map((question) => (
+                  <div key={question} className="rounded-lg border border-neutral-700 bg-neutral-950/90 p-2">
+                    <p className="text-sm text-neutral-100">{question}</p>
+                    <textarea
+                      value={answers[question] ?? ""}
+                      onChange={(event) => onAnswerChange(question, event.target.value)}
+                      rows={1}
+                      className="mt-2 h-10 w-full resize-y rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
+                      placeholder="Type answer for this question"
+                    />
+                  </div>
+                ))}
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={onSubmitGroup}
+                    className="rounded-md border border-sky-600 bg-sky-500/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-200 transition hover:bg-sky-500/20"
+                  >
+                    Submit this question group
+                  </button>
+                  <span className="text-xs text-neutral-400">Provide answers for all questions before submit.</span>
+                </div>
+
+                {groupSubmitMessage ? <p className="text-xs text-emerald-300">{groupSubmitMessage}</p> : null}
+
+                <span className="flex justify-end text-neutral-300" title="Generated by Google model">
+                  <GoogleGIcon />
+                </span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-
-      <span className="absolute bottom-3 right-3 text-neutral-300" title="Generated by Google model">
-        <GoogleGIcon />
-      </span>
     </article>
   );
 }
@@ -247,37 +299,89 @@ async function buildMockGeneratedResults(selectedItems: CausalItem[]): Promise<G
 }
 
 export default function FollowUpGenerationPage({ initialCausalItems = mockCausalItems }: FollowUpGenerationPageProps) {
-  const [selectedCausals, setSelectedCausals] = useState<Set<number>>(() => new Set());
   const [generatedResults, setGeneratedResults] = useState<GeneratedQuestionsData[]>([]);
-  const [hasGenerated, setHasGenerated] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [openedPanels, setOpenedPanels] = useState<Set<string>>(() => new Set());
+  const [isGeneratingAll, setIsGeneratingAll] = useState(false);
+  const [generatingSources, setGeneratingSources] = useState<Set<string>>(() => new Set());
   const [isFiltering, setIsFiltering] = useState(false);
+  const [answersBySource, setAnswersBySource] = useState<Record<string, Record<string, string>>>({});
+  const [groupSubmitStatus, setGroupSubmitStatus] = useState<Record<string, string>>({});
+  const [allSubmitStatus, setAllSubmitStatus] = useState("");
 
-  const toggleSelection = (index: number) => {
-    setSelectedCausals((previous) => {
+  const hasGenerated = generatedResults.length > 0;
+
+  const generatedBySourceText = useMemo(() => {
+    return new Map(generatedResults.map((result) => [result.source_text, result]));
+  }, [generatedResults]);
+
+  const handleGenerateAllQuestions = async () => {
+    setIsGeneratingAll(true);
+
+    const results = await buildMockGeneratedResults(initialCausalItems);
+    setGeneratedResults(results);
+    setOpenedPanels(new Set(results.map((result) => result.source_text)));
+    setGroupSubmitStatus({});
+    setAllSubmitStatus("");
+    setIsGeneratingAll(false);
+  };
+
+  const handleGenerateForCausal = async (causal: CausalItem) => {
+    setGeneratingSources((previous) => {
       const next = new Set(previous);
-      if (next.has(index)) {
-        next.delete(index);
+      next.add(causal.source_text);
+      return next;
+    });
+
+    const [result] = await buildMockGeneratedResults([causal]);
+
+    if (result) {
+      setGeneratedResults((previous) => {
+        const bySource = new Map(previous.map((item) => [item.source_text, item]));
+        bySource.set(result.source_text, result);
+
+        return initialCausalItems
+          .map((item) => bySource.get(item.source_text))
+          .filter((item): item is GeneratedQuestionsData => Boolean(item));
+      });
+
+      setOpenedPanels((previous) => {
+        const next = new Set(previous);
+        next.add(causal.source_text);
+        return next;
+      });
+    }
+
+    setGeneratingSources((previous) => {
+      const next = new Set(previous);
+      next.delete(causal.source_text);
+      return next;
+    });
+  };
+
+  const handleAnswerChange = (sourceText: string, question: string, answer: string) => {
+    setAnswersBySource((previous) => ({
+      ...previous,
+      [sourceText]: {
+        ...(previous[sourceText] ?? {}),
+        [question]: answer,
+      },
+    }));
+  };
+
+  const toggleGeneratedPanel = (sourceText: string) => {
+    setOpenedPanels((previous) => {
+      const next = new Set(previous);
+      if (next.has(sourceText)) {
+        next.delete(sourceText);
       } else {
-        next.add(index);
+        next.add(sourceText);
       }
       return next;
     });
   };
 
-  const handleGenerateQuestions = async () => {
-    setIsGenerating(true);
-
-    const selectedItems = initialCausalItems.filter((_, index) => selectedCausals.has(index));
-    const results = await buildMockGeneratedResults(selectedItems);
-
-    setGeneratedResults(results);
-    setHasGenerated(true);
-    setIsGenerating(false);
-  };
-
   const handleRunFilter = async () => {
-    if (!hasGenerated || generatedResults.length === 0) {
+    if (!hasGenerated) {
       return;
     }
 
@@ -299,6 +403,58 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
     setIsFiltering(false);
   };
 
+  const handleSubmitGroup = (sourceText: string, questions: string[]) => {
+    if (questions.length === 0) {
+      setGroupSubmitStatus((previous) => ({
+        ...previous,
+        [sourceText]: "No generated questions to submit for this causal.",
+      }));
+      return;
+    }
+
+    const answers = answersBySource[sourceText] ?? {};
+    const unansweredCount = questions.filter((question) => !(answers[question] ?? "").trim()).length;
+
+    if (unansweredCount > 0) {
+      setGroupSubmitStatus((previous) => ({
+        ...previous,
+        [sourceText]: `Please answer ${String(unansweredCount)} more question(s) before submitting this group.`,
+      }));
+      return;
+    }
+
+    setGroupSubmitStatus((previous) => ({
+      ...previous,
+      [sourceText]: `Submitted ${String(questions.length)} Q&A item(s) for this causal.`,
+    }));
+  };
+
+  const handleSubmitAllQA = () => {
+    if (!hasGenerated) {
+      setAllSubmitStatus("No generated questions available to submit yet.");
+      return;
+    }
+
+    const qaPairs = generatedResults.flatMap((result) =>
+      result.generated_questions.map((question) => ({
+        sourceText: result.source_text,
+        question,
+      })),
+    );
+
+    const unansweredCount = qaPairs.filter(({ sourceText, question }) => {
+      const answer = answersBySource[sourceText]?.[question] ?? "";
+      return !answer.trim();
+    }).length;
+
+    if (unansweredCount > 0) {
+      setAllSubmitStatus(`Please answer ${String(unansweredCount)} remaining question(s) before submitting all.`);
+      return;
+    }
+
+    setAllSubmitStatus(`Submitted all Question & Answer successfully (${String(qaPairs.length)} item(s)).`);
+  };
+
   return (
     <section className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 backdrop-blur-sm md:p-6">
       <header className="mx-auto mb-6 max-w-3xl text-center">
@@ -309,77 +465,65 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
         </p>
       </header>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div>
         <div>
           <p className="mb-3 text-sm font-semibold text-neutral-200">Select implicit causal for question generation</p>
-          <div className="max-h-136 space-y-3 overflow-y-auto pr-1">
-            {initialCausalItems.map((causal, index) => (
-              <CausalCard
-                key={causal.source_text}
-                causal={causal}
-                index={index}
-                isSelected={selectedCausals.has(index)}
-                onToggle={() => toggleSelection(index)}
-              />
-            ))}
-          </div>
-        </div>
+          <div className="space-y-3">
+            {initialCausalItems.map((causal, index) => {
+              const generated = generatedBySourceText.get(causal.source_text);
 
-        <div>
-          <p className="mb-3 text-sm font-semibold text-neutral-200">Generated output</p>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-            <div className="flex-1 max-h-136 space-y-3 overflow-y-auto pr-1">
-              {!hasGenerated ? (
-                <div className="rounded-xl border border-dashed border-neutral-700 bg-neutral-900/70 p-6 text-sm text-neutral-400">
-                  Generated questions will appear here after clicking Generate questions.
-                </div>
-              ) : null}
-
-              {hasGenerated && generatedResults.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-amber-600/40 bg-amber-950/20 p-6 text-sm text-amber-200">
-                  No causal item selected. Choose one or more causals first, then generate questions.
-                </div>
-              ) : null}
-
-              {generatedResults.map((result) => (
-                <GeneratedResultCard key={result.source_text} result={result} />
-              ))}
-            </div>
-
-            <aside className="w-full rounded-xl border border-neutral-700 bg-neutral-900/70 p-3 lg:w-40">
-              <p className="text-xs text-neutral-300">
-                filter out questions that can be answered from the internet
-              </p>
-              <button
-                type="button"
-                onClick={handleRunFilter}
-                disabled={isFiltering || !hasGenerated || generatedResults.length === 0}
-                className="mt-3 w-full rounded-lg border border-sky-500 bg-sky-500/20 px-3 py-2 text-sm font-bold text-sky-200 transition hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
-              >
-                {isFiltering ? "RUNNING..." : "RUN"}
-              </button>
-            </aside>
+              return (
+                <CausalCard
+                  key={causal.source_text}
+                  causal={causal}
+                  index={index}
+                  generatedQuestions={generated?.generated_questions ?? []}
+                  isPanelOpen={openedPanels.has(causal.source_text)}
+                  onTogglePanel={() => toggleGeneratedPanel(causal.source_text)}
+                  onGenerateForCausal={() => void handleGenerateForCausal(causal)}
+                  isGeneratingForCausal={generatingSources.has(causal.source_text)}
+                  answers={answersBySource[causal.source_text] ?? {}}
+                  onAnswerChange={(question, answer) => handleAnswerChange(causal.source_text, question, answer)}
+                  onSubmitGroup={() => handleSubmitGroup(causal.source_text, generated?.generated_questions ?? [])}
+                  groupSubmitMessage={groupSubmitStatus[causal.source_text] ?? ""}
+                />
+              );
+            })}
           </div>
         </div>
       </div>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          type="button"
-          onClick={handleGenerateQuestions}
-          disabled={isGenerating}
-          className="rounded-lg border border-emerald-500 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
-        >
-          {isGenerating ? "Generating..." : "Generate questions"}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleGenerateAllQuestions}
+            disabled={isGeneratingAll}
+            className="rounded-lg border border-emerald-500 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+          >
+            {isGeneratingAll ? "Generating..." : "Generate all questions"}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleRunFilter}
+            disabled={isFiltering || !hasGenerated || generatedResults.length === 0}
+            className="rounded-lg border border-sky-500 bg-sky-500/20 px-4 py-2 text-sm font-bold text-sky-200 transition hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+          >
+            {isFiltering ? "RUNNING FILTER..." : "Run filter"}
+          </button>
+        </div>
 
         <button
           type="button"
+          onClick={handleSubmitAllQA}
           className="rounded-lg border border-neutral-700 bg-neutral-950 px-5 py-2 text-sm font-bold tracking-wide text-neutral-100 transition hover:border-neutral-500"
         >
-          SUBMIT
+          Submit all Question & Answer
         </button>
       </div>
+
+      {allSubmitStatus ? <p className="mt-3 text-sm text-neutral-300">{allSubmitStatus}</p> : null}
     </section>
   );
 }
