@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import BackToHome from "../../components/back-to-home";
 import {
     findComponentById,
     findProjectById,
@@ -343,12 +343,12 @@ function CausalExtractChunkingContent() {
                             <span className="text-sm text-neutral-300">{selectedProjectName}</span>
                         </div>
                     </div>
-                    <Link
+                    <BackToHome
                         href="/causal_extract"
-                        className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-semibold text-neutral-200 transition hover:border-sky-500 hover:text-sky-200"
-                    >
-                        Back to causal extraction home
-                    </Link>
+                        label="Back to causal extraction home"
+                        containerClassName=""
+                        className="rounded-md px-3 py-2"
+                    />
                 </header>
 
                 <section className="mb-6 rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useRef, useState } from "react";
+import BackToHome from "../components/back-to-home";
 import {
     findComponentById,
     getProjectIdForComponent,
@@ -361,14 +362,7 @@ function CausalExtractHomeContent() {
                     </section>
                 </section>
 
-                <div className="mt-6">
-                    <Link
-                        href="/"
-                        className="inline-flex items-center rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:border-sky-500 hover:text-sky-200"
-                    >
-                        Back to dashboard
-                    </Link>
-                </div>
+                <BackToHome />
             </main>
         </div>
     );

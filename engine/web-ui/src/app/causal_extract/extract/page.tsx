@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import {
@@ -8,6 +7,7 @@ import {
   findProjectById,
   getProjectIdForComponent,
 } from "@/lib/simulation-components";
+import BackToHome from "../../components/back-to-home";
 
 type ExtractedTriple = {
   head: string;
@@ -171,11 +171,11 @@ function CausalExtractPageContent() {
     <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
       <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div className="max-w-4xl">
             <h1 className="text-3xl font-black tracking-tight md:text-4xl">Causal extraction section</h1>
             <p className="mt-2 text-sm text-neutral-300">
-              The objective of this section is to extract as many causalities from the system that we are interested in
-              as possible in order to improve simulation output.
+              The objective of this section is to extract causalities from the system that we are interested in
+              <br/>as many as possible in order to improve simulation output.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
@@ -188,12 +188,12 @@ function CausalExtractPageContent() {
               <span className="text-sm text-neutral-300">{selectedProjectName}</span>
             </div>
           </div>
-          <Link
+          <BackToHome
             href="/causal_extract"
-            className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm font-semibold text-neutral-200 transition hover:border-sky-500 hover:text-sky-200"
-          >
-            Back to causal extraction home
-          </Link>
+            label="Back to causal extraction home"
+            containerClassName=""
+            className="rounded-md px-3 py-2"
+          />
         </header>
 
         <section className="grid gap-5 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 backdrop-blur-sm md:grid-cols-[280px_1fr] md:p-6">

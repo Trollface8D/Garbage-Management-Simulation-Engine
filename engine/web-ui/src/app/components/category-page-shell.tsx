@@ -1,4 +1,4 @@
-import Link from "next/link";
+import BackToHome from "./back-to-home";
 
 type CategoryPageShellProps = {
   title: string;
@@ -19,14 +19,7 @@ export default function CategoryPageShell({ title, description, children }: Cate
           {children}
         </section>
 
-        <div className="mt-6">
-          <Link
-            href="/"
-            className="inline-flex items-center rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:border-sky-500 hover:text-sky-200"
-          >
-            Back to dashboard
-          </Link>
-        </div>
+        <BackToHome />
       </main>
     </div>
   );
