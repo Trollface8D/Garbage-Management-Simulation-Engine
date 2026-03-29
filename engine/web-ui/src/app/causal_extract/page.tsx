@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
 import {
     findComponentById,
     getProjectIdForComponent,
@@ -110,6 +110,8 @@ function CausalExtractHomeContent() {
     const [activeFeature, setActiveFeature] = useState<FeatureTab>("chunking");
     const [includeImplicit, setIncludeImplicit] = useState<boolean>(true);
     const [inputText, setInputText] = useState<string>("");
+    const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+    const filePickerRef = useRef<HTMLInputElement | null>(null);
 
     const selectedProjectName =
         projects.find((project) => project.id === selectedProjectId)?.name ?? "Unselected project";
@@ -132,12 +134,23 @@ function CausalExtractHomeContent() {
         });
     }, [activeFeature, experimentItems, includeImplicit]);
 
-    const sourceChips = useMemo(() => {
-        return experimentItems
-            .filter((item) => item.status === "raw_text")
-            .map((item) => `${item.fileName}`)
-            .filter((value, index, all) => all.indexOf(value) === index);
-    }, [experimentItems]);
+    const handleOpenFilePicker = () => {
+        filePickerRef.current?.click();
+    };
+
+    const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const picked = Array.from(event.target.files ?? []);
+        if (picked.length === 0) {
+            return;
+        }
+
+        setUploadedFiles((prev) => [...prev, ...picked]);
+        event.currentTarget.value = "";
+    };
+
+    const handleRemoveFile = (targetIndex: number) => {
+        setUploadedFiles((prev) => prev.filter((_, index) => index !== targetIndex));
+    };
 
     const handleProjectChange = (value: string) => {
         if (value !== "__add_new__") {
@@ -221,17 +234,33 @@ function CausalExtractHomeContent() {
                         <div className="mt-4 flex flex-wrap items-center gap-2">
                             <button
                                 type="button"
+                                onClick={handleOpenFilePicker}
                                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-600 bg-neutral-800 text-xl leading-none text-neutral-200 transition hover:border-sky-500"
-                                aria-label="Add source"
+                                aria-label="Add files"
                             >
                                 +
                             </button>
-                            {sourceChips.map((chip) => (
+                            <input
+                                ref={filePickerRef}
+                                type="file"
+                                multiple
+                                onChange={handleFilesSelected}
+                                className="hidden"
+                            />
+                            {uploadedFiles.map((file, index) => (
                                 <span
-                                    key={chip}
+                                    key={`${file.name}-${String(file.size)}-${String(file.lastModified)}-${String(index)}`}
                                     className="inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200"
                                 >
-                                    {chip}
+                                    <span>{file.name}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemoveFile(index)}
+                                        className="rounded px-1 text-xs font-bold text-neutral-300 transition hover:bg-neutral-700 hover:text-red-300"
+                                        aria-label={`Remove ${file.name}`}
+                                    >
+                                        x
+                                    </button>
                                 </span>
                             ))}
                         </div>

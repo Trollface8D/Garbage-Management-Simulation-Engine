@@ -78,6 +78,54 @@ const mockCausalItems: CausalItem[] = [
       },
     ],
   },
+  {
+    pattern_type: "C",
+    sentence_type: "SP",
+    marked_type: "U",
+    explicit_type: "I",
+    marker: null,
+    source_text: "If sorting staff are reduced during peak hours, contamination rates can rise across downstream routes.",
+    extracted: [
+      {
+        head: "Reduced sorting staff",
+        relationship: "causes",
+        tail: "higher contamination rates",
+        detail: "because verification steps are skipped during overload",
+      },
+    ],
+  },
+  {
+    pattern_type: "C",
+    sentence_type: "SB",
+    marked_type: "U",
+    explicit_type: "I",
+    marker: null,
+    source_text: "Delayed route reassignment can amplify fuel usage when district demand shifts unexpectedly.",
+    extracted: [
+      {
+        head: "Delayed route reassignment",
+        relationship: "causes",
+        tail: "increased fuel usage",
+        detail: "through repeated detours and idle waiting",
+      },
+    ],
+  },
+  {
+    pattern_type: "C",
+    sentence_type: "SP",
+    marked_type: "U",
+    explicit_type: "I",
+    marker: null,
+    source_text: "When transfer hubs lack synchronized unloading windows, cross-zone pickup plans become unstable.",
+    extracted: [
+      {
+        head: "Unsynchronized unloading windows",
+        relationship: "causes",
+        tail: "cross-zone pickup instability",
+        detail: "because vehicles miss planned handoff intervals",
+      },
+    ],
+  },
 ];
 
 function GoogleGIcon() {
@@ -103,11 +151,34 @@ function GoogleGIcon() {
   );
 }
 
-function CausalCard({ causal }: { causal: CausalItem }) {
+function CausalCard({
+  causal,
+  isSelected,
+  onToggle,
+  index,
+}: {
+  causal: CausalItem;
+  isSelected: boolean;
+  onToggle: () => void;
+  index: number;
+}) {
   const extracted = causal.extracted[0];
 
   return (
     <article className="min-h-44 rounded-xl border border-neutral-700 bg-neutral-900/80 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={onToggle}
+            className="h-4 w-4 accent-emerald-500"
+          />
+          Choose
+        </label>
+        <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Causal {String(index + 1)}</span>
+      </div>
+
       <p className="mb-3 rounded-lg border border-neutral-700 bg-neutral-950/90 p-3 text-sm text-neutral-200">
         {causal.source_text}
       </p>
@@ -140,7 +211,7 @@ function GeneratedResultCard({ result }: { result: GeneratedQuestionsData }) {
       </p>
       <p className="mt-2 text-xs text-neutral-400">Source: {result.source_text}</p>
 
-      <div className="mt-3 space-y-2 pr-7">
+      <div className="mt-3 max-h-52 space-y-2 overflow-y-auto pr-5">
         {result.generated_questions.map((question) => (
           <p key={question} className="rounded-lg border border-neutral-700 bg-neutral-950/90 p-2 text-sm text-neutral-100">
             {question}
@@ -168,6 +239,8 @@ async function buildMockGeneratedResults(selectedItems: CausalItem[]): Promise<G
       generated_questions: [
         `How exactly does ${focusEntity} lead to improvements in ${targetEntity} within the simulation?`,
         `What specific assumptions are made when predicting how ${focusEntity} affects ${targetEntity}?`,
+        `Under what operating constraints does ${focusEntity} stop influencing ${targetEntity} as expected?`,
+        `What additional data should be collected to validate the causal path from ${focusEntity} to ${targetEntity}?`,
       ],
     };
   });
@@ -236,49 +309,26 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
         </p>
       </header>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div>
           <p className="mb-3 text-sm font-semibold text-neutral-200">Select implicit causal for question generation</p>
-          <div className="space-y-3">
-            {initialCausalItems.map((causal) => (
-              <CausalCard key={causal.source_text} causal={causal} />
+          <div className="max-h-136 space-y-3 overflow-y-auto pr-1">
+            {initialCausalItems.map((causal, index) => (
+              <CausalCard
+                key={causal.source_text}
+                causal={causal}
+                index={index}
+                isSelected={selectedCausals.has(index)}
+                onToggle={() => toggleSelection(index)}
+              />
             ))}
-          </div>
-        </div>
-
-        <div>
-          <p className="mb-3 text-sm font-semibold text-neutral-200">Action</p>
-          <div className="space-y-3">
-            {initialCausalItems.map((causal, index) => {
-              const isSelected = selectedCausals.has(index);
-
-              return (
-                <div key={`${causal.source_text}-choose`} className="flex min-h-44 items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={() => toggleSelection(index)}
-                    aria-pressed={isSelected}
-                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                      isSelected
-                        ? "border-sky-500 bg-sky-500/20 text-sky-200"
-                        : "border-neutral-700 bg-neutral-800 text-neutral-200 hover:border-neutral-500"
-                    }`}
-                  >
-                    <span>Choose</span>
-                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-xs leading-none">
-                      x
-                    </span>
-                  </button>
-                </div>
-              );
-            })}
           </div>
         </div>
 
         <div>
           <p className="mb-3 text-sm font-semibold text-neutral-200">Generated output</p>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-            <div className="flex-1 space-y-3">
+            <div className="flex-1 max-h-136 space-y-3 overflow-y-auto pr-1">
               {!hasGenerated ? (
                 <div className="rounded-xl border border-dashed border-neutral-700 bg-neutral-900/70 p-6 text-sm text-neutral-400">
                   Generated questions will appear here after clicking Generate questions.

@@ -5,16 +5,17 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
     findComponentById,
+    findProjectById,
     getProjectIdForComponent,
     getSeedBlocksForComponent,
-    simulationProjects,
-    type SimulationProject,
 } from "@/lib/simulation-components";
 
 type TextBlock = {
     id: string;
     text: string;
 };
+
+type ToolMode = "edit" | "split";
 
 type LoadOptions = {
     silentFailure?: boolean;
@@ -87,6 +88,48 @@ function splitIntoFixedWordChunks(fullText: string, chunkSize: number): string[]
     return chunks;
 }
 
+function CursorToolIcon({ className }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M5 3l10 10-4 1 2 6-2 1-2-6-4 4z" />
+        </svg>
+    );
+}
+
+function SplitToolIcon({ className }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <circle cx="5.4" cy="6.6" r="3" />
+            <circle cx="5.4" cy="17.4" r="3" />
+            <circle cx="10.8" cy="12" r="1" fill="currentColor" stroke="none" />
+            <path d="M7.9 8.5 10.8 11.7" />
+            <path d="M7.9 15.5 10.8 12.3" />
+            <path d="M10.8 11.7 20.6 3.8" />
+            <path d="M10.8 12.3 20.6 20.2" />
+            <path d="M10.8 12 15.8 8.2" strokeWidth="2" />
+        </svg>
+    );
+}
+
+function JoinToolIcon({ className }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
+        </svg>
+    );
+}
+
+function AiToolIcon({ className }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z" />
+            <path d="M19 14l1 2 2 1-2 1-1 2-1-2-2-1 2-1z" />
+            <path d="M5 14l.8 1.6L7.5 16l-1.7.4L5 18l-.8-1.6L2.5 16l1.7-.4z" />
+        </svg>
+    );
+}
+
 function CausalExtractChunkingContent() {
     const searchParams = useSearchParams();
 
@@ -96,58 +139,22 @@ function CausalExtractChunkingContent() {
     const queryTitle = searchParams.get("title");
 
     const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
-    const defaultProjectId = queryProjectId ?? getProjectIdForComponent(componentId) ?? simulationProjects[0]?.id ?? "";
+    const selectedProjectId = queryProjectId ?? getProjectIdForComponent(componentId);
 
     const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Unselected component";
     const engineApiBase = process.env.NEXT_PUBLIC_ENGINE_API_BASE ?? "http://127.0.0.1:8000";
 
-    const [projects, setProjects] = useState<SimulationProject[]>(simulationProjects);
-    const [selectedProjectId, setSelectedProjectId] = useState<string>(defaultProjectId);
     const [blocks, setBlocks] = useState<TextBlock[]>(() => buildBlocksFromTexts([]));
     const [activeIndex, setActiveIndex] = useState<number>(0);
-    const [isCutMode, setIsCutMode] = useState<boolean>(false);
+    const [toolMode, setToolMode] = useState<ToolMode>("edit");
     const [selectedForJoin, setSelectedForJoin] = useState<number[]>([]);
     const [jobIdInput, setJobIdInput] = useState<string>(initialJobId);
     const [isLoadingBackend, setIsLoadingBackend] = useState<boolean>(false);
     const [loadStatus, setLoadStatus] = useState<string>("");
 
-    const selectedProjectName =
-        projects.find((project) => project.id === selectedProjectId)?.name ?? "Unselected project";
+    const isCutMode = toolMode === "split";
 
-    const handleProjectChange = (value: string) => {
-        if (value !== "__add_new__") {
-            setSelectedProjectId(value);
-            return;
-        }
-
-        const nextNameRaw = window.prompt("Enter new project name:");
-        const nextName = nextNameRaw?.trim();
-        if (!nextName) {
-            return;
-        }
-
-        const existingByName = projects.find((project) => project.name.toLowerCase() === nextName.toLowerCase());
-        if (existingByName) {
-            setSelectedProjectId(existingByName.id);
-            return;
-        }
-
-        const slugBase = nextName
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, "");
-
-        let nextId = slugBase || `project-${String(projects.length + 1)}`;
-        let index = 2;
-        while (projects.some((project) => project.id === nextId)) {
-            nextId = `${slugBase || "project"}-${String(index)}`;
-            index += 1;
-        }
-
-        const nextProject: SimulationProject = { id: nextId, name: nextName };
-        setProjects((prev) => [nextProject, ...prev]);
-        setSelectedProjectId(nextProject.id);
-    };
+    const selectedProjectName = findProjectById(selectedProjectId)?.name ?? "Unselected project";
 
     const loadFromBackend = useCallback(
         async (targetJobId: string, options: LoadOptions = {}): Promise<void> => {
@@ -178,7 +185,7 @@ function CausalExtractChunkingContent() {
                 setBlocks(buildBlocksFromTexts(chunkTexts));
                 setActiveIndex(0);
                 setSelectedForJoin([]);
-                setIsCutMode(false);
+                setToolMode("edit");
                 setLoadStatus(`Loaded ${String(chunkTexts.length)} chunks from backend.`);
             } catch (error) {
                 if (!options.silentFailure) {
@@ -197,20 +204,13 @@ function CausalExtractChunkingContent() {
     }, [initialJobId]);
 
     useEffect(() => {
-        if (!defaultProjectId) {
-            return;
-        }
-        setSelectedProjectId(defaultProjectId);
-    }, [defaultProjectId]);
-
-    useEffect(() => {
         const seedTexts = getSeedBlocksForComponent(componentId);
         const initialTexts = seedTexts.length > 0 ? seedTexts : [DEFAULT_EDITOR_TEXT];
 
         setBlocks(buildBlocksFromTexts(initialTexts));
         setActiveIndex(0);
         setSelectedForJoin([]);
-        setIsCutMode(false);
+        setToolMode("edit");
 
         if (!componentId) {
             setLoadStatus("No component was selected from the dashboard. Showing default editor text.");
@@ -224,10 +224,6 @@ function CausalExtractChunkingContent() {
 
         setLoadStatus("Loaded seed text based on the selected dashboard component.");
     }, [componentId, initialJobId, loadFromBackend]);
-
-    const armCutMode = () => {
-        setIsCutMode(true);
-    };
 
     const handleEdit = (index: number, nextText: string) => {
         setBlocks((prev) => {
@@ -260,7 +256,7 @@ function CausalExtractChunkingContent() {
 
         setActiveIndex(index + 1);
         setSelectedForJoin([]);
-        setIsCutMode(false);
+        setToolMode("edit");
     };
 
     const handleTextareaMouseUp = (index: number, selectionStart: number | null) => {
@@ -302,7 +298,7 @@ function CausalExtractChunkingContent() {
 
         setActiveIndex(insertAt);
         setSelectedForJoin([]);
-        setIsCutMode(false);
+        setToolMode("edit");
     };
 
     const handleAutochunk = () => {
@@ -327,8 +323,8 @@ function CausalExtractChunkingContent() {
         setBlocks(buildBlocksFromTexts(rechunked));
         setActiveIndex(0);
         setSelectedForJoin([]);
-        setIsCutMode(false);
-        setLoadStatus(`Autochunk completed with ${String(rechunked.length)} blocks.`);
+        setToolMode("edit");
+        setLoadStatus(`AI chunking completed with ${String(rechunked.length)} blocks.`);
     };
 
     return (
@@ -341,23 +337,10 @@ function CausalExtractChunkingContent() {
                             Selected component: <span className="font-semibold text-neutral-100">{selectedTitle}</span>
                         </p>
                         <div className="mt-3 flex flex-wrap items-center gap-3">
-                            <label htmlFor="project-picker" className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
                                 Project
-                            </label>
-                            <select
-                                id="project-picker"
-                                value={selectedProjectId}
-                                onChange={(event) => handleProjectChange(event.target.value)}
-                                className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
-                            >
-                                <option value="__add_new__">+ Add new project</option>
-                                {projects.map((project) => (
-                                    <option key={project.id} value={project.id}>
-                                        {project.name}
-                                    </option>
-                                ))}
-                            </select>
-                            <span className="text-xs text-neutral-400">{selectedProjectName}</span>
+                            </span>
+                            <span className="text-sm text-neutral-300">{selectedProjectName}</span>
                         </div>
                     </div>
                     <Link
@@ -395,79 +378,106 @@ function CausalExtractChunkingContent() {
                     <p className="mt-3 text-xs text-neutral-400">{loadStatus}</p>
                 </section>
 
-                <section className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
-                    <button
-                        type="button"
-                        onClick={armCutMode}
-                        className={`rounded-md border px-4 py-2 text-sm font-semibold transition ${isCutMode
-                                ? "border-sky-400 bg-sky-500/30 text-sky-100"
-                                : "border-sky-700 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20"
-                            }`}
-                    >
-                        {isCutMode ? "Click text to split" : "Cut by next click"}
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={handleJoinSelected}
-                        disabled={selectedForJoin.length < 2}
-                        className="rounded-md border border-emerald-700 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        Join selected ({String(selectedForJoin.length)})
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={handleAutochunk}
-                        className="rounded-md border border-neutral-600 bg-neutral-800 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:border-neutral-400"
-                    >
-                        Autochunk (20 words)
-                    </button>
-                </section>
-
-                {isCutMode && (
-                    <p className="mb-4 rounded-md border border-sky-700 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
-                        Cut mode is active. Click inside any block to split at the clicked caret position.
-                    </p>
-                )}
-
-                <section className="space-y-4">
-                    {blocks.map((block, index) => {
-                        const isActive = index === activeIndex;
-                        const isJoinSelected = selectedForJoin.includes(index);
-
-                        return (
-                            <div
-                                key={block.id}
-                                className={`rounded-xl border p-3 transition ${isActive ? "border-sky-500 bg-neutral-900" : "border-neutral-800 bg-neutral-900/70"
-                                    } ${isJoinSelected ? "ring-2 ring-emerald-400/50" : ""}`}
+                <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[auto_1fr] lg:items-start">
+                    <aside className="lg:sticky lg:top-6">
+                        <div className="flex w-fit items-center gap-2 rounded-2xl border border-neutral-800 bg-neutral-900/70 p-2 lg:flex-col">
+                            <button
+                                type="button"
+                                onClick={() => setToolMode("edit")}
+                                title="Edit mode"
+                                aria-label="Edit mode"
+                                className={`rounded-xl border p-3 transition ${!isCutMode
+                                        ? "border-sky-400 bg-sky-500/25 text-sky-100"
+                                        : "border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-500"
+                                    }`}
                             >
-                                <div className="mb-2 flex items-center justify-between gap-3">
-                                    <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">
-                                        <input
-                                            type="checkbox"
-                                            checked={isJoinSelected}
-                                            onChange={() => toggleJoinSelection(index)}
-                                            className="h-4 w-4 accent-emerald-500"
-                                        />
-                                        Join
-                                    </label>
-                                    <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                                        Block {String(index + 1)}
-                                    </span>
-                                </div>
+                                <CursorToolIcon className="h-5 w-5" />
+                            </button>
 
-                                <textarea
-                                    value={block.text}
-                                    onChange={(event) => handleEdit(index, event.target.value)}
-                                    onFocus={() => setActiveIndex(index)}
-                                    onMouseUp={(event) => handleTextareaMouseUp(index, event.currentTarget.selectionStart)}
-                                    className="min-h-28 w-full resize-y rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
-                                    placeholder="Type block text"
-                                />
-                            </div>
-                        );
-                    })}
+                            <button
+                                type="button"
+                                onClick={() => setToolMode("split")}
+                                title="Split by next click"
+                                aria-label="Split by next click"
+                                className={`rounded-xl border p-3 transition ${isCutMode
+                                        ? "border-sky-400 bg-sky-500/25 text-sky-100"
+                                        : "border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-500"
+                                    }`}
+                            >
+                                <SplitToolIcon className="h-5 w-5" />
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleJoinSelected}
+                                title={`Join selected (${String(selectedForJoin.length)})`}
+                                aria-label={`Join selected (${String(selectedForJoin.length)})`}
+                                disabled={selectedForJoin.length < 2}
+                                className="rounded-xl border border-emerald-700 bg-emerald-500/10 p-3 text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <JoinToolIcon className="h-5 w-5" />
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleAutochunk}
+                                title="AI chunking"
+                                aria-label="AI chunking"
+                                className="rounded-xl border border-violet-700 bg-violet-500/10 p-3 text-violet-200 transition hover:bg-violet-500/20"
+                            >
+                                <AiToolIcon className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <p className="mt-3 text-xs text-neutral-400">Join selected: {String(selectedForJoin.length)}</p>
+                    </aside>
+
+                    <div>
+                        {isCutMode && (
+                            <p className="mb-4 rounded-md border border-sky-700 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
+                                Split mode is active. Click inside any block to split at the clicked caret position.
+                            </p>
+                        )}
+
+                        <section className="space-y-4">
+                            {blocks.map((block, index) => {
+                                const isActive = index === activeIndex;
+                                const isJoinSelected = selectedForJoin.includes(index);
+
+                                return (
+                                    <div
+                                        key={block.id}
+                                        className={`rounded-xl border p-3 transition ${isActive ? "border-sky-500 bg-neutral-900" : "border-neutral-800 bg-neutral-900/70"
+                                            } ${isJoinSelected ? "ring-2 ring-emerald-400/50" : ""}`}
+                                    >
+                                        <div className="mb-2 flex items-center justify-between gap-3">
+                                            <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-300">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isJoinSelected}
+                                                    onChange={() => toggleJoinSelection(index)}
+                                                    className="h-4 w-4 accent-emerald-500"
+                                                />
+                                                Join
+                                            </label>
+                                            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                                                Block {String(index + 1)}
+                                            </span>
+                                        </div>
+
+                                        <textarea
+                                            value={block.text}
+                                            onChange={(event) => handleEdit(index, event.target.value)}
+                                            onFocus={() => setActiveIndex(index)}
+                                            onMouseUp={(event) => handleTextareaMouseUp(index, event.currentTarget.selectionStart)}
+                                            className="min-h-28 w-full resize-y rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
+                                            placeholder="Type block text"
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </section>
+                    </div>
                 </section>
             </main>
         </div>
