@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-type Category = "Causal" | "Map" | "Code" | "Comparison";
+type Category = "Causal" | "Follow_up" | "Map" | "Code" | "Policy_testing" ;
 type FilterOption = "All" | Category;
 
 type Collaborator = {
@@ -20,7 +20,7 @@ type SimulationComponent = {
   collaborators: Collaborator[];
 };
 
-const filterOptions: FilterOption[] = ["All", "Causal", "Map", "Code", "Comparison"];
+const filterOptions: FilterOption[] = ["All", "Causal", "Follow_up", "Map", "Code", "Policy_testing"];
 
 const simulationComponents: SimulationComponent[] = [
   {
@@ -59,7 +59,7 @@ const simulationComponents: SimulationComponent[] = [
   {
     id: "cost-vs-time-benchmark",
     title: "Cost vs Time Benchmark",
-    category: "Comparison",
+    category: "Policy_testing",
     lastEdited: "10 hours ago",
     collaborators: [
       { name: "Nim", initial: "N", colorClass: "bg-orange-500" },
@@ -103,7 +103,7 @@ const simulationComponents: SimulationComponent[] = [
   {
     id: "fuel-and-delay-analysis",
     title: "Fuel and Delay Analysis",
-    category: "Comparison",
+    category: "Policy_testing",
     lastEdited: "24 hours ago",
     collaborators: [
       { name: "Keen", initial: "K", colorClass: "bg-violet-500" },
@@ -111,13 +111,25 @@ const simulationComponents: SimulationComponent[] = [
       { name: "Ploy", initial: "P", colorClass: "bg-pink-500" },
     ],
   },
+  {
+    id: "follow-up-qa-batch",
+    title: "Follow-up Q&A Batch",
+    category: "Follow_up",
+    lastEdited: "1 hour ago",
+    collaborators: [
+      { name: "Ploy", initial: "P", colorClass: "bg-pink-500" },
+      { name: "Keen", initial: "K", colorClass: "bg-violet-500" },
+      { name: "Boss", initial: "B", colorClass: "bg-sky-500" },
+    ],
+  },
 ];
 
 const categoryPath: Record<Category, string> = {
   Causal: "causal",
+  Follow_up: "causal/follow_up",
   Map: "map",
   Code: "code",
-  Comparison: "comparison",
+  Policy_testing: "policy_testing",
 };
 
 function FileThumbPlaceholder() {
@@ -210,7 +222,7 @@ export default function Home() {
 
         <section className="grid grid-cols-1 gap-5 md:grid-cols-3 lg:grid-cols-4 lg:gap-8">
           {filteredComponents.map((component) => {
-            const targetPath = `/${categoryPath[component.category]}/${component.id}`;
+            const targetPath = `/${categoryPath[component.category]}`;
 
             return (
               <Link
