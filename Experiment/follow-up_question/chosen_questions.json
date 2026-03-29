@@ -1,0 +1,52 @@
+[
+  {
+    "source_text": "เขาก็จะเอาขยะจากหน่วยงาน หรือสำนักงานของตัวเองเนี่ยลงมาไว้ตามแต่ละตึก ตามใต้ตึกอะ ตามจุดที่เขาคุยกันไว้ เขาก็จะติดป้ายไว้ว่าเป็นของหน่วยงานใคร",
+    "question": "What are the unstated assumptions or rules governing how Units and offices label waste to identify ownership?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ช่วงสถานการณ์โควิด ก็จะมีถังแยกออกมาอีก ที่เป็นถังขยะติดเชื้อ ที่คอยทิ้งพวกชุดตรวจ ATK แมสก์",
+    "question": "What are the unstated safety or regulatory assumptions linking the COVID-19 situation to the separation of infectious waste bins?",
+    "category": "expert"
+  },
+  {
+    "source_text": "พอเก็บรวบรวมครบเสร็จ เขาก็จะไปที่โรงคัดแยกขยะ",
+    "question": "What implicit criteria or thresholds define the Completion of waste collection before it leads to transporting waste?",
+    "category": "expert"
+  },
+  {
+    "source_text": "อีกส่วนนึงที่คัดแยกไม่ได้เนี่ย เขาก็จะอัดเข้าถังสีเหลือง ที่เป็นถังบีบอัดขยะ ของ กทม.",
+    "question": "Are there any hidden capacity or safety constraints when Waste being unsortable results in compression into yellow BMA bins?",
+    "category": "expert"
+  },
+  {
+    "source_text": "ก็จะถูกฟ้องอะไรเงี้ย ก็คือจากบุคลากรบ้าง จากนักศึกษาบ้าง ว่าขยะแต่ละจุดเนี่ยมันล้น",
+    "question": "What implicit conditions or intermediary steps must exist for Trash overflow at various points to effectively result in complaints from staff and students?",
+    "category": "expert"
+  },
+  {
+    "source_text": "แต่มีปริมาณที่เยอะมากๆ เขาก็จะไม่สามารถมารับได้เลย ก็ต้องนัดวัน นอกเหนือจากวันพฤหัสบดี ท้ายเดือน",
+    "question": "What exact threshold determines when a High volume of recyclable waste prevents immediate pickup?",
+    "category": "expert"
+  },
+  {
+    "source_text": "แต่ถ้าเป็นพวกของขยะรีไซเคิล ที่เป็นตาม ตามรอบของเดือนอะไรเงี้ย เขาก็จะวางกองไว้หน้าตึก",
+    "question": "What underlying assumptions or space limitations make Monthly recycle rounds involve piling waste in front of buildings an acceptable practice despite potential visual impact?",
+    "category": "expert"
+  },
+  {
+    "source_text": "โดยแม่บ้านเองเนี่ย มันมีรอบวันเก็บ อ่า มีรอบ อ่า ช่วงอา 3 โมง 4 โมง",
+    "question": "Are there implicit limitations preventing waste collection rounds from happening outside the window of 3:00 PM to 4:00 PM?",
+    "category": "expert"
+  },
+  {
+    "source_text": "พี่อะ แซวตลอดอะ ว่า วันนี้ชอบเลขอะไร ยกโชก (ยกโชค/เสี่ยงโชค) ขยะลงมาทิ้งเนี่ย ชอบเลขอะไร วันนี้ชอบ เอ้ย ไม่เก้า ไม่เก้ากิโล อะไรเงี้ย... ซึ่งตอนนี้ มันคลาดเคลื่อน จนไม่รู้จะคลาดเคลื่อนยังไงละ",
+    "question": "Are there systemic or management issues driving Maids guessing numbers that ultimately lead to extreme data inaccuracy?",
+    "category": "expert"
+  },
+  {
+    "source_text": "แต่มันก็ ยังไม่ได้ ตอบโจทย์ หรือมันก็ ไม่ง่าย ต่อแม่บ้าน เอง เหมือนกัน อืม ซึ่งมันก็ เล็กเกินไป",
+    "question": "Are there structural or workflow assumptions embedded in the claim that The compact design of the cage causes difficulty for the cleaners?",
+    "category": "expert"
+  }
+]
