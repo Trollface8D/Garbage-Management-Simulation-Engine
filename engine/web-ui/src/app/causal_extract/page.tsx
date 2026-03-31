@@ -193,7 +193,7 @@ function CausalExtractHomeContent() {
     return (
         <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
             <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
-                <header className="mb-8">
+                <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
                     <h1 className="text-left text-3xl font-black uppercase tracking-tight text-neutral-100 md:text-5xl lg:text-6xl">
                         Garbage Flow Simulation Engine
                     </h1>
@@ -216,6 +216,10 @@ function CausalExtractHomeContent() {
                         </select>
                         <span className="text-xs text-neutral-400">{selectedProjectName}</span>
                     </div>
+                    <BackToHome
+                        containerClassName=""
+                        className="rounded-md px-3 py-2"
+                    />
                 </header>
 
                 <section className="grid gap-6 lg:grid-cols-[280px_1fr]">
@@ -361,8 +365,6 @@ function CausalExtractHomeContent() {
                         </div>
                     </section>
                 </section>
-
-                <BackToHome />
             </main>
         </div>
     );
