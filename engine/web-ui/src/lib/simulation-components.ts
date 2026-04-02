@@ -155,3 +155,35 @@ export function getSeedBlocksForComponent(componentId: string | null | undefined
     }
     return componentSeedTextById[componentId] ?? [];
 }
+
+export function getComponentsForProject(projectId: string): SimulationComponent[] {
+    return simulationComponents.filter((component) => {
+        if (isProjectScopedComponent(component)) {
+            return component.projectId === projectId;
+        }
+        return component.leftProjectId === projectId || component.rightProjectId === projectId;
+    });
+}
+
+export type ProjectSummary = {
+    total: number;
+    causal: number;
+    map: number;
+    code: number;
+    comparison: number;
+    latestEdited: string;
+};
+
+export function getProjectSummary(projectId: string): ProjectSummary {
+    const components = getComponentsForProject(projectId);
+    const latestEdited = components[0]?.lastEdited ?? "No activity";
+
+    return {
+        total: components.length,
+        causal: components.filter((component) => component.category === "Causal").length,
+        map: components.filter((component) => component.category === "Map").length,
+        code: components.filter((component) => component.category === "Code").length,
+        comparison: components.filter((component) => component.category === "Comparison").length,
+        latestEdited,
+    };
+}
