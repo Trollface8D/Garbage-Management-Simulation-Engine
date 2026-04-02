@@ -84,7 +84,14 @@ function toArtifactId(value: string): string {
     .replace(/^-+|-+$/g, "") || "new-artifact";
 }
 
-const projectArtifactCategories: ProjectComponentCategory[] = ["Causal", "Map", "Code"];
+const projectArtifactCategories: ProjectComponentCategory[] = ["Causal", "Map", "Code", "PolicyTesting"];
+
+const categoryLabels: Record<ProjectComponentCategory, string> = {
+  Causal: "Causal",
+  Map: "Map",
+  Code: "Code",
+  PolicyTesting: "Policy Testing",
+};
 
 function getProjectName(projectId: string, projects: SimulationProject[]): string {
   return projects.find((project) => project.id === projectId)?.name ?? "Unknown project";
@@ -280,8 +287,9 @@ export default function ProjectDashboardPage() {
           />
 
           {filteredComponents.map((component) => {
-            const isCausalCard = component.category === "Causal";
-            const targetPath = isCausalCard
+            const isQueryNavigationCategory =
+              component.category === "Causal" || component.category === "PolicyTesting";
+            const targetPath = isQueryNavigationCategory
               ? {
                   pathname: `/${categoryPath[component.category]}`,
                   query: {
@@ -291,7 +299,7 @@ export default function ProjectDashboardPage() {
                   },
                 }
               : `/${categoryPath[component.category]}/${component.id}`;
-            const targetHref = isCausalCard
+            const targetHref = isQueryNavigationCategory
               ? `/${categoryPath[component.category]}?componentId=${encodeURIComponent(component.id)}&title=${encodeURIComponent(component.title)}&projectId=${encodeURIComponent(isProjectScopedComponent(component) ? component.projectId : projectId)}`
               : `/${categoryPath[component.category]}/${component.id}`;
 

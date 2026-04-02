@@ -9,6 +9,7 @@ import {
 } from "@/lib/simulation-components";
 import BackToHome from "../../components/back-to-home";
 import FollowUpGenerationPage from "../../components/follow-up-generation-page";
+import { loadProjects } from "@/lib/pm-storage";
 
 function CausalFollowUpPageContent() {
   const searchParams = useSearchParams();
@@ -20,7 +21,11 @@ function CausalFollowUpPageContent() {
   const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
   const selectedProjectId = queryProjectId ?? getProjectIdForComponent(componentId);
   const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Unselected component";
-  const selectedProjectName = findProjectById(selectedProjectId)?.name ?? "Unselected project";
+  const selectedProjectName = useMemo(
+    () => loadProjects().find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
+    [selectedProjectId],
+  );
+  const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
@@ -39,8 +44,8 @@ function CausalFollowUpPageContent() {
             </div>
           </div>
           <BackToHome
-            href="/causal_extract"
-            label="Back to causal extraction home"
+            href={projectBackHref}
+            label="Back to project"
             containerClassName=""
             className="rounded-md px-3 py-2"
           />

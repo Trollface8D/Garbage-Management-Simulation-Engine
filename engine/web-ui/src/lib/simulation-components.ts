@@ -1,4 +1,4 @@
-export type Category = "Causal" | "Map" | "Code" | "Comparison";
+export type Category = "Causal" | "Map" | "Code" | "PolicyTesting" | "Comparison";
 export type FilterOption = "All" | Category;
 
 export type SimulationProject = {
@@ -28,7 +28,7 @@ export type ComparisonComponent = SimulationComponentBase & {
 
 export type SimulationComponent = ProjectScopedComponent | ComparisonComponent;
 
-export const filterOptions: FilterOption[] = ["All", "Causal", "Map", "Code", "Comparison"];
+export const filterOptions: FilterOption[] = ["Causal", "Map", "Code", "PolicyTesting", "Comparison"];
 
 export const simulationProjects: SimulationProject[] = [
     { id: "garbage-management", name: "Garbage Management" },
@@ -101,6 +101,7 @@ export const categoryPath: Record<Category, string> = {
     Causal: "causal_extract",
     Map: "map",
     Code: "code",
+    PolicyTesting: "policy_testing",
     Comparison: "comparison",
 };
 
