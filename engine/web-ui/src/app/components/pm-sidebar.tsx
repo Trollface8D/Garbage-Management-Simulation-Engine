@@ -39,22 +39,28 @@ export function PMSidebar() {
   const [trashCount, setTrashCount] = useState(0);
 
   useEffect(() => {
-    const refresh = () => {
-      const recent = loadRecentArtifacts();
-      const deletedProjects = loadDeletedProjects();
-      const deletedComponents = loadDeletedComponents();
+    const refresh = async () => {
+      const [recent, deletedProjects, deletedComponents] = await Promise.all([
+        loadRecentArtifacts(),
+        loadDeletedProjects(),
+        loadDeletedComponents(),
+      ]);
 
       setRecentCount(recent.length);
       setTrashCount(deletedProjects.length + deletedComponents.length);
     };
 
-    refresh();
-    window.addEventListener("storage", refresh);
-    window.addEventListener("pm-storage-changed", refresh);
+    const handleRefresh = () => {
+      void refresh();
+    };
+
+    void refresh();
+    window.addEventListener("storage", handleRefresh);
+    window.addEventListener("pm-storage-changed", handleRefresh);
 
     return () => {
-      window.removeEventListener("storage", refresh);
-      window.removeEventListener("pm-storage-changed", refresh);
+      window.removeEventListener("storage", handleRefresh);
+      window.removeEventListener("pm-storage-changed", handleRefresh);
     };
   }, []);
 

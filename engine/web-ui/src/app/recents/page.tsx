@@ -9,7 +9,11 @@ export default function RecentsPage() {
   const [items, setItems] = useState<RecentArtifact[]>([]);
 
   useEffect(() => {
-    setItems(loadRecentArtifacts());
+    const loadData = async () => {
+      setItems(await loadRecentArtifacts());
+    };
+
+    void loadData();
   }, []);
 
   return (

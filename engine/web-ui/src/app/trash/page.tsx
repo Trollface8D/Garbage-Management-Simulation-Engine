@@ -19,13 +19,28 @@ export default function TrashPage() {
   const [deletedProjects, setDeletedProjects] = useState<DeletedProject[]>([]);
   const [deletedComponents, setDeletedComponents] = useState<DeletedComponent[]>([]);
 
-  const refresh = () => {
-    setDeletedProjects(loadDeletedProjects());
-    setDeletedComponents(loadDeletedComponents());
+  const refresh = async () => {
+    const [projects, components] = await Promise.all([
+      loadDeletedProjects(),
+      loadDeletedComponents(),
+    ]);
+
+    setDeletedProjects(projects);
+    setDeletedComponents(components);
   };
 
   useEffect(() => {
-    refresh();
+    const loadInitial = async () => {
+      const [projects, components] = await Promise.all([
+        loadDeletedProjects(),
+        loadDeletedComponents(),
+      ]);
+
+      setDeletedProjects(projects);
+      setDeletedComponents(components);
+    };
+
+    void loadInitial();
   }, []);
 
   return (
@@ -55,8 +70,10 @@ export default function TrashPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        restoreDeletedProject(entry.project.id);
-                        refresh();
+                        void (async () => {
+                          await restoreDeletedProject(entry.project.id);
+                          await refresh();
+                        })();
                       }}
                       className="rounded-md border border-sky-500/70 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-200"
                     >
@@ -68,8 +85,11 @@ export default function TrashPage() {
                         if (!window.confirm("Permanently delete this project? This cannot be undone.")) {
                           return;
                         }
-                        permanentlyDeleteProject(entry.project.id);
-                        refresh();
+
+                        void (async () => {
+                          await permanentlyDeleteProject(entry.project.id);
+                          await refresh();
+                        })();
                       }}
                       className="rounded-md border border-red-500/70 bg-red-500/15 px-3 py-1.5 text-xs font-semibold text-red-200"
                     >
@@ -101,8 +121,10 @@ export default function TrashPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        restoreDeletedComponent(entry.component.id);
-                        refresh();
+                        void (async () => {
+                          await restoreDeletedComponent(entry.component.id);
+                          await refresh();
+                        })();
                       }}
                       className="rounded-md border border-sky-500/70 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-200"
                     >
@@ -114,8 +136,11 @@ export default function TrashPage() {
                         if (!window.confirm("Permanently delete this artifact? This cannot be undone.")) {
                           return;
                         }
-                        permanentlyDeleteComponent(entry.component.id);
-                        refresh();
+
+                        void (async () => {
+                          await permanentlyDeleteComponent(entry.component.id);
+                          await refresh();
+                        })();
                       }}
                       className="rounded-md border border-red-500/70 bg-red-500/15 px-3 py-1.5 text-xs font-semibold text-red-200"
                     >

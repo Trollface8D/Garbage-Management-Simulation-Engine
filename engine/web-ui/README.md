@@ -34,6 +34,90 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## Database (Local SQLite for PM Data)
+
+The PM dashboard data (projects, artifacts/components, trash, recents) is stored in a local SQLite database.
+
+### What gets stored
+
+- Projects
+- Components/artifacts
+- Soft-delete state for trash
+- Recent opened artifacts
+
+Pipeline run artifacts are still managed by the Python backend output directories.
+
+### Where the database file is
+
+- `engine/web-ui/local.db`
+
+When the app starts and the PM API is called, required tables are created automatically by `src/lib/db.ts`.
+
+### Setup steps
+
+1. Install dependencies in `engine/web-ui`:
+
+```bash
+npm install
+```
+
+2. Start web UI:
+
+```bash
+npm run dev
+```
+
+3. Open the app once (`/`, `/pm/...`, `/trash`, or `/recents`).
+	This triggers PM API calls and initializes SQLite tables if they do not exist.
+
+### How CRUD works
+
+There are two CRUD access paths that use the same `local.db` file:
+
+1. Web API (Next.js route)
+
+- Endpoint: `src/app/api/pm/route.ts`
+- Data layer: `src/lib/db.ts`
+- Client adapter: `src/lib/pm-storage.ts`
+
+Flow:
+
+UI page -> `pm-storage.ts` -> `/api/pm` -> `db.ts` -> SQLite
+
+2. CLI CRUD
+
+- Script: `scripts/pm-crud.js`
+- NPM command:
+
+```bash
+npm run pm:cli -- projects:list
+npm run pm:cli -- projects:create my-project "My Project"
+npm run pm:cli -- components:list
+```
+
+Both API and CLI read/write the same SQLite file.
+
+### One-time migration from legacy localStorage
+
+The app automatically migrates old browser `localStorage` PM keys into SQLite once:
+
+- Source keys: `pm.projects`, `pm.components`, `pm.trash.projects`, `pm.trash.components`, `pm.recents`
+- Migration marker key: `pm.db.migration.v1`
+- Triggered by first PM storage call in `src/lib/pm-storage.ts`
+
+After successful migration, legacy keys are cleared and marker is set.
+
+### Troubleshooting
+
+- If `npm run dev` says another Next dev server is already running, stop the existing process and retry.
+- If PM lists appear empty after migration, verify with CLI:
+
+```bash
+npm run pm:cli -- projects:list
+npm run pm:cli -- components:list
+npm run pm:cli -- recents:list
+```
+
 ## How It Works
 
 - Frontend page: `src/app/page.tsx`

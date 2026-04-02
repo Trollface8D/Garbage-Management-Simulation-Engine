@@ -12,9 +12,9 @@ import {
   type SimulationComponent,
 } from "@/lib/simulation-components";
 import {
+  createComponent,
   loadComponents,
   loadProjects,
-  saveComponents,
   softDeleteComponent,
   trackRecentArtifact,
 } from "@/lib/pm-storage";
@@ -97,10 +97,24 @@ export default function ProjectDashboardPage() {
   const [projects, setProjects] = useState<SimulationProject[]>([]);
   const [activeFilter, setActiveFilter] = useState<ProjectComponentCategory>("Causal");
   const [components, setComponents] = useState<SimulationComponent[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   useEffect(() => {
-    setProjects(loadProjects());
-    setComponents(loadComponents());
+    const loadData = async () => {
+      try {
+        const [nextProjects, nextComponents] = await Promise.all([
+          loadProjects(),
+          loadComponents(),
+        ]);
+
+        setProjects(nextProjects);
+        setComponents(nextComponents);
+      } finally {
+        setIsLoadingData(false);
+      }
+    };
+
+    void loadData();
   }, []);
 
   const project = useMemo(
@@ -121,6 +135,16 @@ export default function ProjectDashboardPage() {
       return component.projectId === projectId;
     });
   }, [activeFilter, components, projectId]);
+
+  if (isLoadingData) {
+    return (
+      <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+        <main className="mx-auto w-full max-w-4xl px-5 py-12 md:px-8 md:py-16">
+          <p className="text-sm text-neutral-400">Loading project dashboard...</p>
+        </main>
+      </div>
+    );
+  }
 
   if (!project) {
     return (
@@ -143,7 +167,7 @@ export default function ProjectDashboardPage() {
     );
   }
 
-  const handleAddArtifact = () => {
+  const handleAddArtifact = async () => {
     const rawTitle = window.prompt("Artifact title");
     if (!rawTitle) {
       return;
@@ -156,38 +180,30 @@ export default function ProjectDashboardPage() {
 
     const category = activeFilter;
 
-    let createdArtifactId = "";
-    setComponents((prevComponents) => {
-      const existingIds = new Set(prevComponents.map((component) => component.id));
-      const baseId = toArtifactId(title);
-      let candidateId = baseId;
-      let suffix = 2;
+    const existingIds = new Set(components.map((component) => component.id));
+    const baseId = toArtifactId(title);
+    let createdArtifactId = baseId;
+    let suffix = 2;
 
-      while (existingIds.has(candidateId)) {
-        candidateId = `${baseId}-${suffix}`;
-        suffix += 1;
-      }
+    while (existingIds.has(createdArtifactId)) {
+      createdArtifactId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
 
-      createdArtifactId = candidateId;
+    const createdComponent: SimulationComponent = {
+      id: createdArtifactId,
+      title,
+      category,
+      lastEdited: "just now",
+      projectId,
+    };
 
-      const nextComponents: SimulationComponent[] = [
-        {
-          id: candidateId,
-          title,
-          category,
-          lastEdited: "just now",
-          projectId,
-        },
-        ...prevComponents,
-      ];
-
-      saveComponents(nextComponents);
-      return nextComponents;
-    });
+    await createComponent(createdComponent);
+    setComponents(await loadComponents());
 
     if (category === "Causal") {
       const targetHref = `/${categoryPath.Causal}?componentId=${encodeURIComponent(createdArtifactId)}&title=${encodeURIComponent(title)}&projectId=${encodeURIComponent(projectId)}`;
-      trackRecentArtifact({
+      await trackRecentArtifact({
         componentId: createdArtifactId,
         title,
         category: "Causal",
@@ -198,13 +214,13 @@ export default function ProjectDashboardPage() {
     }
   };
 
-  const handleSoftDeleteArtifact = (componentId: string) => {
+  const handleSoftDeleteArtifact = async (componentId: string) => {
     if (!window.confirm("Move this artifact to Trash Can?")) {
       return;
     }
 
-    softDeleteComponent(componentId);
-    setComponents(loadComponents());
+    await softDeleteComponent(componentId);
+    setComponents(await loadComponents());
   };
 
   return (
@@ -260,7 +276,7 @@ export default function ProjectDashboardPage() {
           <AddCard
             title="Add new artifact"
             subtitle={`Create a ${activeFilter} artifact`}
-            onClick={handleAddArtifact}
+            onClick={() => void handleAddArtifact()}
           />
 
           {filteredComponents.map((component) => {
@@ -288,7 +304,7 @@ export default function ProjectDashboardPage() {
                 key={component.id}
                 href={targetPath}
                 onClick={() => {
-                  trackRecentArtifact({
+                  void trackRecentArtifact({
                     componentId: component.id,
                     title: component.title,
                     category: component.category,
@@ -317,7 +333,7 @@ export default function ProjectDashboardPage() {
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      handleSoftDeleteArtifact(component.id);
+                      void handleSoftDeleteArtifact(component.id);
                     }}
                     className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-red-500/70 hover:text-red-200"
                     aria-label={`Delete ${component.title}`}

@@ -7,9 +7,9 @@ import {
   type SimulationProject,
 } from "@/lib/simulation-components";
 import {
+  createProject,
   loadComponents,
   loadProjects,
-  saveProjects,
   softDeleteProject,
 } from "@/lib/pm-storage";
 
@@ -101,8 +101,17 @@ export default function Home() {
   const [components, setComponents] = useState<SimulationComponent[]>([]);
 
   useEffect(() => {
-    setProjects(loadProjects());
-    setComponents(loadComponents());
+    const loadData = async () => {
+      const [nextProjects, nextComponents] = await Promise.all([
+        loadProjects(),
+        loadComponents(),
+      ]);
+
+      setProjects(nextProjects);
+      setComponents(nextComponents);
+    };
+
+    void loadData();
   }, []);
 
   const projectSummaries = useMemo(() => {
@@ -112,7 +121,7 @@ export default function Home() {
     }));
   }, [components, projects]);
 
-  const handleAddProject = () => {
+  const handleAddProject = async () => {
     const rawName = window.prompt("Project name");
     if (!rawName) {
       return;
@@ -123,31 +132,34 @@ export default function Home() {
       return;
     }
 
-    setProjects((prevProjects) => {
-      const baseId = toProjectId(name);
-      const existingIds = new Set(prevProjects.map((project) => project.id));
-      let candidateId = baseId;
-      let suffix = 2;
+    const baseId = toProjectId(name);
+    const existingIds = new Set(projects.map((project) => project.id));
+    let candidateId = baseId;
+    let suffix = 2;
 
-      while (existingIds.has(candidateId)) {
-        candidateId = `${baseId}-${suffix}`;
-        suffix += 1;
-      }
+    while (existingIds.has(candidateId)) {
+      candidateId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
 
-      const nextProjects = [{ id: candidateId, name }, ...prevProjects];
-      saveProjects(nextProjects);
-      return nextProjects;
-    });
+    await createProject({ id: candidateId, name });
+    setProjects(await loadProjects());
   };
 
-  const handleSoftDeleteProject = (projectId: string) => {
+  const handleSoftDeleteProject = async (projectId: string) => {
     if (!window.confirm("Move this project to Trash Can?")) {
       return;
     }
 
-    softDeleteProject(projectId);
-    setProjects(loadProjects());
-    setComponents(loadComponents());
+    await softDeleteProject(projectId);
+
+    const [nextProjects, nextComponents] = await Promise.all([
+      loadProjects(),
+      loadComponents(),
+    ]);
+
+    setProjects(nextProjects);
+    setComponents(nextComponents);
   };
 
   return (
@@ -195,7 +207,7 @@ export default function Home() {
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      handleSoftDeleteProject(project.id);
+                      void handleSoftDeleteProject(project.id);
                     }}
                     className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-red-500/70 hover:text-red-200"
                     aria-label={`Delete ${project.name}`}
