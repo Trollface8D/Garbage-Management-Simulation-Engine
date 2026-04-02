@@ -4,10 +4,11 @@ from dotenv import load_dotenv
 
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
+BACKEND_DIR = Path(__file__).resolve().parents[1]
 EXPERIMENT_DIR = ROOT_DIR / "Experiment"
 
-# Load environment variables from workspace root .env if present.
-load_dotenv(ROOT_DIR / ".env")
+# Load environment variables from backend/.env.
+load_dotenv(BACKEND_DIR / ".env")
 
 DEFAULT_CAUSAL_PROMPT = (
     EXPERIMENT_DIR
