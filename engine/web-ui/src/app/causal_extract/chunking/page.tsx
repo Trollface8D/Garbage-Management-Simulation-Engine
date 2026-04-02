@@ -9,6 +9,7 @@ import {
     getProjectIdForComponent,
     getSeedBlocksForComponent,
 } from "@/lib/simulation-components";
+import { loadProjects } from "@/lib/pm-storage";
 
 type TextBlock = {
     id: string;
@@ -154,7 +155,11 @@ function CausalExtractChunkingContent() {
 
     const isCutMode = toolMode === "split";
 
-    const selectedProjectName = findProjectById(selectedProjectId)?.name ?? "Unselected project";
+    const selectedProjectName = useMemo(
+        () => loadProjects().find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
+        [selectedProjectId],
+    );
+    const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 
     const loadFromBackend = useCallback(
         async (targetJobId: string, options: LoadOptions = {}): Promise<void> => {
@@ -344,8 +349,8 @@ function CausalExtractChunkingContent() {
                         </div>
                     </div>
                     <BackToHome
-                        href="/causal_extract"
-                        label="Back to causal extraction home"
+                        href={projectBackHref}
+                        label="Back to project"
                         containerClassName=""
                         className="rounded-md px-3 py-2"
                     />

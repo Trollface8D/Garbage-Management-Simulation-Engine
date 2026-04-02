@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "../components/back-to-home";
 import {
-    findComponentById,
+    findComponentById as findSeedComponentById,
+    findProjectById as findSeedProjectById,
     getProjectIdForComponent,
-    simulationProjects,
+    type SimulationComponent,
     type SimulationProject,
 } from "@/lib/simulation-components";
+import { loadComponents, loadProjects } from "@/lib/pm-storage";
 
 type FeatureTab = "chunking" | "extract" | "follow_up";
 type DataStatus = "raw_text" | "chunked" | "extracted";
@@ -22,6 +24,11 @@ type ExperimentItem = {
     sourceType: SourceType;
     status: DataStatus;
     tags: string[];
+};
+
+type UploadedLocalFile = {
+    id: string;
+    file: File;
 };
 
 const STATUS_RANK: Record<DataStatus, number> = {
@@ -48,51 +55,11 @@ const FEATURE_PATH: Record<FeatureTab, string> = {
     follow_up: "/causal_extract/follow_up",
 };
 
-function buildExperimentItems(componentTitle: string): ExperimentItem[] {
-    const baseFile = `${componentTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "plan"}.txt`;
-
-    return [
-        {
-            id: "text-raw-1",
-            label: "text upload",
-            fileName: baseFile,
-            sourceType: "text",
-            status: "raw_text",
-            tags: ["raw input"],
-        },
-        {
-            id: "audio-raw-1",
-            label: "audio upload",
-            fileName: "meeting-note.m4a",
-            sourceType: "audio",
-            status: "raw_text",
-            tags: ["raw transcript"],
-        },
-        {
-            id: "chunked-1",
-            label: "chunk output",
-            fileName: baseFile,
-            sourceType: "text",
-            status: "chunked",
-            tags: ["chunk 1-8", "ready for extract"],
-        },
-        {
-            id: "extracted-1",
-            label: "causal",
-            fileName: baseFile,
-            sourceType: "text",
-            status: "extracted",
-            tags: ["extracted", "implicit"],
-        },
-        {
-            id: "extracted-2",
-            label: "causal",
-            fileName: baseFile,
-            sourceType: "text",
-            status: "extracted",
-            tags: ["extracted", "explicit"],
-        },
-    ];
+function createLocalId(prefix: string): string {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return `${prefix}-${crypto.randomUUID()}`;
+    }
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function CausalExtractHomeContent() {
@@ -102,22 +69,39 @@ function CausalExtractHomeContent() {
     const queryTitle = searchParams.get("title");
     const queryProjectId = searchParams.get("projectId");
 
-    const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
-    const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Causal Experiment";
-    const defaultProjectId = queryProjectId ?? getProjectIdForComponent(componentId) ?? simulationProjects[0]?.id ?? "";
+    const [projects, setProjects] = useState<SimulationProject[]>([]);
+    const [components, setComponents] = useState<SimulationComponent[]>([]);
 
-    const [projects, setProjects] = useState<SimulationProject[]>(simulationProjects);
-    const [selectedProjectId, setSelectedProjectId] = useState<string>(defaultProjectId);
+    useEffect(() => {
+        setProjects(loadProjects());
+        setComponents(loadComponents());
+    }, []);
+
+    const selectedComponent = useMemo(
+        () => components.find((component) => component.id === componentId) ?? findSeedComponentById(componentId),
+        [componentId, components],
+    );
+    const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Causal Experiment";
+    const selectedProjectId =
+        queryProjectId ??
+        (selectedComponent && selectedComponent.category !== "Comparison" ? selectedComponent.projectId : undefined) ??
+        getProjectIdForComponent(componentId) ??
+        projects[0]?.id ??
+        "";
     const [activeFeature, setActiveFeature] = useState<FeatureTab>("chunking");
     const [includeImplicit, setIncludeImplicit] = useState<boolean>(true);
     const [inputText, setInputText] = useState<string>("");
-    const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+    const [uploadedFiles, setUploadedFiles] = useState<UploadedLocalFile[]>([]);
+    const [experimentItems, setExperimentItems] = useState<ExperimentItem[]>([]);
     const filePickerRef = useRef<HTMLInputElement | null>(null);
 
-    const selectedProjectName =
-        projects.find((project) => project.id === selectedProjectId)?.name ?? "Unselected project";
-
-    const experimentItems = useMemo(() => buildExperimentItems(selectedTitle), [selectedTitle]);
+    const selectedProjectName = useMemo(
+        () =>
+            projects.find((project) => project.id === selectedProjectId)?.name ??
+            findSeedProjectById(selectedProjectId)?.name ??
+            "Unselected project",
+        [projects, selectedProjectId],
+    );
 
     const visibleItems = useMemo(() => {
         const minStatus = FEATURE_MIN_STATUS[activeFeature];
@@ -145,50 +129,55 @@ function CausalExtractHomeContent() {
             return;
         }
 
-        setUploadedFiles((prev) => [...prev, ...picked]);
+        const nextUploads = picked.map((file) => ({
+            id: createLocalId("upload"),
+            file,
+        }));
+
+        setUploadedFiles((prev) => [...prev, ...nextUploads]);
+        setExperimentItems((prev) => {
+            const fromUploads = nextUploads.map((upload): ExperimentItem => ({
+                id: upload.id,
+                label: upload.file.type.startsWith("audio/") ? "audio upload" : "file upload",
+                fileName: upload.file.name,
+                sourceType: upload.file.type.startsWith("audio/") ? "audio" : "text",
+                status: "raw_text",
+                tags: ["uploaded"],
+            }));
+            return [...fromUploads, ...prev];
+        });
         event.currentTarget.value = "";
     };
 
-    const handleRemoveFile = (targetIndex: number) => {
-        setUploadedFiles((prev) => prev.filter((_, index) => index !== targetIndex));
+    const handleRemoveFile = (targetId: string) => {
+        setUploadedFiles((prev) => prev.filter((upload) => upload.id !== targetId));
+        setExperimentItems((prev) => prev.filter((item) => item.id !== targetId));
     };
 
-    const handleProjectChange = (value: string) => {
-        if (value !== "__add_new__") {
-            setSelectedProjectId(value);
+    const handleSubmit = () => {
+        const trimmed = inputText.trim();
+        if (!trimmed) {
             return;
         }
 
-        const nextNameRaw = window.prompt("Enter new project name:");
-        const nextName = nextNameRaw?.trim();
-        if (!nextName) {
-            return;
-        }
+        const noteCount = experimentItems.filter((item) => /^note\d+\.txt$/i.test(item.fileName)).length;
+        const nextNoteFileName = `note${String(noteCount + 1)}.txt`;
 
-        const existingByName = projects.find((project) => project.name.toLowerCase() === nextName.toLowerCase());
-        if (existingByName) {
-            setSelectedProjectId(existingByName.id);
-            return;
-        }
+        const noteItem: ExperimentItem = {
+            id: createLocalId("note"),
+            label: "text note",
+            fileName: nextNoteFileName,
+            sourceType: "text",
+            status: "raw_text",
+            tags: ["manual note"],
+        };
 
-        const slugBase = nextName
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, "");
-
-        let nextId = slugBase || `project-${String(projects.length + 1)}`;
-        let index = 2;
-        while (projects.some((project) => project.id === nextId)) {
-            nextId = `${slugBase || "project"}-${String(index)}`;
-            index += 1;
-        }
-
-        const nextProject: SimulationProject = { id: nextId, name: nextName };
-        setProjects((prev) => [nextProject, ...prev]);
-        setSelectedProjectId(nextProject.id);
+        setExperimentItems((prev) => [noteItem, ...prev]);
+        setInputText("");
     };
 
     const activeFeaturePath = FEATURE_PATH[activeFeature];
+    const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 
     return (
         <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
@@ -198,25 +187,17 @@ function CausalExtractHomeContent() {
                         Garbage Flow Simulation Engine
                     </h1>
                     <div className="mt-5 flex flex-wrap items-center gap-3">
-                        <label htmlFor="causal-project-picker" className="text-sm font-semibold text-neutral-300">
+                        <span className="text-sm font-semibold text-neutral-300">
                             Project
-                        </label>
-                        <select
-                            id="causal-project-picker"
-                            value={selectedProjectId}
-                            onChange={(event) => handleProjectChange(event.target.value)}
-                            className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
-                        >
-                            <option value="__add_new__">+ Add new project</option>
-                            {projects.map((project) => (
-                                <option key={project.id} value={project.id}>
-                                    {project.name}
-                                </option>
-                            ))}
-                        </select>
+                        </span>
+                        <span className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100">
+                            {selectedProjectName}
+                        </span>
                         <span className="text-xs text-neutral-400">{selectedProjectName}</span>
                     </div>
                     <BackToHome
+                        href={projectBackHref}
+                        label="Back to project"
                         containerClassName=""
                         className="rounded-md px-3 py-2"
                     />
@@ -236,14 +217,27 @@ function CausalExtractHomeContent() {
                             className="mt-2 min-h-28 w-full rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
                         />
 
-                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={handleSubmit}
+                            className="mt-4 w-full rounded-md border border-neutral-700 bg-neutral-800 px-4 py-3 text-sm font-semibold text-neutral-100 transition hover:border-sky-500"
+                        >
+                            Submit
+                        </button>
+
+                        <div className="mt-4 rounded-xl border border-dashed border-neutral-600 bg-neutral-900/70 p-4">
+                            <p className="text-sm font-semibold text-neutral-200">Upload source files</p>
+                            <p className="mt-1 text-xs text-neutral-400">
+                                Add text, PDF, or audio files to support causal extraction for this artifact.
+                            </p>
                             <button
                                 type="button"
                                 onClick={handleOpenFilePicker}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-600 bg-neutral-800 text-xl leading-none text-neutral-200 transition hover:border-sky-500"
-                                aria-label="Add files"
+                                className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-4 py-3 text-sm font-semibold text-neutral-100 transition hover:border-sky-500 hover:bg-neutral-800/90"
+                                aria-label="Upload files"
                             >
-                                +
+                                <span className="text-lg leading-none">+</span>
+                                <span>Choose files</span>
                             </button>
                             <input
                                 ref={filePickerRef}
@@ -252,30 +246,40 @@ function CausalExtractHomeContent() {
                                 onChange={handleFilesSelected}
                                 className="hidden"
                             />
-                            {uploadedFiles.map((file, index) => (
-                                <span
-                                    key={`${file.name}-${String(file.size)}-${String(file.lastModified)}-${String(index)}`}
-                                    className="inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-200"
-                                >
-                                    <span>{file.name}</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleRemoveFile(index)}
-                                        className="rounded px-1 text-xs font-bold text-neutral-300 transition hover:bg-neutral-700 hover:text-red-300"
-                                        aria-label={`Remove ${file.name}`}
-                                    >
-                                        x
-                                    </button>
-                                </span>
-                            ))}
+                            <p className="mt-2 text-xs text-neutral-500">
+                                {uploadedFiles.length > 0
+                                    ? `${String(uploadedFiles.length)} file${uploadedFiles.length > 1 ? "s" : ""} selected`
+                                    : "No files selected yet"}
+                            </p>
                         </div>
 
-                        <button
-                            type="button"
-                            className="mt-4 rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm font-semibold text-neutral-100 transition hover:border-sky-500"
-                        >
-                            RUN
-                        </button>
+                        {uploadedFiles.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                                {uploadedFiles.map((upload) => (
+                                    <article
+                                        key={upload.id}
+                                        className="relative rounded-lg border border-neutral-700 bg-neutral-800/80 p-3 pr-10"
+                                    >
+                                        <p className="text-xs font-semibold text-neutral-100">{upload.file.name}</p>
+                                        <p className="mt-1 text-[11px] text-neutral-400">{upload.file.type || "unknown file type"}</p>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveFile(upload.id)}
+                                            className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-red-800 bg-red-500/10 text-red-300 transition hover:bg-red-500/20"
+                                            aria-label={`Delete ${upload.file.name}`}
+                                        >
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                                                <path d="M3 6h18" />
+                                                <path d="M8 6V4h8v2" />
+                                                <path d="M19 6l-1 14H6L5 6" />
+                                                <path d="M10 11v6" />
+                                                <path d="M14 11v6" />
+                                            </svg>
+                                        </button>
+                                    </article>
+                                ))}
+                            </div>
+                        )}
                     </aside>
 
                     <section className="rounded-xl border border-neutral-700 bg-neutral-900/50 p-4">
@@ -317,42 +321,50 @@ function CausalExtractHomeContent() {
                         </div>
 
                         <div className="space-y-3">
-                            {visibleItems.map((item) => (
-                                <Link
-                                    key={item.id}
-                                    href={{
-                                        pathname: activeFeaturePath,
-                                        query: {
-                                            componentId: componentId ?? "",
-                                            title: selectedTitle,
-                                            projectId: selectedProjectId,
-                                            itemId: item.id,
-                                            itemStatus: item.status,
-                                            sourceType: item.sourceType,
-                                            fileName: item.fileName,
-                                        },
-                                    }}
-                                    className="block rounded-lg border border-neutral-700 bg-neutral-900/80 p-4 transition hover:border-sky-500/70"
-                                >
-                                    <div className="flex flex-wrap items-start justify-between gap-3">
-                                        <div>
-                                            <p className="text-sm font-semibold text-neutral-100">{item.label}</p>
-                                            <p className="mt-1 text-sm text-neutral-400">{item.fileName}</p>
+                            {visibleItems.length === 0 ? (
+                                <div className="flex min-h-72 items-center justify-center rounded-lg border border-dashed border-neutral-700 bg-neutral-900/60 p-6 text-center">
+                                    <p className="max-w-md text-sm text-neutral-300">
+                                        There is no upload data yet currently. Please upload a file or add a text description and submit.
+                                    </p>
+                                </div>
+                            ) : (
+                                visibleItems.map((item) => (
+                                    <Link
+                                        key={item.id}
+                                        href={{
+                                            pathname: activeFeaturePath,
+                                            query: {
+                                                componentId: componentId ?? "",
+                                                title: selectedTitle,
+                                                projectId: selectedProjectId,
+                                                itemId: item.id,
+                                                itemStatus: item.status,
+                                                sourceType: item.sourceType,
+                                                fileName: item.fileName,
+                                            },
+                                        }}
+                                        className="block rounded-lg border border-neutral-700 bg-neutral-900/80 p-4 transition hover:border-sky-500/70"
+                                    >
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                                <p className="text-sm font-semibold text-neutral-100">{item.label}</p>
+                                                <p className="mt-1 text-sm text-neutral-400">{item.fileName}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Status</p>
+                                                <p className="text-sm text-neutral-200">{STATUS_LABEL[item.status]}</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Status</p>
-                                            <p className="text-sm text-neutral-200">{STATUS_LABEL[item.status]}</p>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            {item.tags.map((tag) => (
+                                                <span key={`${item.id}-${tag}`} className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300">
+                                                    {tag}
+                                                </span>
+                                            ))}
                                         </div>
-                                    </div>
-                                    <div className="mt-3 flex flex-wrap gap-2">
-                                        {item.tags.map((tag) => (
-                                            <span key={`${item.id}-${tag}`} className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300">
-                                                {tag}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </Link>
-                            ))}
+                                    </Link>
+                                ))
+                            )}
                         </div>
 
                         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
