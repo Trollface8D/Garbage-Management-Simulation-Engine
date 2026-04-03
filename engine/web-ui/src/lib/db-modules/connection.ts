@@ -4,6 +4,8 @@ import path from "path";
 const dbPath = path.resolve(process.cwd(), "local.db");
 const db = new Database(dbPath);
 
+const LEGACY_MIGRATION_NAME = "legacy_sqlite_to_experiment_items_v1";
+
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
@@ -391,8 +393,45 @@ function migrateLegacyCausalSourceItems(): void {
   migrateRow(rows);
 }
 
-migrateProjectsTableColumns();
-migrateLegacyComponents();
-migrateLegacyCausalSourceItems();
+function migrationAlreadyApplied(name: string): boolean {
+  const row = db
+    .prepare("SELECT 1 FROM schema_migrations WHERE name = ? LIMIT 1")
+    .get(name) as { 1: number } | undefined;
+
+  return Boolean(row);
+}
+
+function markMigrationApplied(name: string): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO schema_migrations (name, applied_at)
+     VALUES (?, datetime('now'))`,
+  ).run(name);
+}
+
+export function runLegacyMigrationsOnce(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      name TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL
+    );
+  `);
+
+  if (migrationAlreadyApplied(LEGACY_MIGRATION_NAME)) {
+    return;
+  }
+
+  const runInTransaction = db.transaction(() => {
+    migrateProjectsTableColumns();
+    migrateLegacyComponents();
+    migrateLegacyCausalSourceItems();
+    markMigrationApplied(LEGACY_MIGRATION_NAME);
+  });
+
+  runInTransaction();
+}
+
+export const databasePath = dbPath;
+
+runLegacyMigrationsOnce();
 
 export default db;
