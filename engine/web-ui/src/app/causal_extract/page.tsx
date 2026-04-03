@@ -376,7 +376,7 @@ function CausalExtractHomeContent() {
                         <span className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100">
                             {selectedProjectName}
                         </span>
-                        <span className="text-xs text-neutral-400">{selectedProjectName}</span>
+                        {/* <span className="text-xs text-neutral-400">{selectedProjectName}</span> */}
                     </div>
                     <BackToHome
                         href={projectBackHref}
