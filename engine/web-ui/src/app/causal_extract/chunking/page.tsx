@@ -129,7 +129,6 @@ function CausalExtractChunkingContent() {
         () => projects.find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
         [projects, selectedProjectId],
     );
-    const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
     const hasOriginalAttachment = Boolean(
         initialItemId && (initialSourceType === "audio" || !/\.txt$/i.test(initialFileName)),
     );
@@ -350,8 +349,9 @@ function CausalExtractChunkingContent() {
                         </div>
                     </div>
                     <BackToHome
-                        href={projectBackHref}
+                        href="/"
                         label="Back to project"
+                        useHistoryBack
                         containerClassName=""
                         className="rounded-md px-3 py-2"
                     />

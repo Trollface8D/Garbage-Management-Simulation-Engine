@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "../components/back-to-home";
 import {
@@ -41,6 +41,10 @@ type UploadedLocalFile = {
     fileType: string;
 };
 
+function isFeatureTab(value: string | null): value is FeatureTab {
+    return value === "chunking" || value === "extract" || value === "follow_up";
+}
+
 const STATUS_RANK: Record<DataStatus, number> = {
     raw_text: 0,
     chunked: 1,
@@ -73,11 +77,14 @@ function createLocalId(prefix: string): string {
 }
 
 function CausalExtractHomeContent() {
+    const router = useRouter();
+    const pathname = usePathname();
     const searchParams = useSearchParams();
 
     const componentId = searchParams.get("componentId");
     const queryTitle = searchParams.get("title");
     const queryProjectId = searchParams.get("projectId");
+    const featureFromQuery = searchParams.get("feature");
 
     const [projects, setProjects] = useState<SimulationProject[]>([]);
     const [components, setComponents] = useState<SimulationComponent[]>([]);
@@ -107,7 +114,9 @@ function CausalExtractHomeContent() {
         getProjectIdForComponent(componentId) ??
         projects[0]?.id ??
         "";
-    const [activeFeature, setActiveFeature] = useState<FeatureTab>("chunking");
+    const [activeFeature, setActiveFeature] = useState<FeatureTab>(
+        isFeatureTab(featureFromQuery) ? featureFromQuery : "chunking",
+    );
     const [includeImplicit, setIncludeImplicit] = useState<boolean>(true);
     const [inputText, setInputText] = useState<string>("");
     const [uploadedFiles, setUploadedFiles] = useState<UploadedLocalFile[]>([]);
@@ -181,6 +190,20 @@ function CausalExtractHomeContent() {
     useEffect(() => {
         void hydrateItemsFromDb(selectedProjectId, componentId ?? "");
     }, [componentId, hydrateItemsFromDb, selectedProjectId]);
+
+    useEffect(() => {
+        if (isFeatureTab(featureFromQuery) && featureFromQuery !== activeFeature) {
+            setActiveFeature(featureFromQuery);
+        }
+    }, [activeFeature, featureFromQuery]);
+
+    const handleSelectFeature = (feature: FeatureTab) => {
+        setActiveFeature(feature);
+
+        const nextQuery = new URLSearchParams(searchParams.toString());
+        nextQuery.set("feature", feature);
+        router.replace(`${pathname}?${nextQuery.toString()}`, { scroll: false });
+    };
 
     useEffect(() => {
         if (experimentItems.length === 0) {
@@ -457,7 +480,7 @@ function CausalExtractHomeContent() {
                                         <button
                                             key={feature}
                                             type="button"
-                                            onClick={() => setActiveFeature(feature)}
+                                            onClick={() => handleSelectFeature(feature)}
                                             className={`rounded-md border px-4 py-2 text-sm font-semibold transition ${isActive
                                                     ? "border-sky-500 bg-sky-500/25 text-sky-100"
                                                     : "border-neutral-700 bg-neutral-800 text-neutral-300 hover:border-neutral-500"
@@ -510,6 +533,7 @@ function CausalExtractHomeContent() {
                                                 componentId: componentId ?? "",
                                                 title: selectedTitle,
                                                 projectId: selectedProjectId,
+                                                feature: activeFeature,
                                                 itemId: item.id,
                                                 itemStatus: item.status,
                                                 sourceType: item.sourceType,

@@ -36,7 +36,6 @@ function CausalFollowUpPageContent() {
     () => projects.find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
     [projects, selectedProjectId],
   );
-  const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
@@ -55,8 +54,9 @@ function CausalFollowUpPageContent() {
             </div>
           </div>
           <BackToHome
-            href={projectBackHref}
+            href="/"
             label="Back to project"
+            useHistoryBack
             containerClassName=""
             className="rounded-md px-3 py-2"
           />

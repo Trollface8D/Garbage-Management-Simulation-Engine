@@ -134,7 +134,6 @@ function CausalExtractPageContent() {
     () => projects.find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
     [projects, selectedProjectId],
   );
-  const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 
   const [selectedChunk, setSelectedChunk] = useState<string>("chunk 1");
   const [isExtracted, setIsExtracted] = useState<boolean>(false);
@@ -205,8 +204,9 @@ function CausalExtractPageContent() {
             </div>
           </div>
           <BackToHome
-            href={projectBackHref}
+            href="/"
             label="Back to project"
+            useHistoryBack
             containerClassName=""
             className="rounded-md px-3 py-2"
           />
