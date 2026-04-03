@@ -41,6 +41,7 @@ export type CausalSourceItem = {
   status: CausalSourceItemStatus;
   tags: string[];
   textContent: string;
+  hasOriginalFile?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -374,6 +375,35 @@ export async function saveCausalSourceItem(item: CausalSourceItemInput): Promise
   const saved = await pmPost<CausalSourceItem>("upsert-causal-source-item", item);
   notifyPMStorageChanged();
   return saved;
+}
+
+export async function uploadCausalSourceFile(input: {
+  projectId: string;
+  componentId: string;
+  file: File;
+  label?: string;
+}): Promise<CausalSourceItem> {
+  await ensureLegacyMigration();
+
+  const formData = new FormData();
+  formData.set("projectId", input.projectId);
+  formData.set("componentId", input.componentId);
+  formData.set("label", input.label ?? "file upload");
+  formData.set("file", input.file);
+
+  const response = await fetch("/api/causal-source/ingest", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error || `Upload failed with status ${String(response.status)}.`);
+  }
+
+  const payload = (await response.json()) as { item: CausalSourceItem };
+  notifyPMStorageChanged();
+  return payload.item;
 }
 
 export async function deleteCausalSourceItem(itemId: string): Promise<void> {

@@ -16,7 +16,9 @@ import {
     loadCausalSourceItems,
     loadComponents,
     loadProjects,
+    loadTextChunksForItem,
     saveCausalSourceItem,
+    uploadCausalSourceFile,
     type CausalSourceItem,
 } from "@/lib/pm-storage";
 
@@ -70,29 +72,6 @@ function createLocalId(prefix: string): string {
     return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function extractTextFromPdf(file: File): Promise<string> {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
-    }
-
-    const data = await file.arrayBuffer();
-    const pdf = await pdfjs.getDocument({ data }).promise;
-
-    const pageTexts: string[] = [];
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-        const page = await pdf.getPage(pageNumber);
-        const content = await page.getTextContent();
-        const lines = content.items
-            .map((item) => ("str" in item && typeof item.str === "string" ? item.str : ""))
-            .filter(Boolean);
-        pageTexts.push(lines.join(" "));
-    }
-
-    return pageTexts.join("\n\n").trim();
-}
-
 function CausalExtractHomeContent() {
     const searchParams = useSearchParams();
 
@@ -133,6 +112,7 @@ function CausalExtractHomeContent() {
     const [inputText, setInputText] = useState<string>("");
     const [uploadedFiles, setUploadedFiles] = useState<UploadedLocalFile[]>([]);
     const [experimentItems, setExperimentItems] = useState<ExperimentItem[]>([]);
+    const [chunkCountsByItemId, setChunkCountsByItemId] = useState<Record<string, number>>({});
     const [uploadStatus, setUploadStatus] = useState<string>("");
     const [isHydratingItems, setIsHydratingItems] = useState<boolean>(false);
     const filePickerRef = useRef<HTMLInputElement | null>(null);
@@ -202,24 +182,40 @@ function CausalExtractHomeContent() {
         void hydrateItemsFromDb(selectedProjectId, componentId ?? "");
     }, [componentId, hydrateItemsFromDb, selectedProjectId]);
 
+    useEffect(() => {
+        if (experimentItems.length === 0) {
+            setChunkCountsByItemId({});
+            return;
+        }
+
+        let isCancelled = false;
+
+        const hydrateChunkCounts = async () => {
+            const countEntries = await Promise.all(
+                experimentItems.map(async (item) => {
+                    try {
+                        const chunks = await loadTextChunksForItem(item.id);
+                        return [item.id, chunks.length] as const;
+                    } catch {
+                        return [item.id, 0] as const;
+                    }
+                }),
+            );
+
+            if (!isCancelled) {
+                setChunkCountsByItemId(Object.fromEntries(countEntries));
+            }
+        };
+
+        void hydrateChunkCounts();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [experimentItems]);
+
     const handleOpenFilePicker = () => {
         filePickerRef.current?.click();
-    };
-
-    const readUploadedFileText = async (file: File): Promise<string> => {
-        const lowerName = file.name.toLowerCase();
-        const isTextFile = file.type === "text/plain" || lowerName.endsWith(".txt");
-        const isPdfFile = file.type === "application/pdf" || lowerName.endsWith(".pdf");
-
-        if (isTextFile) {
-            return (await file.text()).trim();
-        }
-
-        if (isPdfFile) {
-            return extractTextFromPdf(file);
-        }
-
-        throw new Error("Only .txt and .pdf files are supported right now.");
     };
 
     const handleFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -240,24 +236,12 @@ function CausalExtractHomeContent() {
         const errors: string[] = [];
 
         for (const file of picked) {
-            const uploadId = createLocalId("upload");
-
             try {
-                const parsedText = (await readUploadedFileText(file)).trim();
-                if (!parsedText) {
-                    throw new Error("File has no readable text content.");
-                }
-
-                const saved = await saveCausalSourceItem({
-                    id: uploadId,
+                const saved = await uploadCausalSourceFile({
                     projectId: selectedProjectId,
                     componentId: componentId ?? "",
                     label: "file upload",
-                    fileName: file.name,
-                    sourceType: "text",
-                    status: "raw_text",
-                    tags: ["uploaded"],
-                    textContent: parsedText,
+                    file,
                 });
 
                 nextUploads.push({
@@ -404,7 +388,7 @@ function CausalExtractHomeContent() {
                         <div className="mt-4 rounded-xl border border-dashed border-neutral-600 bg-neutral-900/70 p-4">
                             <p className="text-sm font-semibold text-neutral-200">Upload source files</p>
                             <p className="mt-1 text-xs text-neutral-400">
-                                Add text or PDF files to support causal extraction for this artifact.
+                                Add text, PDF, or audio files. Audio will be transcribed to text on the backend.
                             </p>
                             <button
                                 type="button"
@@ -419,7 +403,7 @@ function CausalExtractHomeContent() {
                                 ref={filePickerRef}
                                 type="file"
                                 multiple
-                                accept=".txt,.pdf,text/plain,application/pdf"
+                                accept=".txt,.pdf,text/plain,application/pdf,audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac"
                                 onChange={(event) => {
                                     void handleFilesSelected(event);
                                 }}
@@ -513,6 +497,11 @@ function CausalExtractHomeContent() {
                                 </div>
                             ) : (
                                 visibleItems.map((item) => (
+                                    (() => {
+                                        const chunkCount = chunkCountsByItemId[item.id] ?? 0;
+                                        const isChunked = STATUS_RANK[item.status] >= STATUS_RANK.chunked || chunkCount > 0;
+
+                                        return (
                                     <Link
                                         key={item.id}
                                         href={{
@@ -527,7 +516,9 @@ function CausalExtractHomeContent() {
                                                 fileName: item.fileName,
                                             },
                                         }}
-                                        className="block rounded-lg border border-neutral-700 bg-neutral-900/80 p-4 transition hover:border-sky-500/70"
+                                        className={`block rounded-lg border bg-neutral-900/80 p-4 transition hover:border-sky-500/70 ${
+                                            isChunked ? "border-emerald-600/80" : "border-neutral-700"
+                                        }`}
                                     >
                                         <div className="flex flex-wrap items-start justify-between gap-3">
                                             <div>
@@ -539,14 +530,21 @@ function CausalExtractHomeContent() {
                                                 <p className="text-sm text-neutral-200">{STATUS_LABEL[item.status]}</p>
                                             </div>
                                         </div>
-                                        <div className="mt-3 flex flex-wrap gap-2">
-                                            {item.tags.map((tag) => (
-                                                <span key={`${item.id}-${tag}`} className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300">
-                                                    {tag}
-                                                </span>
-                                            ))}
+                                        <div className="mt-3 flex items-end justify-between gap-3">
+                                            <div className="flex flex-wrap gap-2">
+                                                {item.tags.map((tag) => (
+                                                    <span key={`${item.id}-${tag}`} className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300">
+                                                        {tag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            <p className={`text-xs font-semibold ${chunkCount > 0 ? "text-emerald-300" : "text-neutral-400"}`}>
+                                                {String(chunkCount)} chunk{chunkCount === 1 ? "" : "s"}
+                                            </p>
                                         </div>
                                     </Link>
+                                        );
+                                    })()
                                 ))
                             )}
                         </div>

@@ -34,6 +34,7 @@ export {
 export {
   deleteCausalSourceItem,
   getCausalSourceItem,
+  getLatestInputDocumentForItem,
   listCausalSourceItems,
   upsertCausalSourceItem,
 } from "./db-modules/causal-source-items";

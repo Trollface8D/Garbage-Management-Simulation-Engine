@@ -1,6 +1,6 @@
 
 import db from "./connection";
-import type { CausalSourceItem, CausalSourceItemRow } from "./types";
+import type { CausalSourceItem, CausalSourceItemRow, InputMode, InputDocumentRow } from "./types";
 
 function toCausalSourceItem(row: CausalSourceItemRow): CausalSourceItem {
   const parsedTags = (() => {
@@ -25,6 +25,7 @@ function toCausalSourceItem(row: CausalSourceItemRow): CausalSourceItem {
     status: row.status,
     tags: parsedTags,
     textContent: row.text_content,
+    hasOriginalFile: Boolean(row.storage_path_or_blob),
     createdAt: row.created_at,
     updatedAt: row.created_at,
   };
@@ -60,6 +61,7 @@ export function listCausalSourceItems(projectId: string, componentId?: string): 
              item.source_type,
              item.status,
              item.tags_json,
+             doc.storage_path_or_blob,
              COALESCE(doc.raw_text, doc.transcript_text, '') AS text_content,
              item.created_at
            FROM experiment_items item
@@ -86,6 +88,7 @@ export function listCausalSourceItems(projectId: string, componentId?: string): 
              item.source_type,
              item.status,
              item.tags_json,
+             doc.storage_path_or_blob,
              COALESCE(doc.raw_text, doc.transcript_text, '') AS text_content,
              item.created_at
            FROM experiment_items item
@@ -122,6 +125,7 @@ export function getCausalSourceItem(itemId: string): CausalSourceItem | null {
          item.source_type,
          item.status,
          item.tags_json,
+         doc.storage_path_or_blob,
          COALESCE(doc.raw_text, doc.transcript_text, '') AS text_content,
          item.created_at
        FROM experiment_items item
@@ -144,10 +148,18 @@ export function getCausalSourceItem(itemId: string): CausalSourceItem | null {
   return toCausalSourceItem(row);
 }
 
-export function upsertCausalSourceItem(item: Omit<CausalSourceItem, "createdAt" | "updatedAt">): CausalSourceItem {
+type UpsertCausalSourceItemInput = Omit<CausalSourceItem, "createdAt" | "updatedAt"> & {
+  inputMode?: InputMode;
+  storagePathOrBlob?: string | null;
+  transcriptText?: string | null;
+};
+
+export function upsertCausalSourceItem(item: UpsertCausalSourceItemInput): CausalSourceItem {
   const now = new Date().toISOString();
   const tagsJson = JSON.stringify(item.tags);
   const inputDocumentId = `${item.id}:input-primary`;
+  const rawText = item.sourceType === "audio" ? null : item.textContent;
+  const transcriptText = item.transcriptText ?? (item.sourceType === "audio" ? item.textContent : null);
 
   db.prepare(
     `INSERT INTO experiment_items (id, project_id, component_id, label, file_name, source_type, status, tags_json, created_at)
@@ -183,22 +195,25 @@ export function upsertCausalSourceItem(item: Omit<CausalSourceItem, "createdAt" 
        raw_text,
        transcript_text,
        uploaded_at
-     ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        experiment_item_id = excluded.experiment_item_id,
        input_mode = excluded.input_mode,
        source_type = excluded.source_type,
        original_file_name = excluded.original_file_name,
+       storage_path_or_blob = excluded.storage_path_or_blob,
        raw_text = excluded.raw_text,
        transcript_text = excluded.transcript_text,
        uploaded_at = excluded.uploaded_at`,
   ).run(
     inputDocumentId,
     item.id,
-    inferInputMode(item.tags),
+    item.inputMode ?? inferInputMode(item.tags),
     item.sourceType,
     item.fileName,
-    item.textContent,
+    item.storagePathOrBlob ?? null,
+    rawText,
+    transcriptText,
     now,
   );
 
@@ -207,6 +222,34 @@ export function upsertCausalSourceItem(item: Omit<CausalSourceItem, "createdAt" 
     throw new Error("Failed to save causal source item.");
   }
   return saved;
+}
+
+export function getLatestInputDocumentForItem(itemId: string): InputDocumentRow | null {
+  const trimmed = itemId.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const row = db
+    .prepare(
+      `SELECT
+         id,
+         experiment_item_id,
+         input_mode,
+         source_type,
+         original_file_name,
+         storage_path_or_blob,
+         raw_text,
+         transcript_text,
+         uploaded_at
+       FROM input_documents
+       WHERE experiment_item_id = ?
+       ORDER BY uploaded_at DESC
+       LIMIT 1`,
+    )
+    .get(trimmed) as InputDocumentRow | undefined;
+
+  return row ?? null;
 }
 
 export function deleteCausalSourceItem(itemId: string): boolean {

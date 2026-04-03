@@ -82,6 +82,7 @@ export type CausalSourceItem = {
   status: CausalSourceItemStatus;
   tags: string[];
   textContent: string;
+  hasOriginalFile?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -97,6 +98,7 @@ export type CausalSourceItemRow = {
   tags_json: string;
   created_at: string;
   text_content: string;
+  storage_path_or_blob: string | null;
 };
 
 export type InputMode = "upload" | "manual_text" | "api" | "other";
