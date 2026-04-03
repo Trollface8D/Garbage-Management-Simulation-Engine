@@ -66,22 +66,35 @@ function upsertComponentProjectLinks(component: SimulationComponent): void {
   db.prepare("DELETE FROM component_project_links WHERE component_id = ?").run(component.id);
 
   if (component.category === "PolicyTesting") {
-    db.prepare(
-      `INSERT INTO component_project_links (id, component_id, project_id, role)
-       VALUES (?, ?, ?, 'left')`,
-    ).run(`${component.id}:left`, component.id, component.leftProjectId);
+    const leftProjectId = (component.leftProjectId ?? "").trim();
+    const rightProjectId = (component.rightProjectId ?? "").trim();
 
-    db.prepare(
-      `INSERT INTO component_project_links (id, component_id, project_id, role)
-       VALUES (?, ?, ?, 'right')`,
-    ).run(`${component.id}:right`, component.id, component.rightProjectId);
+    if (leftProjectId) {
+      db.prepare(
+        `INSERT INTO component_project_links (id, component_id, project_id, role)
+         VALUES (?, ?, ?, 'left')`,
+      ).run(`${component.id}:left`, component.id, leftProjectId);
+    }
+
+    if (rightProjectId) {
+      db.prepare(
+        `INSERT INTO component_project_links (id, component_id, project_id, role)
+         VALUES (?, ?, ?, 'right')`,
+      ).run(`${component.id}:right`, component.id, rightProjectId);
+    }
+
+    return;
+  }
+
+  const projectId = (component.projectId ?? "").trim();
+  if (!projectId) {
     return;
   }
 
   db.prepare(
     `INSERT INTO component_project_links (id, component_id, project_id, role)
      VALUES (?, ?, ?, 'primary')`,
-  ).run(`${component.id}:primary`, component.id, component.projectId);
+  ).run(`${component.id}:primary`, component.id, projectId);
 }
 
 export function listProjects(includeDeleted = false): SimulationProject[] {

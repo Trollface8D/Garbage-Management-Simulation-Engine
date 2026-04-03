@@ -7,6 +7,7 @@ const LEGACY_TRASH_PROJECTS_STORAGE_KEY = "pm.trash.projects";
 const LEGACY_TRASH_COMPONENTS_STORAGE_KEY = "pm.trash.components";
 const LEGACY_RECENTS_STORAGE_KEY = "pm.recents";
 const PM_MIGRATION_DONE_KEY = "pm.db.migration.v1";
+const ENABLE_BROWSER_LEGACY_MIGRATION = true;
 
 export type DeletedProject = {
   project: SimulationProject;
@@ -143,6 +144,11 @@ async function ensureLegacyMigration(): Promise<void> {
     return;
   }
 
+  if (!ENABLE_BROWSER_LEGACY_MIGRATION) {
+    window.localStorage.setItem(PM_MIGRATION_DONE_KEY, "1");
+    return;
+  }
+
   if (window.localStorage.getItem(PM_MIGRATION_DONE_KEY) === "1") {
     return;
   }
@@ -182,13 +188,17 @@ async function ensureLegacyMigration(): Promise<void> {
       recents.length > 0;
 
     if (hasLegacyData) {
-      await pmPostRaw("migrate-legacy", {
-        projects,
-        components,
-        deletedProjects,
-        deletedComponents,
-        recents,
-      });
+      try {
+        await pmPostRaw("migrate-legacy", {
+          projects,
+          components,
+          deletedProjects,
+          deletedComponents,
+          recents,
+        });
+      } catch {
+        // Do not block page usage when best-effort legacy migration fails.
+      }
     }
 
     clearLegacyStorage();
