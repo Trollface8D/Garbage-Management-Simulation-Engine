@@ -6,6 +6,7 @@ flask-caching>=2.1.0
 
 # --- LLM & Data Extraction ---
 google-generativeai>=0.3.0
+google-genai>=0.3.0
 pydantic>=2.5.0
 pypdf>=4.0.0
 moviepy>=1.0.3
@@ -22,3 +23,6 @@ sentence_transformers
 gunicorn>=21.2.0        # WSGI Server
 pyinstaller>=6.3.0      # To bundle into Windows .exe
 python-dotenv>=1.0.0    # For API Key management
+fastapi>=0.115.0
+uvicorn>=0.30.0
+python-multipart>=0.0.9

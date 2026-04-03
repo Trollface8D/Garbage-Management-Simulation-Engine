@@ -218,7 +218,7 @@ def show_visualize():
     # Sidebar CSV Selection
     # ----------------------------------------------------
 
-    st.sidebar.header("🔍 CSV Input Comparison") 
+    st.sidebar.header("🔍 CSV Input PolicyTesting") 
     csv_files = []
     if os.path.isdir(REFERENCE_DIR):
         try:
@@ -504,7 +504,7 @@ def show_visualize():
                         st.caption(reasoning)
                 
                 with source_col:
-                    st.subheader("📄 Source Text Comparison")
+                    st.subheader("📄 Source Text PolicyTesting")
 
                     if df_reference_input is not None and len(df_reference_input) > 0:
                         raw_text = original_reference_text
