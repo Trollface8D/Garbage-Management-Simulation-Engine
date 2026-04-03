@@ -1,11 +1,12 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   findComponentById,
   findProjectById,
   getProjectIdForComponent,
+  type SimulationProject,
 } from "@/lib/simulation-components";
 import BackToHome from "../../components/back-to-home";
 import { loadProjects } from "@/lib/pm-storage";
@@ -119,9 +120,19 @@ function CausalExtractPageContent() {
   const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
   const selectedProjectId = queryProjectId ?? getProjectIdForComponent(componentId);
   const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Unselected component";
+  const [projects, setProjects] = useState<SimulationProject[]>([]);
+
+  useEffect(() => {
+    const loadProjectList = async () => {
+      setProjects(await loadProjects());
+    };
+
+    void loadProjectList();
+  }, []);
+
   const selectedProjectName = useMemo(
-    () => loadProjects().find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
-    [selectedProjectId],
+    () => projects.find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
+    [projects, selectedProjectId],
   );
   const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 

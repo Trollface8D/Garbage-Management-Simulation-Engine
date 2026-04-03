@@ -24,7 +24,7 @@ db.exec(`
     left_project_id TEXT,
     right_project_id TEXT,
     deleted_at TEXT,
-    CHECK (category IN ('Causal', 'Map', 'Code', 'Comparison'))
+    CHECK (category IN ('Causal', 'Map', 'Code', 'PolicyTesting'))
   );
 
   CREATE TABLE IF NOT EXISTS recents (
@@ -34,7 +34,7 @@ db.exec(`
     project_id TEXT,
     href TEXT NOT NULL,
     opened_at TEXT NOT NULL,
-    CHECK (category IN ('Causal', 'Map', 'Code', 'Comparison'))
+    CHECK (category IN ('Causal', 'Map', 'Code', 'PolicyTesting'))
   );
 `);
 
@@ -122,13 +122,13 @@ function listComponents() {
 }
 
 function createComponent(id, title, category, projectId) {
-  if (!["Causal", "Map", "Code", "Comparison"].includes(category)) {
-    throw new Error("Category must be one of: Causal, Map, Code, Comparison");
+  if (!["Causal", "Map", "Code", "PolicyTesting"].includes(category)) {
+    throw new Error("Category must be one of: Causal, Map, Code, PolicyTesting");
   }
 
   const lastEdited = "just now";
 
-  if (category === "Comparison") {
+  if (category === "PolicyTesting") {
     const leftProjectId = projectId;
     const rightProjectId = process.argv[7] || "";
     db.prepare(

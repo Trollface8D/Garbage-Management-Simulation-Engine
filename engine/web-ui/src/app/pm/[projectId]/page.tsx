@@ -5,10 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   categoryPath,
-  isComparisonComponent,
+  isPolicyTestingComponent,
   isProjectScopedComponent,
+  type Category,
   type SimulationProject,
-  type ProjectComponentCategory,
   type SimulationComponent,
 } from "@/lib/simulation-components";
 import {
@@ -84,14 +84,7 @@ function toArtifactId(value: string): string {
     .replace(/^-+|-+$/g, "") || "new-artifact";
 }
 
-const projectArtifactCategories: ProjectComponentCategory[] = ["Causal", "Map", "Code", "PolicyTesting"];
-
-const categoryLabels: Record<ProjectComponentCategory, string> = {
-  Causal: "Causal",
-  Map: "Map",
-  Code: "Code",
-  PolicyTesting: "Policy Testing",
-};
+const projectArtifactCategories: Category[] = ["Causal", "Map", "Code", "PolicyTesting"];
 
 function getProjectName(projectId: string, projects: SimulationProject[]): string {
   return projects.find((project) => project.id === projectId)?.name ?? "Unknown project";
@@ -102,7 +95,7 @@ export default function ProjectDashboardPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
   const [projects, setProjects] = useState<SimulationProject[]>([]);
-  const [activeFilter, setActiveFilter] = useState<ProjectComponentCategory>("Causal");
+  const [activeFilter, setActiveFilter] = useState<Category>("Causal");
   const [components, setComponents] = useState<SimulationComponent[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
@@ -135,11 +128,11 @@ export default function ProjectDashboardPage() {
         return false;
       }
 
-      if (!isProjectScopedComponent(component)) {
-        return false;
+      if (isProjectScopedComponent(component)) {
+        return component.projectId === projectId;
       }
 
-      return component.projectId === projectId;
+      return component.leftProjectId === projectId || component.rightProjectId === projectId;
     });
   }, [activeFilter, components, projectId]);
 
@@ -186,6 +179,11 @@ export default function ProjectDashboardPage() {
     }
 
     const category = activeFilter;
+
+    if (category === "PolicyTesting") {
+      window.alert("Create PolicyTesting artifacts from the Policy Testing page.");
+      return;
+    }
 
     const existingIds = new Set(components.map((component) => component.id));
     const baseId = toArtifactId(title);
@@ -275,7 +273,7 @@ export default function ProjectDashboardPage() {
             Active project: <span className="font-semibold text-neutral-100">{project.name}</span>
           </p>
           <p className="mt-1 text-xs text-neutral-400">
-            Comparison is a feature for comparing result between 2 projects.
+            PolicyTesting is a feature for comparing results between two projects.
           </p>
         </section>
 
@@ -303,7 +301,7 @@ export default function ProjectDashboardPage() {
               ? `/${categoryPath[component.category]}?componentId=${encodeURIComponent(component.id)}&title=${encodeURIComponent(component.title)}&projectId=${encodeURIComponent(isProjectScopedComponent(component) ? component.projectId : projectId)}`
               : `/${categoryPath[component.category]}/${component.id}`;
 
-            const metaText = isComparisonComponent(component)
+            const metaText = isPolicyTestingComponent(component)
               ? `Compare ${getProjectName(component.leftProjectId, projects)} vs ${getProjectName(component.rightProjectId, projects)}`
               : `Project: ${getProjectName(component.projectId, projects)}`;
 

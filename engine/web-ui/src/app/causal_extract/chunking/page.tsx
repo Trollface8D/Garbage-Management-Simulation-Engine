@@ -1,15 +1,16 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "../../components/back-to-home";
 import {
     findComponentById,
     findProjectById,
     getProjectIdForComponent,
     getSeedBlocksForComponent,
+    type SimulationProject,
 } from "@/lib/simulation-components";
-import { loadProjects } from "@/lib/pm-storage";
+import { loadCausalSourceItem, loadProjects, loadTextChunksForItem, saveTextChunksForItem } from "@/lib/pm-storage";
 
 type TextBlock = {
     id: string;
@@ -138,6 +139,8 @@ function CausalExtractChunkingContent() {
     const queryProjectId = searchParams.get("projectId");
     const initialJobId = searchParams.get("jobId") ?? "";
     const queryTitle = searchParams.get("title");
+    const initialItemId = searchParams.get("itemId") ?? "";
+    const initialItemStatus = searchParams.get("itemStatus") ?? "";
 
     const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
     const selectedProjectId = queryProjectId ?? getProjectIdForComponent(componentId);
@@ -152,14 +155,25 @@ function CausalExtractChunkingContent() {
     const [jobIdInput, setJobIdInput] = useState<string>(initialJobId);
     const [isLoadingBackend, setIsLoadingBackend] = useState<boolean>(false);
     const [loadStatus, setLoadStatus] = useState<string>("");
+    const [chunkSaveStatus, setChunkSaveStatus] = useState<string>("");
+    const [projects, setProjects] = useState<SimulationProject[]>([]);
+    const saveDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const isCutMode = toolMode === "split";
 
     const selectedProjectName = useMemo(
-        () => loadProjects().find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
-        [selectedProjectId],
+        () => projects.find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
+        [projects, selectedProjectId],
     );
     const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
+
+    useEffect(() => {
+        const loadProjectList = async () => {
+            setProjects(await loadProjects());
+        };
+
+        void loadProjectList();
+    }, []);
 
     const loadFromBackend = useCallback(
         async (targetJobId: string, options: LoadOptions = {}): Promise<void> => {
@@ -209,6 +223,14 @@ function CausalExtractChunkingContent() {
     }, [initialJobId]);
 
     useEffect(() => {
+        return () => {
+            if (saveDebounceTimerRef.current) {
+                clearTimeout(saveDebounceTimerRef.current);
+            }
+        };
+    }, []);
+
+    useEffect(() => {
         const seedTexts = getSeedBlocksForComponent(componentId);
         const initialTexts = seedTexts.length > 0 ? seedTexts : [DEFAULT_EDITOR_TEXT];
 
@@ -227,8 +249,41 @@ function CausalExtractChunkingContent() {
             return;
         }
 
+        if (initialItemId) {
+            void (async () => {
+                try {
+                    if (initialItemStatus === "chunked") {
+                        const savedChunks = await loadTextChunksForItem(initialItemId);
+                        if (savedChunks.length > 0) {
+                            setBlocks(buildBlocksFromTexts(savedChunks));
+                            setActiveIndex(0);
+                            setSelectedForJoin([]);
+                            setToolMode("edit");
+                            setLoadStatus(`Loaded ${String(savedChunks.length)} saved chunks from this file.`);
+                            return;
+                        }
+                    }
+
+                    const savedItem = await loadCausalSourceItem(initialItemId);
+                    if (savedItem.textContent.trim()) {
+                        setBlocks(buildBlocksFromTexts([savedItem.textContent]));
+                        setActiveIndex(0);
+                        setSelectedForJoin([]);
+                        setToolMode("edit");
+                        setLoadStatus(`Loaded source content for ${savedItem.fileName}.`);
+                        return;
+                    }
+
+                    setLoadStatus("Selected item has no saved text content.");
+                } catch {
+                    setLoadStatus("Unable to load saved source content.");
+                }
+            })();
+            return;
+        }
+
         setLoadStatus("Loaded seed text based on the selected dashboard component.");
-    }, [componentId, initialJobId, loadFromBackend]);
+    }, [componentId, initialItemId, initialItemStatus, initialJobId, loadFromBackend]);
 
     const handleEdit = (index: number, nextText: string) => {
         setBlocks((prev) => {
@@ -332,6 +387,47 @@ function CausalExtractChunkingContent() {
         setLoadStatus(`AI chunking completed with ${String(rechunked.length)} blocks.`);
     };
 
+    useEffect(() => {
+        if (!initialItemId || !selectedProjectId || !componentId) {
+            setChunkSaveStatus("");
+            return;
+        }
+
+        const chunkTexts = blocks.map((block) => block.text.trim()).filter(Boolean);
+        if (chunkTexts.length === 0) {
+            setChunkSaveStatus("No chunks to save.");
+            return;
+        }
+
+        if (saveDebounceTimerRef.current) {
+            clearTimeout(saveDebounceTimerRef.current);
+        }
+
+        setChunkSaveStatus("Saving chunks...");
+
+        saveDebounceTimerRef.current = setTimeout(() => {
+            void (async () => {
+                try {
+                    const result = await saveTextChunksForItem({
+                        experimentItemId: initialItemId,
+                        projectId: selectedProjectId,
+                        componentId,
+                        chunks: chunkTexts,
+                        model: "manual-chunking",
+                        chunkSizeWords: 20,
+                        chunkOverlapWords: 0,
+                    });
+
+                    setChunkSaveStatus(
+                        `Saved ${String(result.savedChunks)} chunk${result.savedChunks === 1 ? "" : "s"} to TextChunk.`,
+                    );
+                } catch {
+                    setChunkSaveStatus("Unable to save chunks to TextChunk.");
+                }
+            })();
+        }, 450);
+    }, [blocks, componentId, initialItemId, selectedProjectId]);
+
     return (
         <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
             <main className="mx-auto w-full max-w-6xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
@@ -380,7 +476,9 @@ function CausalExtractChunkingContent() {
                             {isLoadingBackend ? "Loading..." : "Load backend chunks"}
                         </button>
                     </div>
+
                     <p className="mt-3 text-xs text-neutral-400">{loadStatus}</p>
+                    <p className="mt-1 text-xs text-emerald-300">{chunkSaveStatus}</p>
                 </section>
 
                 <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[auto_1fr] lg:items-start">

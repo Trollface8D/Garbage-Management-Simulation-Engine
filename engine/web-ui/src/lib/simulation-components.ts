@@ -1,4 +1,4 @@
-export type Category = "Causal" | "Map" | "Code" | "PolicyTesting" | "Comparison";
+export type Category = "Causal" | "Map" | "Code" | "PolicyTesting";
 export type FilterOption = "All" | Category;
 
 export type SimulationProject = {
@@ -6,7 +6,7 @@ export type SimulationProject = {
     name: string;
 };
 
-export type ProjectComponentCategory = Exclude<Category, "Comparison">;
+export type ProjectComponentCategory = Exclude<Category, "PolicyTesting">;
 
 type SimulationComponentBase = {
     id: string;
@@ -20,15 +20,15 @@ export type ProjectScopedComponent = SimulationComponentBase & {
     projectId: string;
 };
 
-export type ComparisonComponent = SimulationComponentBase & {
-    category: "Comparison";
+export type PolicyTestingComponent = SimulationComponentBase & {
+    category: "PolicyTesting";
     leftProjectId: string;
     rightProjectId: string;
 };
 
-export type SimulationComponent = ProjectScopedComponent | ComparisonComponent;
+export type SimulationComponent = ProjectScopedComponent | PolicyTestingComponent;
 
-export const filterOptions: FilterOption[] = ["Causal", "Map", "Code", "PolicyTesting", "Comparison"];
+export const filterOptions: FilterOption[] = ["Causal", "Map", "Code", "PolicyTesting"];
 
 export const simulationProjects: SimulationProject[] = [
     { id: "garbage-management", name: "Garbage Management" },
@@ -61,7 +61,7 @@ export const simulationComponents: SimulationComponent[] = [
     {
         id: "cost-vs-time-benchmark",
         title: "Cost vs Time Benchmark",
-        category: "Comparison",
+        category: "PolicyTesting",
         lastEdited: "10 hours ago",
         leftProjectId: "garbage-management",
         rightProjectId: "urban-waste-dynamics",
@@ -90,7 +90,7 @@ export const simulationComponents: SimulationComponent[] = [
     {
         id: "fuel-and-delay-analysis",
         title: "Fuel and Delay Analysis",
-        category: "Comparison",
+        category: "PolicyTesting",
         lastEdited: "24 hours ago",
         leftProjectId: "garbage-management",
         rightProjectId: "regional-routing-lab",
@@ -102,15 +102,14 @@ export const categoryPath: Record<Category, string> = {
     Map: "map",
     Code: "code",
     PolicyTesting: "policy_testing",
-    Comparison: "comparison",
 };
 
 export function isProjectScopedComponent(component: SimulationComponent): component is ProjectScopedComponent {
-    return component.category !== "Comparison";
+    return component.category !== "PolicyTesting";
 }
 
-export function isComparisonComponent(component: SimulationComponent): component is ComparisonComponent {
-    return component.category === "Comparison";
+export function isPolicyTestingComponent(component: SimulationComponent): component is PolicyTestingComponent {
+    return component.category === "PolicyTesting";
 }
 
 export function findProjectById(projectId: string | null | undefined): SimulationProject | undefined {
@@ -171,7 +170,7 @@ export type ProjectSummary = {
     causal: number;
     map: number;
     code: number;
-    comparison: number;
+    policyTesting: number;
     latestEdited: string;
 };
 
@@ -184,7 +183,7 @@ export function getProjectSummary(projectId: string): ProjectSummary {
         causal: components.filter((component) => component.category === "Causal").length,
         map: components.filter((component) => component.category === "Map").length,
         code: components.filter((component) => component.category === "Code").length,
-        comparison: components.filter((component) => component.category === "Comparison").length,
+        policyTesting: components.filter((component) => component.category === "PolicyTesting").length,
         latestEdited,
     };
 }

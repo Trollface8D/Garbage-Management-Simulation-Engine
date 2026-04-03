@@ -237,7 +237,7 @@ st.markdown(f"Main data loaded from: `{BASE_DIR}`")
 # Sidebar CSV Selection
 # ----------------------------------------------------
 
-st.sidebar.header("🔍 CSV Input Comparison") 
+st.sidebar.header("🔍 CSV Input PolicyTesting") 
 csv_files = []
 if os.path.isdir(REFERENCE_DIR):
     try:
@@ -456,7 +456,7 @@ if not df.empty:
             current_scores, current_notes = get_score_and_notes(all_scores, selected_file_name, selected_unique_id)
 
             # ---------------------------
-            # Comparison Display
+            # PolicyTesting Display
             # ---------------------------
             # Get the full row data from df_filtered using Unique_ID
             unique_id = selected_row_data['Unique_ID']
@@ -549,7 +549,7 @@ if not df.empty:
                     st.markdown(f"**Saved Notes:** {current_notes}")
             
             with source_col:
-                st.subheader("📄 Source Text Comparison")
+                st.subheader("📄 Source Text PolicyTesting")
 
                 if df_reference_input is not None and len(df_reference_input) > 0:
                     raw_text = original_reference_text

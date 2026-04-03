@@ -80,7 +80,7 @@ function toProjectId(value: string): string {
 
 function getProjectSummary(projectId: string, components: SimulationComponent[]) {
   const projectComponents = components.filter((component) => {
-    if (component.category === "Comparison") {
+    if (component.category === "PolicyTesting") {
       return component.leftProjectId === projectId || component.rightProjectId === projectId;
     }
     return component.projectId === projectId;
@@ -91,7 +91,7 @@ function getProjectSummary(projectId: string, components: SimulationComponent[])
     causal: projectComponents.filter((component) => component.category === "Causal").length,
     map: projectComponents.filter((component) => component.category === "Map").length,
     code: projectComponents.filter((component) => component.category === "Code").length,
-    comparison: projectComponents.filter((component) => component.category === "Comparison").length,
+    policytesting: projectComponents.filter((component) => component.category === "PolicyTesting").length,
     latestEdited: projectComponents[0]?.lastEdited ?? "No activity",
   };
 }
@@ -170,7 +170,7 @@ export default function Home() {
             Garbage Flow Simulation Engine
           </h1>
           <p className="mt-3 max-w-3xl text-sm text-neutral-400 md:text-base">
-            Select a project to open its PM dashboard for causal exploration, map views, code generation, and comparisons.
+            Select a project to open its PM dashboard for causal exploration, map views, code generation, and policy testing.
           </p>
         </header>
 
@@ -198,7 +198,7 @@ export default function Home() {
                     </div>
                     <p className="mt-1 text-xs text-neutral-400">Last activity: {summary.latestEdited}</p>
                     <p className="mt-1 text-xs text-neutral-500">
-                      {summary.total} components • Causal {summary.causal} • Map {summary.map} • Code {summary.code} • Comparison {summary.comparison}
+                      {summary.total} components • Causal {summary.causal} • Map {summary.map} • Code {summary.code} • PolicyTesting {summary.policytesting}
                     </p>
                   </div>
 

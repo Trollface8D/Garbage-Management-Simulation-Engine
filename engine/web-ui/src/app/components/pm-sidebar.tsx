@@ -37,6 +37,7 @@ export function PMSidebar() {
   const pathname = usePathname();
   const [recentCount, setRecentCount] = useState(0);
   const [trashCount, setTrashCount] = useState(0);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
     const refresh = async () => {
@@ -74,13 +75,36 @@ export function PMSidebar() {
   );
 
   return (
-    <aside className="w-full border-b border-neutral-800 bg-neutral-950/90 p-4 md:h-screen md:w-72 md:border-b-0 md:border-r md:p-5">
-      <div className="mb-4 hidden md:block">
-        <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">PM Navigation</p>
-        <h2 className="mt-1 text-lg font-semibold text-neutral-100">Garbage Flow</h2>
+    <aside
+      className={`w-full border-b border-neutral-800 bg-neutral-950/90 p-4 transition-all duration-300 md:h-screen md:border-b-0 md:border-r ${
+        isCollapsed ? "md:w-16 md:p-3" : "md:w-72 md:p-5"
+      }`}
+    >
+      <div
+        className={`mb-4 hidden items-center md:flex ${
+          isCollapsed ? "justify-center" : "justify-between"
+        }`}
+      >
+        <div className={isCollapsed ? "hidden" : "block"}>
+          <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">PM Navigation</p>
+          <h2 className="mt-1 text-lg font-semibold text-neutral-100">Garbage Flow</h2>
+        </div>
+        <button
+          type="button"
+          aria-label={isCollapsed ? "Open sidebar" : "Close sidebar"}
+          onClick={() => setIsCollapsed((prev) => !prev)}
+          className={`rounded-md border border-neutral-700 bg-neutral-900/70 px-2 py-1 text-sm text-neutral-200 transition hover:border-neutral-500 hover:text-neutral-100 ${
+            isCollapsed ? "mx-auto" : ""
+          }`}
+        >
+          {isCollapsed ? ">" : "<"}
+        </button>
       </div>
 
-      <nav className="grid grid-cols-1 gap-2 sm:grid-cols-3 md:grid-cols-1" aria-label="Primary">
+      <nav
+        className={`grid grid-cols-1 gap-2 sm:grid-cols-3 md:grid-cols-1 ${isCollapsed ? "md:hidden" : ""}`}
+        aria-label="Primary"
+      >
         {navItems.map((item) => (
           <NavLink
             key={item.href}
@@ -92,7 +116,11 @@ export function PMSidebar() {
         ))}
       </nav>
 
-      <div className="mt-5 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 text-xs text-neutral-400">
+      <div
+        className={`mt-5 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 text-xs text-neutral-400 ${
+          isCollapsed ? "md:hidden" : ""
+        }`}
+      >
         Delete actions from project and dashboard pages are soft deletes. Permanent delete is only available in Trash Can.
       </div>
     </aside>

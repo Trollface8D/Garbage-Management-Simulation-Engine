@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "../components/back-to-home";
 import {
     findComponentById as findSeedComponentById,
@@ -11,7 +11,14 @@ import {
     type SimulationComponent,
     type SimulationProject,
 } from "@/lib/simulation-components";
-import { loadComponents, loadProjects } from "@/lib/pm-storage";
+import {
+    deleteCausalSourceItem,
+    loadCausalSourceItems,
+    loadComponents,
+    loadProjects,
+    saveCausalSourceItem,
+    type CausalSourceItem,
+} from "@/lib/pm-storage";
 
 type FeatureTab = "chunking" | "extract" | "follow_up";
 type DataStatus = "raw_text" | "chunked" | "extracted";
@@ -28,7 +35,8 @@ type ExperimentItem = {
 
 type UploadedLocalFile = {
     id: string;
-    file: File;
+    fileName: string;
+    fileType: string;
 };
 
 const STATUS_RANK: Record<DataStatus, number> = {
@@ -44,7 +52,7 @@ const FEATURE_MIN_STATUS: Record<FeatureTab, DataStatus> = {
 };
 
 const STATUS_LABEL: Record<DataStatus, string> = {
-    raw_text: "raw_text",
+    raw_text: "not chunked",
     chunked: "chunked",
     extracted: "extracted",
 };
@@ -62,6 +70,29 @@ function createLocalId(prefix: string): string {
     return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+async function extractTextFromPdf(file: File): Promise<string> {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+    }
+
+    const data = await file.arrayBuffer();
+    const pdf = await pdfjs.getDocument({ data }).promise;
+
+    const pageTexts: string[] = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        const page = await pdf.getPage(pageNumber);
+        const content = await page.getTextContent();
+        const lines = content.items
+            .map((item) => ("str" in item && typeof item.str === "string" ? item.str : ""))
+            .filter(Boolean);
+        pageTexts.push(lines.join(" "));
+    }
+
+    return pageTexts.join("\n\n").trim();
+}
+
 function CausalExtractHomeContent() {
     const searchParams = useSearchParams();
 
@@ -73,8 +104,17 @@ function CausalExtractHomeContent() {
     const [components, setComponents] = useState<SimulationComponent[]>([]);
 
     useEffect(() => {
-        setProjects(loadProjects());
-        setComponents(loadComponents());
+        const loadData = async () => {
+            const [nextProjects, nextComponents] = await Promise.all([
+                loadProjects(),
+                loadComponents(),
+            ]);
+
+            setProjects(nextProjects);
+            setComponents(nextComponents);
+        };
+
+        void loadData();
     }, []);
 
     const selectedComponent = useMemo(
@@ -84,7 +124,7 @@ function CausalExtractHomeContent() {
     const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Causal Experiment";
     const selectedProjectId =
         queryProjectId ??
-        (selectedComponent && selectedComponent.category !== "Comparison" ? selectedComponent.projectId : undefined) ??
+        (selectedComponent && selectedComponent.category !== "PolicyTesting" ? selectedComponent.projectId : undefined) ??
         getProjectIdForComponent(componentId) ??
         projects[0]?.id ??
         "";
@@ -93,6 +133,8 @@ function CausalExtractHomeContent() {
     const [inputText, setInputText] = useState<string>("");
     const [uploadedFiles, setUploadedFiles] = useState<UploadedLocalFile[]>([]);
     const [experimentItems, setExperimentItems] = useState<ExperimentItem[]>([]);
+    const [uploadStatus, setUploadStatus] = useState<string>("");
+    const [isHydratingItems, setIsHydratingItems] = useState<boolean>(false);
     const filePickerRef = useRef<HTMLInputElement | null>(null);
 
     const selectedProjectName = useMemo(
@@ -119,44 +161,154 @@ function CausalExtractHomeContent() {
         });
     }, [activeFeature, experimentItems, includeImplicit]);
 
+    const hydrateItemsFromDb = useCallback(async (projectId: string, targetComponentId: string) => {
+        if (!projectId || !targetComponentId) {
+            setExperimentItems([]);
+            setUploadedFiles([]);
+            return;
+        }
+
+        setIsHydratingItems(true);
+        try {
+            const items = await loadCausalSourceItems(projectId, targetComponentId);
+
+            const mappedItems: ExperimentItem[] = items.map((item: CausalSourceItem) => ({
+                id: item.id,
+                label: item.label,
+                fileName: item.fileName,
+                sourceType: item.sourceType,
+                status: item.status,
+                tags: item.tags,
+            }));
+
+            const mappedUploads: UploadedLocalFile[] = items
+                .filter((item) => item.tags.includes("uploaded"))
+                .map((item) => ({
+                    id: item.id,
+                    fileName: item.fileName,
+                    fileType: item.sourceType === "audio" ? "audio/*" : "text/plain",
+                }));
+
+            setExperimentItems(mappedItems);
+            setUploadedFiles(mappedUploads);
+        } catch {
+            setUploadStatus("Unable to load saved source files for this project.");
+        } finally {
+            setIsHydratingItems(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        void hydrateItemsFromDb(selectedProjectId, componentId ?? "");
+    }, [componentId, hydrateItemsFromDb, selectedProjectId]);
+
     const handleOpenFilePicker = () => {
         filePickerRef.current?.click();
     };
 
-    const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const readUploadedFileText = async (file: File): Promise<string> => {
+        const lowerName = file.name.toLowerCase();
+        const isTextFile = file.type === "text/plain" || lowerName.endsWith(".txt");
+        const isPdfFile = file.type === "application/pdf" || lowerName.endsWith(".pdf");
+
+        if (isTextFile) {
+            return (await file.text()).trim();
+        }
+
+        if (isPdfFile) {
+            return extractTextFromPdf(file);
+        }
+
+        throw new Error("Only .txt and .pdf files are supported right now.");
+    };
+
+    const handleFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const picked = Array.from(event.target.files ?? []);
+        event.currentTarget.value = "";
+
         if (picked.length === 0) {
             return;
         }
 
-        const nextUploads = picked.map((file) => ({
-            id: createLocalId("upload"),
-            file,
-        }));
+        if (!selectedProjectId || !componentId) {
+            setUploadStatus("Select a component first before uploading files.");
+            return;
+        }
 
-        setUploadedFiles((prev) => [...prev, ...nextUploads]);
-        setExperimentItems((prev) => {
-            const fromUploads = nextUploads.map((upload): ExperimentItem => ({
-                id: upload.id,
-                label: upload.file.type.startsWith("audio/") ? "audio upload" : "file upload",
-                fileName: upload.file.name,
-                sourceType: upload.file.type.startsWith("audio/") ? "audio" : "text",
-                status: "raw_text",
-                tags: ["uploaded"],
-            }));
-            return [...fromUploads, ...prev];
-        });
-        event.currentTarget.value = "";
+        const nextUploads: UploadedLocalFile[] = [];
+        const nextItems: ExperimentItem[] = [];
+        const errors: string[] = [];
+
+        for (const file of picked) {
+            const uploadId = createLocalId("upload");
+
+            try {
+                const parsedText = (await readUploadedFileText(file)).trim();
+                if (!parsedText) {
+                    throw new Error("File has no readable text content.");
+                }
+
+                const saved = await saveCausalSourceItem({
+                    id: uploadId,
+                    projectId: selectedProjectId,
+                    componentId: componentId ?? "",
+                    label: "file upload",
+                    fileName: file.name,
+                    sourceType: "text",
+                    status: "raw_text",
+                    tags: ["uploaded"],
+                    textContent: parsedText,
+                });
+
+                nextUploads.push({
+                    id: saved.id,
+                    fileName: saved.fileName,
+                    fileType: file.type || "unknown file type",
+                });
+
+                nextItems.push({
+                    id: saved.id,
+                    label: saved.label,
+                    fileName: saved.fileName,
+                    sourceType: saved.sourceType,
+                    status: saved.status,
+                    tags: saved.tags,
+                });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "Unknown upload error.";
+                errors.push(`${file.name}: ${message}`);
+            }
+        }
+
+        if (nextUploads.length > 0) {
+            setUploadedFiles((prev) => [...prev, ...nextUploads]);
+            setExperimentItems((prev) => [...nextItems, ...prev]);
+        }
+
+        if (errors.length > 0) {
+            setUploadStatus(`Uploaded ${String(nextUploads.length)} file(s). Skipped ${String(errors.length)}: ${errors.join(" | ")}`);
+            return;
+        }
+
+        setUploadStatus(`Uploaded ${String(nextUploads.length)} file(s) successfully.`);
     };
 
     const handleRemoveFile = (targetId: string) => {
-        setUploadedFiles((prev) => prev.filter((upload) => upload.id !== targetId));
-        setExperimentItems((prev) => prev.filter((item) => item.id !== targetId));
+        void (async () => {
+            await deleteCausalSourceItem(targetId);
+            setUploadedFiles((prev) => prev.filter((upload) => upload.id !== targetId));
+            setExperimentItems((prev) => prev.filter((item) => item.id !== targetId));
+        })();
     };
 
     const handleSubmit = () => {
         const trimmed = inputText.trim();
         if (!trimmed) {
+            return;
+        }
+
+        if (!selectedProjectId || !componentId) {
+            setUploadStatus("Select a component first before submitting text.");
             return;
         }
 
@@ -172,8 +324,32 @@ function CausalExtractHomeContent() {
             tags: ["manual note"],
         };
 
-        setExperimentItems((prev) => [noteItem, ...prev]);
-        setInputText("");
+        void (async () => {
+            const saved = await saveCausalSourceItem({
+                id: noteItem.id,
+                projectId: selectedProjectId,
+                componentId: componentId ?? "",
+                label: noteItem.label,
+                fileName: noteItem.fileName,
+                sourceType: noteItem.sourceType,
+                status: noteItem.status,
+                tags: noteItem.tags,
+                textContent: trimmed,
+            });
+
+            setExperimentItems((prev) => [
+                {
+                    id: saved.id,
+                    label: saved.label,
+                    fileName: saved.fileName,
+                    sourceType: saved.sourceType,
+                    status: saved.status,
+                    tags: saved.tags,
+                },
+                ...prev,
+            ]);
+            setInputText("");
+        })();
     };
 
     const activeFeaturePath = FEATURE_PATH[activeFeature];
@@ -228,7 +404,7 @@ function CausalExtractHomeContent() {
                         <div className="mt-4 rounded-xl border border-dashed border-neutral-600 bg-neutral-900/70 p-4">
                             <p className="text-sm font-semibold text-neutral-200">Upload source files</p>
                             <p className="mt-1 text-xs text-neutral-400">
-                                Add text, PDF, or audio files to support causal extraction for this artifact.
+                                Add text or PDF files to support causal extraction for this artifact.
                             </p>
                             <button
                                 type="button"
@@ -243,7 +419,10 @@ function CausalExtractHomeContent() {
                                 ref={filePickerRef}
                                 type="file"
                                 multiple
-                                onChange={handleFilesSelected}
+                                accept=".txt,.pdf,text/plain,application/pdf"
+                                onChange={(event) => {
+                                    void handleFilesSelected(event);
+                                }}
                                 className="hidden"
                             />
                             <p className="mt-2 text-xs text-neutral-500">
@@ -251,6 +430,7 @@ function CausalExtractHomeContent() {
                                     ? `${String(uploadedFiles.length)} file${uploadedFiles.length > 1 ? "s" : ""} selected`
                                     : "No files selected yet"}
                             </p>
+                            <p className="mt-1 text-xs text-neutral-500">{uploadStatus}</p>
                         </div>
 
                         {uploadedFiles.length > 0 && (
@@ -260,13 +440,13 @@ function CausalExtractHomeContent() {
                                         key={upload.id}
                                         className="relative rounded-lg border border-neutral-700 bg-neutral-800/80 p-3 pr-10"
                                     >
-                                        <p className="text-xs font-semibold text-neutral-100">{upload.file.name}</p>
-                                        <p className="mt-1 text-[11px] text-neutral-400">{upload.file.type || "unknown file type"}</p>
+                                        <p className="text-xs font-semibold text-neutral-100">{upload.fileName}</p>
+                                        <p className="mt-1 text-[11px] text-neutral-400">{upload.fileType || "unknown file type"}</p>
                                         <button
                                             type="button"
                                             onClick={() => handleRemoveFile(upload.id)}
                                             className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-red-800 bg-red-500/10 text-red-300 transition hover:bg-red-500/20"
-                                            aria-label={`Delete ${upload.file.name}`}
+                                            aria-label={`Delete ${upload.fileName}`}
                                         >
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
                                                 <path d="M3 6h18" />
@@ -321,7 +501,11 @@ function CausalExtractHomeContent() {
                         </div>
 
                         <div className="space-y-3">
-                            {visibleItems.length === 0 ? (
+                            {isHydratingItems ? (
+                                <div className="flex min-h-72 items-center justify-center rounded-lg border border-dashed border-neutral-700 bg-neutral-900/60 p-6 text-center">
+                                    <p className="max-w-md text-sm text-neutral-300">Loading saved source items...</p>
+                                </div>
+                            ) : visibleItems.length === 0 ? (
                                 <div className="flex min-h-72 items-center justify-center rounded-lg border border-dashed border-neutral-700 bg-neutral-900/60 p-6 text-center">
                                     <p className="max-w-md text-sm text-neutral-300">
                                         There is no upload data yet currently. Please upload a file or add a text description and submit.

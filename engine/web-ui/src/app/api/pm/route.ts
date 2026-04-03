@@ -3,11 +3,15 @@ import type { SimulationComponent, SimulationProject } from "@/lib/simulation-co
 import {
   createComponent,
   createProject,
+  deleteCausalSourceItem,
+  getCausalSourceItem,
   hardDeleteComponent,
   hardDeleteProject,
+  listCausalSourceItems,
   listComponents,
   listDeletedComponents,
   listDeletedProjects,
+  listLatestTextChunksForExperimentItem,
   listProjects,
   listRecents,
   migrateLegacyData,
@@ -15,8 +19,10 @@ import {
   restoreProject,
   softDeleteComponent,
   softDeleteProject,
+  saveTextChunks,
   trackRecent,
-} from "@/lib/db";
+  upsertCausalSourceItem,
+} from "../../../lib/db";
 
 export const runtime = "nodejs";
 
@@ -25,7 +31,10 @@ type PMResource =
   | "components"
   | "trash-projects"
   | "trash-components"
-  | "recents";
+  | "recents"
+  | "causal-source-items"
+  | "causal-source-item"
+  | "text-chunks";
 
 type PMAction =
   | "create-project"
@@ -37,7 +46,10 @@ type PMAction =
   | "restore-component"
   | "hard-delete-project"
   | "hard-delete-component"
-  | "track-recent";
+  | "track-recent"
+  | "upsert-causal-source-item"
+  | "delete-causal-source-item"
+  | "save-text-chunks";
 
 type PMActionRequest = {
   action: PMAction;
@@ -81,6 +93,37 @@ export async function GET(request: Request) {
       return NextResponse.json(listDeletedComponents());
     case "recents":
       return NextResponse.json(listRecents());
+    case "causal-source-items": {
+      const projectId = (url.searchParams.get("projectId") ?? "").trim();
+      const componentId = (url.searchParams.get("componentId") ?? "").trim();
+
+      if (!projectId) {
+        return badRequest("projectId is required for causal-source-items.");
+      }
+
+      return NextResponse.json(listCausalSourceItems(projectId, componentId || undefined));
+    }
+    case "causal-source-item": {
+      const itemId = (url.searchParams.get("itemId") ?? "").trim();
+      if (!itemId) {
+        return badRequest("itemId is required for causal-source-item.");
+      }
+
+      const item = getCausalSourceItem(itemId);
+      if (!item) {
+        return badRequest("Causal source item not found.");
+      }
+
+      return NextResponse.json(item);
+    }
+    case "text-chunks": {
+      const itemId = (url.searchParams.get("itemId") ?? "").trim();
+      if (!itemId) {
+        return badRequest("itemId is required for text-chunks.");
+      }
+
+      return NextResponse.json(listLatestTextChunksForExperimentItem(itemId));
+    }
     default:
       return badRequest("Unsupported resource.");
   }
@@ -130,7 +173,7 @@ export async function POST(request: Request) {
         component.category !== "Causal" &&
         component.category !== "Map" &&
         component.category !== "Code" &&
-        component.category !== "Comparison"
+        component.category !== "PolicyTesting"
       ) {
         return badRequest("Invalid component category.");
       }
@@ -197,7 +240,7 @@ export async function POST(request: Request) {
         return badRequest("componentId, title, category, and href are required.");
       }
 
-      if (category !== "Causal" && category !== "Map" && category !== "Code" && category !== "Comparison") {
+      if (category !== "Causal" && category !== "Map" && category !== "Code" && category !== "PolicyTesting") {
         return badRequest("Invalid category.");
       }
 
@@ -210,6 +253,86 @@ export async function POST(request: Request) {
       });
 
       return NextResponse.json(recent);
+    }
+
+    case "upsert-causal-source-item": {
+      const id = asString(payload, "id").trim();
+      const projectId = asString(payload, "projectId").trim();
+      const componentId = asString(payload, "componentId").trim();
+      const label = asString(payload, "label").trim();
+      const fileName = asString(payload, "fileName").trim();
+      const sourceType = asString(payload, "sourceType").trim();
+      const status = asString(payload, "status").trim();
+      const textContent = asString(payload, "textContent");
+      const tags = asArray<string>(payload, "tags").filter((tag) => typeof tag === "string");
+
+      if (!id || !projectId || !componentId || !label || !fileName || !sourceType || !status) {
+        return badRequest("id, projectId, componentId, label, fileName, sourceType, and status are required.");
+      }
+
+      if (sourceType !== "text" && sourceType !== "audio") {
+        return badRequest("Invalid sourceType.");
+      }
+
+      if (status !== "raw_text" && status !== "chunked" && status !== "extracted") {
+        return badRequest("Invalid status.");
+      }
+
+      return NextResponse.json(
+        upsertCausalSourceItem({
+          id,
+          projectId,
+          componentId,
+          label,
+          fileName,
+          sourceType,
+          status,
+          tags,
+          textContent,
+        }),
+      );
+    }
+
+    case "delete-causal-source-item": {
+      const itemId = asString(payload, "itemId").trim();
+      if (!itemId) {
+        return badRequest("itemId is required.");
+      }
+
+      return NextResponse.json({ ok: deleteCausalSourceItem(itemId) });
+    }
+
+    case "save-text-chunks": {
+      const experimentItemId = asString(payload, "experimentItemId").trim();
+      const projectId = asString(payload, "projectId").trim();
+      const componentId = asString(payload, "componentId").trim();
+      const model = asString(payload, "model").trim() || undefined;
+      const chunkSizeWordsRaw = payload.chunkSizeWords;
+      const chunkOverlapWordsRaw = payload.chunkOverlapWords;
+      const chunks = asArray<string>(payload, "chunks").filter((entry) => typeof entry === "string");
+
+      if (!experimentItemId || !projectId || !componentId) {
+        return badRequest("experimentItemId, projectId, and componentId are required.");
+      }
+
+      const chunkSizeWords =
+        typeof chunkSizeWordsRaw === "number" && Number.isFinite(chunkSizeWordsRaw) ? chunkSizeWordsRaw : undefined;
+      const chunkOverlapWords =
+        typeof chunkOverlapWordsRaw === "number" && Number.isFinite(chunkOverlapWordsRaw)
+          ? chunkOverlapWordsRaw
+          : undefined;
+
+      return NextResponse.json(
+        saveTextChunks({
+          experimentItemId,
+          projectId,
+          componentId,
+          chunks,
+          model,
+          chunkSizeWords,
+          chunkOverlapWords,
+        }),
+      );
     }
 
     default:

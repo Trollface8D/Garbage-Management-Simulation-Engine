@@ -27,7 +27,44 @@ export type RecentArtifact = {
   openedAt: string;
 };
 
-type PMGetResource = "projects" | "components" | "trash-projects" | "trash-components" | "recents";
+export type CausalSourceItemStatus = "raw_text" | "chunked" | "extracted";
+export type CausalSourceItemSourceType = "text" | "audio";
+
+export type CausalSourceItem = {
+  id: string;
+  projectId: string;
+  componentId: string;
+  label: string;
+  fileName: string;
+  sourceType: CausalSourceItemSourceType;
+  status: CausalSourceItemStatus;
+  tags: string[];
+  textContent: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CausalSourceItemInput = {
+  id: string;
+  projectId: string;
+  componentId: string;
+  label: string;
+  fileName: string;
+  sourceType: CausalSourceItemSourceType;
+  status: CausalSourceItemStatus;
+  tags: string[];
+  textContent: string;
+};
+
+type PMGetResource =
+  | "projects"
+  | "components"
+  | "trash-projects"
+  | "trash-components"
+  | "recents"
+  | "causal-source-items"
+  | "causal-source-item"
+  | "text-chunks";
 
 type PMAction =
   | "create-project"
@@ -39,7 +76,25 @@ type PMAction =
   | "restore-component"
   | "hard-delete-project"
   | "hard-delete-component"
-  | "track-recent";
+  | "track-recent"
+  | "upsert-causal-source-item"
+  | "delete-causal-source-item"
+  | "save-text-chunks";
+
+export type SaveTextChunksInput = {
+  experimentItemId: string;
+  projectId: string;
+  componentId: string;
+  chunks: string[];
+  model?: string;
+  chunkSizeWords?: number;
+  chunkOverlapWords?: number;
+};
+
+export type SaveTextChunksResult = {
+  pipelineJobId: string;
+  savedChunks: number;
+};
 
 let migrationPromise: Promise<void> | null = null;
 
@@ -243,4 +298,81 @@ export async function restoreDeletedProject(projectId: string): Promise<void> {
 export async function permanentlyDeleteProject(projectId: string): Promise<void> {
   await pmPost<{ ok: boolean }>("hard-delete-project", { projectId });
   notifyPMStorageChanged();
+}
+
+export async function loadCausalSourceItems(projectId: string, componentId?: string): Promise<CausalSourceItem[]> {
+  await ensureLegacyMigration();
+
+  const url = new URL(PM_API_PATH, window.location.origin);
+  url.searchParams.set("resource", "causal-source-items");
+  url.searchParams.set("projectId", projectId);
+  if (componentId?.trim()) {
+    url.searchParams.set("componentId", componentId.trim());
+  }
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`PM GET failed (${String(response.status)}): causal-source-items`);
+  }
+
+  return (await response.json()) as CausalSourceItem[];
+}
+
+export async function loadCausalSourceItem(itemId: string): Promise<CausalSourceItem> {
+  await ensureLegacyMigration();
+
+  const url = new URL(PM_API_PATH, window.location.origin);
+  url.searchParams.set("resource", "causal-source-item");
+  url.searchParams.set("itemId", itemId);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`PM GET failed (${String(response.status)}): causal-source-item`);
+  }
+
+  return (await response.json()) as CausalSourceItem;
+}
+
+export async function loadTextChunksForItem(itemId: string): Promise<string[]> {
+  await ensureLegacyMigration();
+
+  const url = new URL(PM_API_PATH, window.location.origin);
+  url.searchParams.set("resource", "text-chunks");
+  url.searchParams.set("itemId", itemId);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`PM GET failed (${String(response.status)}): text-chunks`);
+  }
+
+  return (await response.json()) as string[];
+}
+
+export async function saveCausalSourceItem(item: CausalSourceItemInput): Promise<CausalSourceItem> {
+  const saved = await pmPost<CausalSourceItem>("upsert-causal-source-item", item);
+  notifyPMStorageChanged();
+  return saved;
+}
+
+export async function deleteCausalSourceItem(itemId: string): Promise<void> {
+  await pmPost<{ ok: boolean }>("delete-causal-source-item", { itemId });
+  notifyPMStorageChanged();
+}
+
+export async function saveTextChunksForItem(input: SaveTextChunksInput): Promise<SaveTextChunksResult> {
+  const result = await pmPost<SaveTextChunksResult>("save-text-chunks", input);
+  notifyPMStorageChanged();
+  return result;
 }
