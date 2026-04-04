@@ -5,6 +5,9 @@ This document explains the automated build pipeline added for packaging the proj
 ## What Was Added
 
 - Automation script: [scripts/package-desktop.sh](scripts/package-desktop.sh)
+- Runtime launcher script: [scripts/run-compiled-app.sh](scripts/run-compiled-app.sh)
+- Electron desktop shell: [desktop/main.js](desktop/main.js)
+- Desktop package config: [desktop/package.json](desktop/package.json)
 - PyInstaller backend entrypoint: [backend/packaging/serve_api_entry.py](backend/packaging/serve_api_entry.py)
 - Next.js standalone output enabled in [web-ui/next.config.ts](web-ui/next.config.ts)
 
@@ -50,6 +53,74 @@ Or executable form:
 ./engine/scripts/package-desktop.sh
 ```
 
+## Start The Compiled App
+
+After build completes, start the compiled runtime with one command:
+
+```bash
+bash engine/scripts/run-compiled-app.sh
+```
+
+What this launcher does automatically:
+
+- Verifies compiled backend/frontend artifacts exist.
+- Picks free localhost ports automatically (unless `BACKEND_PORT`/`FRONTEND_PORT` are set).
+- Starts backend and frontend in background processes.
+- Waits for backend health and frontend readiness before opening browser.
+- Writes logs to `engine/dist/runtime-logs/backend.log` and `engine/dist/runtime-logs/frontend.log`.
+- Cleans up child processes on exit (`Ctrl+C`, termination, or shell exit), which frees the ports.
+
+Optional launcher env vars:
+
+- `BACKEND_HOST` (default: `127.0.0.1`)
+- `BACKEND_PORT` (optional fixed backend port)
+- `FRONTEND_PORT` (optional fixed frontend port)
+- `OPEN_BROWSER` (`1` default, set `0` to skip auto-open)
+
+Example:
+
+```bash
+OPEN_BROWSER=0 FRONTEND_PORT=3100 bash engine/scripts/run-compiled-app.sh
+```
+
+## Start As Window Application (Electron)
+
+This is the true desktop app flow (single window, hidden backend/frontend processes, clean shutdown).
+
+1. Build and sync artifacts to `engine/desktop/resources`:
+
+```bash
+bash engine/scripts/package-desktop.sh
+```
+
+2. Install desktop shell dependencies:
+
+```bash
+cd engine/desktop
+npm ci
+```
+
+3. Launch desktop window app:
+
+```bash
+npm run start
+```
+
+What this Electron shell handles automatically:
+
+- Starts backend executable from `desktop/resources/backend`.
+- Chooses free localhost ports for backend and frontend.
+- Starts frontend standalone server from `desktop/resources/frontend/standalone/server.js`.
+- Keeps both processes hidden from the user (no dedicated backend/frontend terminal windows).
+- Loads the app in an Electron `BrowserWindow`.
+- Kills child processes during app quit to free ports.
+
+Desktop shell source files:
+
+- [desktop/main.js](desktop/main.js)
+- [desktop/package.json](desktop/package.json)
+- [desktop/README.md](desktop/README.md)
+
 ## Environment Variables
 
 Optional variables to customize behavior:
@@ -87,6 +158,32 @@ Your Nexttron/Electron main process should:
 4. Stop backend process when app closes.
 
 This script already guarantees artifacts are copied to `desktop/resources/*` in that shape.
+
+## Window App Experience (Icon + Hidden Background Processes)
+
+To get a true desktop window app experience (single app icon, no visible terminal processes), use Electron/Nexttron as the shell.
+
+Recommended behavior in Electron main process:
+
+1. Spawn backend executable from `resources/backend` with hidden process options.
+2. Wait until backend `/health` is ready.
+3. Spawn frontend standalone server from `resources/frontend/standalone/server.js`.
+4. Load the frontend URL into `BrowserWindow`.
+5. On app exit, kill both child processes so ports are released.
+
+Icon support:
+
+- macOS icon file: `icon.icns`
+- Windows icon file: `icon.ico`
+- Configure icon in BrowserWindow and electron-builder packaging config.
+
+If you do not use Electron/Nexttron yet, `run-compiled-app.sh` is the best available process manager and cleanup launcher.
+
+Current status in this repository:
+
+- Electron shell is already created in `engine/desktop`.
+- Runtime icon uses `engine/desktop/assets/icon.png` when present.
+- You can add installer icons later (`icon.icns` and `icon.ico`) and extend `desktop/package.json` build config.
 
 ## Troubleshooting
 

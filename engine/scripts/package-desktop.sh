@@ -61,6 +61,9 @@ build_backend() {
         --onedir \
         --name gms-backend \
         --paths "$ROOT_DIR" \
+        --distpath "$BACKEND_DIR/dist" \
+        --workpath "$BACKEND_DIR/build" \
+        --specpath "$BACKEND_DIR" \
         "$BACKEND_DIR/packaging/serve_api_entry.py"
 
     mkdir -p "$BACKEND_BUILD_DIR"
