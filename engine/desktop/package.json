@@ -6,11 +6,12 @@
   "description": "Desktop shell for Garbage Management Simulation Engine",
   "scripts": {
     "start": "electron .",
+    "predist": "bash scripts/prepare-icons.sh",
     "dist": "electron-builder --mac dmg zip"
   },
   "devDependencies": {
-    "electron": "^31.7.7",
-    "electron-builder": "^24.13.3"
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1"
   },
   "build": {
     "appId": "com.gms.desktop",
@@ -21,14 +22,23 @@
     "files": [
       "main.js",
       "package.json",
-      "resources/**/*",
       "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
+      "icon": "assets/icon.icns",
       "category": "public.app-category.developer-tools"
     }
   }

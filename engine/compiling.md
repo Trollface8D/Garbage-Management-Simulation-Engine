@@ -106,9 +106,18 @@ npm ci
 npm run start
 ```
 
+Development mode behavior (`npm run start` from `engine/desktop`):
+
+- Backend runs from Python source (`python3 -m backend ...`) instead of compiled executable.
+- You do not need to rebuild PyInstaller output for backend code-only changes.
+- Frontend still runs from `desktop/resources/frontend/standalone`, so rerun packaging after frontend build changes.
+- Interpreter selection in dev mode prefers project-local Python (for example `engine/backend/env/bin/python`) before system Python commands.
+- Override Python binary with `PYTHON_BIN` if needed.
+
 What this Electron shell handles automatically:
 
-- Starts backend executable from `desktop/resources/backend`.
+- In development mode, starts backend from source.
+- In packaged mode, starts backend executable from `desktop/resources/backend`.
 - Chooses free localhost ports for backend and frontend.
 - Starts frontend standalone server from `desktop/resources/frontend/standalone/server.js`.
 - Keeps both processes hidden from the user (no dedicated backend/frontend terminal windows).
@@ -128,6 +137,7 @@ Optional variables to customize behavior:
 - `PYTHON_BIN` (default: `python3`)
 - `NODE_BIN` (default: `node`)
 - `NPM_BIN` (default: `npm`)
+- `PYTHON_BIN` (default: `python3`, used by Electron dev startup)
 - `SKIP_CLEAN` (`1` to keep previous build outputs)
 - `BACKEND_HOST` (default: `127.0.0.1`)
 - `BACKEND_PORT` (default: `8000`)

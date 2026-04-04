@@ -11,7 +11,23 @@ FRONTEND_BUILD_DIR="$BUILD_ROOT/frontend"
 DESKTOP_RESOURCES_DIR="$ROOT_DIR/desktop/resources"
 DESKTOP_DIR_DEFAULT="$ROOT_DIR/desktop"
 NEXTTRON_DIR="${NEXTTRON_DIR:-$DESKTOP_DIR_DEFAULT}"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+    if [[ -n "${CONDA_PREFIX:-}" && -x "$CONDA_PREFIX/bin/python" ]]; then
+        PYTHON_BIN="$CONDA_PREFIX/bin/python"
+    elif [[ -x "$BACKEND_DIR/env/bin/python" ]]; then
+        PYTHON_BIN="$BACKEND_DIR/env/bin/python"
+    elif [[ -x "$BACKEND_DIR/.env/bin/python" ]]; then
+        PYTHON_BIN="$BACKEND_DIR/.env/bin/python"
+    elif [[ -x "$BACKEND_DIR/.venv/bin/python" ]]; then
+        PYTHON_BIN="$BACKEND_DIR/.venv/bin/python"
+    elif [[ -x "$ROOT_DIR/.env/bin/python" ]]; then
+        PYTHON_BIN="$ROOT_DIR/.env/bin/python"
+    elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+        PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
+    else
+        PYTHON_BIN="python3"
+    fi
+fi
 NODE_BIN="${NODE_BIN:-node}"
 NPM_BIN="${NPM_BIN:-npm}"
 SKIP_CLEAN="${SKIP_CLEAN:-0}"
@@ -30,6 +46,25 @@ require_cmd() {
     fi
 }
 
+require_python_version() {
+    local version
+    version="$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || true)"
+
+    if [[ -z "$version" ]]; then
+        echo "Error: failed to execute Python from '$PYTHON_BIN'." >&2
+        exit 1
+    fi
+
+    local major minor
+    IFS='.' read -r major minor <<<"$version"
+    if [[ "$major" -lt 3 || ( "$major" -eq 3 && "$minor" -lt 10 ) ]]; then
+        echo "Error: backend packaging requires Python 3.10+ (found $version at $PYTHON_BIN)." >&2
+        exit 1
+    fi
+
+    log "Using Python interpreter: $PYTHON_BIN (version $version)"
+}
+
 clean() {
     if [[ "$SKIP_CLEAN" == "1" ]]; then
         log "Skipping clean step (SKIP_CLEAN=1)."
@@ -46,9 +81,15 @@ build_backend() {
     log "Building backend executable with PyInstaller."
     local venv_dir="$BACKEND_DIR/.venv-pack"
 
+    # Recreate the packaging environment on every run to guarantee it matches PYTHON_BIN.
+    rm -rf "$venv_dir"
     "$PYTHON_BIN" -m venv "$venv_dir"
     # shellcheck disable=SC1091
     source "$venv_dir/bin/activate"
+
+    local pack_version
+    pack_version="$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
+    log "Packaging virtualenv Python version: $pack_version"
 
     python -m pip install --upgrade pip
     python -m pip install -r "$BACKEND_DIR/requirement.txt"
@@ -130,6 +171,7 @@ summary() {
 
 main() {
     require_cmd "$PYTHON_BIN"
+    require_python_version
     require_cmd "$NODE_BIN"
     require_cmd "$NPM_BIN"
 

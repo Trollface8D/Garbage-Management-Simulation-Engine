@@ -27,3 +27,5 @@ dist/
 build/
 *.egg-info/
 .venv*
+resources/
+/.DS_Store
