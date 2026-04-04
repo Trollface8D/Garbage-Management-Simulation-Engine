@@ -1,0 +1,210 @@
+// ==========================================
+// ENUMS
+// ==========================================
+
+Enum component_category {
+    Causal
+    Map
+    Code
+    Policy_Testing // Added!
+}
+
+Enum link_role {
+    PRIMARY
+    LEFT
+    RIGHT
+}
+
+Enum source_type {
+    text
+    audio
+}
+
+Enum data_status {
+    raw_text
+    chunked
+    extracted
+}
+
+Enum input_mode {
+    text
+    file
+}
+
+Enum job_status {
+    queued
+    running
+    completed
+    failed
+    cancelled
+}
+
+Enum artifact_type {
+    transcript
+    chunks
+    causal_by_chunk
+    causal_combined
+    follow_up
+    entities
+    generated_entity
+    other
+}
+
+Enum submit_scope_type {
+    GROUP
+    ALL
+}
+
+// ==========================================
+// CORE PROJECT & COMPONENT STRUCTURE
+// ==========================================
+
+Table projects {
+    id varchar [pk]
+    name varchar [not null, unique]
+    created_at timestamp [not null]
+    updated_at timestamp [not null]
+}
+
+Table project_components {
+    id varchar [pk]
+    title varchar [not null]
+    category component_category [not null]
+    last_edited_at timestamp
+    created_at timestamp [not null]
+    updated_at timestamp [not null]
+}
+
+Table component_project_links {
+    id uuid [pk]
+    component_id varchar [not null, ref: > project_components.id]
+    project_id varchar [not null, ref: > projects.id]
+    role link_role [not null, default: 'PRIMARY']
+    created_at timestamp [not null]
+
+    indexes {
+        (component_id, project_id, role) [unique]
+    }
+
+}
+
+// ==========================================
+// CAUSAL CATEGORY ENCAPSULATION
+// ==========================================
+
+Table causal_project_documents {
+    id uuid [pk]
+    component_id varchar [not null, ref: > project_components.id] // Direct link, no middleman!
+    status data_status [not null, default: 'raw_text']
+    created_at timestamp [not null]
+    updated_at timestamp [not null]
+}
+
+Table input_documents {
+    id uuid [pk]
+    causal_project_document_id uuid [not null, ref: > causal_project_documents.id]
+    input_mode input_mode [not null]
+    source_type source_type [not null]
+    original_file_name varchar
+    storage_path varchar
+    raw_text text
+    transcript_text text
+    uploaded_at timestamp [not null]
+}
+
+// ==========================================
+// DECOUPLED DATA FLOW (Causal)
+// ==========================================
+
+Table text_chunks {
+    id uuid [pk]
+    causal_project_document_id uuid [not null, ref: > causal_project_documents.id]
+    chunk_index int [not null]
+    text text [not null]
+    start_offset int
+    end_offset int
+    created_at timestamp [not null]
+
+    indexes {
+        (causal_project_document_id, chunk_index) [unique]
+    }
+}
+
+Table extraction_classes {
+    id uuid [pk]
+    causal_project_document_id uuid [not null, ref: > causal_project_documents.id]
+    chunk_id uuid [ref: > text_chunks.id]
+    pattern_type varchar
+    sentence_type varchar
+    marked_type varchar
+    explicit_type varchar
+    marker varchar
+    source_text text [not null]
+    created_at timestamp [not null]
+}
+
+Table causal {
+    id uuid [pk]
+    causal_project_document_id uuid [not null, ref: > causal_project_documents.id]
+    extraction_class_id uuid [not null, ref: > extraction_classes.id]
+    head text [not null]
+    relationship text [not null]
+    tail text [not null]
+    detail text
+    created_at timestamp [not null]
+}
+
+// ==========================================
+// FOLLOW-UP ENCAPSULATION
+// ==========================================
+
+Table follow_ups {
+    id uuid [pk]
+    causal_project_document_id uuid [not null, ref: > causal_project_documents.id]
+    causal_id uuid [not null, ref: > causal.id]
+    source_text text [not null]
+    sentence_type varchar
+    created_at timestamp [not null]
+}
+
+Table follow_up_questions {
+    id uuid [pk]
+    follow_up_id uuid [not null, ref: > follow_ups.id]
+    question_text text [not null]
+    generated_by varchar [default: 'system']
+    generated_at timestamp [not null]
+    is_filtered_in boolean [not null, default: true]
+}
+
+Table follow_up_answers {
+    id uuid [pk]
+    question_id uuid [not null, ref: > follow_up_questions.id]
+    answer_text text [not null]
+    answered_by varchar [default: 'user']
+    answered_at timestamp [not null]
+}
+
+// ==========================================
+// BATCHES & ENTITIES
+// ==========================================
+
+Table submission_batches {
+    id uuid [pk]
+    causal_project_document_id uuid [not null, ref: > causal_project_documents.id]
+    scope_type submit_scope_type [not null]
+    scope_ref varchar
+    submitted_count int [not null, default: 0]
+    status_message text
+    submitted_at timestamp [not null]
+}
+
+Table generated_entities {
+    id uuid [pk]
+    causal_id uuid [not null, ref: > causal.id]
+    entity_name varchar [not null]
+    created_at timestamp [not null]
+
+    indexes {
+        (causal_id, entity_name) [unique]
+    }
+}
