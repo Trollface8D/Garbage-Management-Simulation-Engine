@@ -1,0 +1,253 @@
+import { sql } from "drizzle-orm";
+import {
+  check,
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
+
+export const projects = sqliteTable("projects", {
+  id: text("id").primaryKey().notNull(),
+  name: text("name").notNull().unique(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const projectComponents = sqliteTable(
+  "project_components",
+  {
+    id: text("id").primaryKey().notNull(),
+    title: text("title").notNull(),
+    category: text("category").notNull(),
+    lastEditedAt: text("last_edited_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "project_components_category_check",
+      sql`${table.category} IN ('Causal', 'Map', 'Code', 'Policy_Testing')`,
+    ),
+  ],
+);
+
+// DBML-compatible soft-delete support via side tables (without mutating core table columns).
+export const projectTrash = sqliteTable(
+  "project_trash",
+  {
+    projectId: text("project_id")
+      .primaryKey()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    deletedAt: text("deleted_at").notNull(),
+  },
+  (table) => [index("idx_project_trash_deleted_at").on(table.deletedAt)],
+);
+
+export const componentTrash = sqliteTable(
+  "component_trash",
+  {
+    componentId: text("component_id")
+      .primaryKey()
+      .notNull()
+      .references(() => projectComponents.id, { onDelete: "cascade" }),
+    deletedAt: text("deleted_at").notNull(),
+  },
+  (table) => [index("idx_component_trash_deleted_at").on(table.deletedAt)],
+);
+
+export const componentProjectLinks = sqliteTable(
+  "component_project_links",
+  {
+    id: text("id").primaryKey().notNull(),
+    componentId: text("component_id")
+      .notNull()
+      .references(() => projectComponents.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("PRIMARY"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check("component_project_links_role_check", sql`${table.role} IN ('PRIMARY', 'LEFT', 'RIGHT')`),
+    uniqueIndex("component_project_links_unique").on(table.componentId, table.projectId, table.role),
+    index("idx_component_project_links_component_id").on(table.componentId),
+    index("idx_component_project_links_project_id").on(table.projectId),
+  ],
+);
+
+export const causalProjectDocuments = sqliteTable(
+  "causal_project_documents",
+  {
+    id: text("id").primaryKey().notNull(),
+    componentId: text("component_id")
+      .notNull()
+      .references(() => projectComponents.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("raw_text"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "causal_project_documents_status_check",
+      sql`${table.status} IN ('raw_text', 'chunked', 'extracted')`,
+    ),
+    index("idx_causal_project_documents_component_id").on(table.componentId),
+  ],
+);
+
+export const inputDocuments = sqliteTable(
+  "input_documents",
+  {
+    id: text("id").primaryKey().notNull(),
+    causalProjectDocumentId: text("causal_project_document_id")
+      .notNull()
+      .references(() => causalProjectDocuments.id, { onDelete: "cascade" }),
+    inputMode: text("input_mode").notNull(),
+    sourceType: text("source_type").notNull(),
+    originalFileName: text("original_file_name"),
+    storagePath: text("storage_path"),
+    rawText: text("raw_text"),
+    transcriptText: text("transcript_text"),
+    uploadedAt: text("uploaded_at").notNull(),
+  },
+  (table) => [
+    check("input_documents_input_mode_check", sql`${table.inputMode} IN ('text', 'file')`),
+    check("input_documents_source_type_check", sql`${table.sourceType} IN ('text', 'audio')`),
+    index("idx_input_documents_cpd_uploaded_at").on(table.causalProjectDocumentId, table.uploadedAt),
+  ],
+);
+
+export const textChunks = sqliteTable(
+  "text_chunks",
+  {
+    id: text("id").primaryKey().notNull(),
+    causalProjectDocumentId: text("causal_project_document_id")
+      .notNull()
+      .references(() => causalProjectDocuments.id, { onDelete: "cascade" }),
+    chunkIndex: integer("chunk_index").notNull(),
+    text: text("text").notNull(),
+    startOffset: integer("start_offset"),
+    endOffset: integer("end_offset"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("text_chunks_doc_chunk_unique").on(table.causalProjectDocumentId, table.chunkIndex),
+    index("idx_text_chunks_doc_chunk").on(table.causalProjectDocumentId, table.chunkIndex),
+  ],
+);
+
+export const extractionClasses = sqliteTable("extraction_classes", {
+  id: text("id").primaryKey().notNull(),
+  causalProjectDocumentId: text("causal_project_document_id")
+    .notNull()
+    .references(() => causalProjectDocuments.id, { onDelete: "cascade" }),
+  chunkId: text("chunk_id").references(() => textChunks.id, { onDelete: "set null" }),
+  patternType: text("pattern_type"),
+  sentenceType: text("sentence_type"),
+  markedType: text("marked_type"),
+  explicitType: text("explicit_type"),
+  marker: text("marker"),
+  sourceText: text("source_text").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const causal = sqliteTable("causal", {
+  id: text("id").primaryKey().notNull(),
+  causalProjectDocumentId: text("causal_project_document_id")
+    .notNull()
+    .references(() => causalProjectDocuments.id, { onDelete: "cascade" }),
+  extractionClassId: text("extraction_class_id")
+    .notNull()
+    .references(() => extractionClasses.id, { onDelete: "cascade" }),
+  head: text("head").notNull(),
+  relationship: text("relationship").notNull(),
+  tail: text("tail").notNull(),
+  detail: text("detail"),
+  createdAt: text("created_at").notNull(),
+});
+
+export const followUps = sqliteTable("follow_ups", {
+  id: text("id").primaryKey().notNull(),
+  causalProjectDocumentId: text("causal_project_document_id")
+    .notNull()
+    .references(() => causalProjectDocuments.id, { onDelete: "cascade" }),
+  causalId: text("causal_id")
+    .notNull()
+    .references(() => causal.id, { onDelete: "cascade" }),
+  sourceText: text("source_text").notNull(),
+  sentenceType: text("sentence_type"),
+  createdAt: text("created_at").notNull(),
+});
+
+export const followUpQuestions = sqliteTable("follow_up_questions", {
+  id: text("id").primaryKey().notNull(),
+  followUpId: text("follow_up_id")
+    .notNull()
+    .references(() => followUps.id, { onDelete: "cascade" }),
+  questionText: text("question_text").notNull(),
+  generatedBy: text("generated_by").notNull().default("system"),
+  generatedAt: text("generated_at").notNull(),
+  isFilteredIn: integer("is_filtered_in", { mode: "boolean" }).notNull().default(true),
+});
+
+export const followUpAnswers = sqliteTable("follow_up_answers", {
+  id: text("id").primaryKey().notNull(),
+  questionId: text("question_id")
+    .notNull()
+    .references(() => followUpQuestions.id, { onDelete: "cascade" }),
+  answerText: text("answer_text").notNull(),
+  answeredBy: text("answered_by").notNull().default("user"),
+  answeredAt: text("answered_at").notNull(),
+});
+
+export const submissionBatches = sqliteTable(
+  "submission_batches",
+  {
+    id: text("id").primaryKey().notNull(),
+    causalProjectDocumentId: text("causal_project_document_id")
+      .notNull()
+      .references(() => causalProjectDocuments.id, { onDelete: "cascade" }),
+    scopeType: text("scope_type").notNull(),
+    scopeRef: text("scope_ref"),
+    submittedCount: integer("submitted_count").notNull().default(0),
+    statusMessage: text("status_message"),
+    submittedAt: text("submitted_at").notNull(),
+  },
+  (table) => [
+    check("submission_batches_scope_type_check", sql`${table.scopeType} IN ('GROUP', 'ALL')`),
+  ],
+);
+
+export const generatedEntities = sqliteTable(
+  "generated_entities",
+  {
+    id: text("id").primaryKey().notNull(),
+    causalId: text("causal_id")
+      .notNull()
+      .references(() => causal.id, { onDelete: "cascade" }),
+    entityName: text("entity_name").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [uniqueIndex("generated_entities_causal_entity_unique").on(table.causalId, table.entityName)],
+);
+
+// Not part of schema.dbml, kept for current UI recent-artifacts feature.
+export const recents = sqliteTable(
+  "recents",
+  {
+    componentId: text("component_id").primaryKey().notNull(),
+    title: text("title").notNull(),
+    category: text("category").notNull(),
+    projectId: text("project_id"),
+    href: text("href").notNull(),
+    openedAt: text("opened_at").notNull(),
+  },
+  (table) => [
+    check("recents_category_check", sql`${table.category} IN ('Causal', 'Map', 'Code', 'PolicyTesting')`),
+    index("idx_recents_opened_at").on(table.openedAt),
+  ],
+);
