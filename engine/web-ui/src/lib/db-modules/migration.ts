@@ -1,73 +1,73 @@
-import db from "./connection";
-import {
-  pruneRecents,
-  upsertRecentForMigration,
-} from "./recents";
-import {
-  upsertComponentWithDeletedAt,
-  upsertProjectWithDeletedAt,
-} from "./projects-components";
+import { pruneRecents, upsertRecentForMigration } from "./recents";
+import { upsertComponentWithDeletedAt, upsertProjectWithDeletedAt } from "./projects-components";
 import type { LegacyMigrationPayload, MigrationSummary } from "./types";
 
-export function migrateLegacyData(payload: LegacyMigrationPayload): MigrationSummary {
+export type DbmlImportPayload = LegacyMigrationPayload;
+
+export function importDbmlSnapshot(payload: DbmlImportPayload): MigrationSummary {
   const now = new Date().toISOString();
 
-  const migrateInTransaction = db.transaction((input: LegacyMigrationPayload): MigrationSummary => {
-    const summary: MigrationSummary = {
-      projects: 0,
-      components: 0,
-      deletedProjects: 0,
-      deletedComponents: 0,
-      recents: 0,
-    };
+  const summary: MigrationSummary = {
+    projects: 0,
+    components: 0,
+    deletedProjects: 0,
+    deletedComponents: 0,
+    recents: 0,
+  };
 
-    for (const project of input.projects) {
-      if (!project?.id || !project?.name) {
-        continue;
-      }
-      upsertProjectWithDeletedAt(project, null);
-      summary.projects += 1;
+  for (const project of payload.projects) {
+    if (!project?.id || !project?.name) {
+      continue;
     }
 
-    for (const component of input.components) {
-      if (!component?.id || !component?.title) {
-        continue;
-      }
-      upsertComponentWithDeletedAt(component, null);
-      summary.components += 1;
+    upsertProjectWithDeletedAt(project, null);
+    summary.projects += 1;
+  }
+
+  for (const component of payload.components) {
+    if (!component?.id || !component?.title) {
+      continue;
     }
 
-    for (const entry of input.deletedProjects) {
-      const project = entry?.project;
-      if (!project?.id || !project?.name) {
-        continue;
-      }
-      upsertProjectWithDeletedAt(project, entry.deletedAt || now);
-      summary.deletedProjects += 1;
+    upsertComponentWithDeletedAt(component, null);
+    summary.components += 1;
+  }
+
+  for (const entry of payload.deletedProjects) {
+    const project = entry?.project;
+    if (!project?.id || !project?.name) {
+      continue;
     }
 
-    for (const entry of input.deletedComponents) {
-      const component = entry?.component;
-      if (!component?.id || !component?.title) {
-        continue;
-      }
-      upsertComponentWithDeletedAt(component, entry.deletedAt || now);
-      summary.deletedComponents += 1;
+    upsertProjectWithDeletedAt(project, entry.deletedAt || now);
+    summary.deletedProjects += 1;
+  }
+
+  for (const entry of payload.deletedComponents) {
+    const component = entry?.component;
+    if (!component?.id || !component?.title) {
+      continue;
     }
 
-    for (const recent of input.recents) {
-      if (!recent?.componentId || !recent?.title || !recent?.category || !recent?.href) {
-        continue;
-      }
+    upsertComponentWithDeletedAt(component, entry.deletedAt || now);
+    summary.deletedComponents += 1;
+  }
 
-      upsertRecentForMigration(recent, now);
-      summary.recents += 1;
+  for (const recent of payload.recents) {
+    if (!recent?.componentId || !recent?.title || !recent?.category || !recent?.href) {
+      continue;
     }
 
-    pruneRecents(30);
+    upsertRecentForMigration(recent, now);
+    summary.recents += 1;
+  }
 
-    return summary;
-  });
+  pruneRecents(30);
 
-  return migrateInTransaction(payload);
+  return summary;
+}
+
+// Backward-compatible alias for existing API action name.
+export function migrateLegacyData(payload: LegacyMigrationPayload): MigrationSummary {
+  return importDbmlSnapshot(payload);
 }
