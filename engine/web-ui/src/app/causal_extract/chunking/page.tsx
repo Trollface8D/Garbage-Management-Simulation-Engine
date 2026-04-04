@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import BackToHome from "../../components/back-to-home";
 import {
     findComponentById,
@@ -156,8 +156,8 @@ function CausalExtractChunkingContent() {
     const [isLoadingBackend, setIsLoadingBackend] = useState<boolean>(false);
     const [loadStatus, setLoadStatus] = useState<string>("");
     const [chunkSaveStatus, setChunkSaveStatus] = useState<string>("");
+    const [isSavingChunks, setIsSavingChunks] = useState<boolean>(false);
     const [projects, setProjects] = useState<SimulationProject[]>([]);
-    const saveDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const isCutMode = toolMode === "split";
 
@@ -221,14 +221,6 @@ function CausalExtractChunkingContent() {
     useEffect(() => {
         setJobIdInput(initialJobId);
     }, [initialJobId]);
-
-    useEffect(() => {
-        return () => {
-            if (saveDebounceTimerRef.current) {
-                clearTimeout(saveDebounceTimerRef.current);
-            }
-        };
-    }, []);
 
     useEffect(() => {
         const seedTexts = getSeedBlocksForComponent(componentId);
@@ -387,9 +379,9 @@ function CausalExtractChunkingContent() {
         setLoadStatus(`AI chunking completed with ${String(rechunked.length)} blocks.`);
     };
 
-    useEffect(() => {
+    const handleSaveChunks = useCallback(async () => {
         if (!initialItemId || !selectedProjectId || !componentId) {
-            setChunkSaveStatus("");
+            setChunkSaveStatus("Save unavailable: this page is not linked to a stored source item.");
             return;
         }
 
@@ -399,33 +391,28 @@ function CausalExtractChunkingContent() {
             return;
         }
 
-        if (saveDebounceTimerRef.current) {
-            clearTimeout(saveDebounceTimerRef.current);
-        }
-
+        setIsSavingChunks(true);
         setChunkSaveStatus("Saving chunks...");
 
-        saveDebounceTimerRef.current = setTimeout(() => {
-            void (async () => {
-                try {
-                    const result = await saveTextChunksForItem({
-                        experimentItemId: initialItemId,
-                        projectId: selectedProjectId,
-                        componentId,
-                        chunks: chunkTexts,
-                        model: "manual-chunking",
-                        chunkSizeWords: 20,
-                        chunkOverlapWords: 0,
-                    });
+        try {
+            const result = await saveTextChunksForItem({
+                experimentItemId: initialItemId,
+                projectId: selectedProjectId,
+                componentId,
+                chunks: chunkTexts,
+                model: "manual-chunking",
+                chunkSizeWords: 20,
+                chunkOverlapWords: 0,
+            });
 
-                    setChunkSaveStatus(
-                        `Saved ${String(result.savedChunks)} chunk${result.savedChunks === 1 ? "" : "s"} to TextChunk.`,
-                    );
-                } catch {
-                    setChunkSaveStatus("Unable to save chunks to TextChunk.");
-                }
-            })();
-        }, 450);
+            setChunkSaveStatus(
+                `Saved ${String(result.savedChunks)} chunk${result.savedChunks === 1 ? "" : "s"} to TextChunk.`,
+            );
+        } catch {
+            setChunkSaveStatus("Unable to save chunks to TextChunk.");
+        } finally {
+            setIsSavingChunks(false);
+        }
     }, [blocks, componentId, initialItemId, selectedProjectId]);
 
     return (
@@ -444,12 +431,22 @@ function CausalExtractChunkingContent() {
                             <span className="text-sm text-neutral-300">{selectedProjectName}</span>
                         </div>
                     </div>
-                    <BackToHome
-                        href={projectBackHref}
-                        label="Back to project"
-                        containerClassName=""
-                        className="rounded-md px-3 py-2"
-                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                        <BackToHome
+                            href={projectBackHref}
+                            label="Back to project"
+                            containerClassName=""
+                            className="rounded-md px-3 py-2"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => void handleSaveChunks()}
+                            disabled={isSavingChunks || !initialItemId || !selectedProjectId || !componentId}
+                            className="rounded-md border border-emerald-600 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-55"
+                        >
+                            {isSavingChunks ? "Saving..." : "Save chunks"}
+                        </button>
+                    </div>
                 </header>
 
                 <section className="mb-6 rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
