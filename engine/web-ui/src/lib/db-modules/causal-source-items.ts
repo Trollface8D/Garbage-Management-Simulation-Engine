@@ -26,11 +26,13 @@ function getLatestInputDocument(documentId: string): {
   fileName: string;
   sourceType: "text" | "audio";
   textContent: string;
+  hasOriginalFile: boolean;
 } {
   const latest = drizzleDb
     .select({
       originalFileName: inputDocuments.originalFileName,
       sourceType: inputDocuments.sourceType,
+      storagePath: inputDocuments.storagePath,
       rawText: inputDocuments.rawText,
       transcriptText: inputDocuments.transcriptText,
     })
@@ -44,6 +46,7 @@ function getLatestInputDocument(documentId: string): {
     fileName: latest?.originalFileName ?? "untitled.txt",
     sourceType: (latest?.sourceType as "text" | "audio" | undefined) ?? "text",
     textContent: latest?.rawText ?? latest?.transcriptText ?? "",
+    hasOriginalFile: Boolean(latest?.storagePath),
   };
 }
 
@@ -67,9 +70,50 @@ function toCausalSourceItem(row: {
     status: row.status,
     tags: [],
     textContent: latestInput.textContent,
-    hasOriginalFile: Boolean(row.storage_path_or_blob),
+    hasOriginalFile: latestInput.hasOriginalFile,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+function normalizeInputMode(inputMode: InputMode | undefined, tags: string[]): "text" | "file" {
+  if (inputMode === "upload") {
+    return "file";
+  }
+
+  if (inputMode === "manual_text") {
+    return "text";
+  }
+
+  return inferInputMode(tags);
+}
+
+function toLegacyInputDocumentRow(row: {
+  id: string;
+  causalProjectDocumentId: string;
+  inputMode: string;
+  sourceType: string;
+  originalFileName: string | null;
+  storagePath: string | null;
+  rawText: string | null;
+  transcriptText: string | null;
+  uploadedAt: string;
+}): InputDocumentRow {
+  return {
+    id: row.id,
+    experiment_item_id: row.causalProjectDocumentId,
+    input_mode:
+      row.inputMode === "file"
+        ? "upload"
+        : row.inputMode === "text"
+          ? "manual_text"
+          : "other",
+    source_type: row.sourceType === "audio" ? "audio" : "text",
+    original_file_name: row.originalFileName ?? "",
+    storage_path_or_blob: row.storagePath,
+    raw_text: row.rawText,
+    transcript_text: row.transcriptText,
+    uploaded_at: row.uploadedAt,
   };
 }
 
@@ -164,6 +208,7 @@ export function upsertCausalSourceItem(item: UpsertCausalSourceItemInput): Causa
   const inputDocumentId = `${item.id}:input-primary`;
   const rawText = item.sourceType === "audio" ? null : item.textContent;
   const transcriptText = item.transcriptText ?? (item.sourceType === "audio" ? item.textContent : null);
+  const normalizedInputMode = normalizeInputMode(item.inputMode, item.tags);
 
   const runInTransaction = drizzleDb.transaction((tx) => {
     tx.insert(causalProjectDocuments)
@@ -199,23 +244,24 @@ export function upsertCausalSourceItem(item: UpsertCausalSourceItemInput): Causa
       .values({
         id: inputDocumentId,
         causalProjectDocumentId: item.id,
-        inputMode: inferInputMode(item.tags),
+        inputMode: normalizedInputMode,
         sourceType: item.sourceType,
         originalFileName: item.fileName,
-        storagePath: null,
-        rawText: item.textContent,
-        transcriptText: null,
+        storagePath: item.storagePathOrBlob ?? null,
+        rawText,
+        transcriptText,
         uploadedAt: now,
       })
       .onConflictDoUpdate({
         target: inputDocuments.id,
         set: {
           causalProjectDocumentId: item.id,
-          inputMode: inferInputMode(item.tags),
+          inputMode: normalizedInputMode,
           sourceType: item.sourceType,
           originalFileName: item.fileName,
-          rawText: item.textContent,
-          transcriptText: null,
+          storagePath: item.storagePathOrBlob ?? null,
+          rawText,
+          transcriptText,
           uploadedAt: now,
         },
       })
@@ -237,26 +283,29 @@ export function getLatestInputDocumentForItem(itemId: string): InputDocumentRow 
     return null;
   }
 
-  const row = db
-    .prepare(
-      `SELECT
-         id,
-         experiment_item_id,
-         input_mode,
-         source_type,
-         original_file_name,
-         storage_path_or_blob,
-         raw_text,
-         transcript_text,
-         uploaded_at
-       FROM input_documents
-       WHERE experiment_item_id = ?
-       ORDER BY uploaded_at DESC
-       LIMIT 1`,
-    )
-    .get(trimmed) as InputDocumentRow | undefined;
+  const row = drizzleDb
+    .select({
+      id: inputDocuments.id,
+      causalProjectDocumentId: inputDocuments.causalProjectDocumentId,
+      inputMode: inputDocuments.inputMode,
+      sourceType: inputDocuments.sourceType,
+      originalFileName: inputDocuments.originalFileName,
+      storagePath: inputDocuments.storagePath,
+      rawText: inputDocuments.rawText,
+      transcriptText: inputDocuments.transcriptText,
+      uploadedAt: inputDocuments.uploadedAt,
+    })
+    .from(inputDocuments)
+    .where(eq(inputDocuments.causalProjectDocumentId, trimmed))
+    .orderBy(desc(inputDocuments.uploadedAt))
+    .limit(1)
+    .get();
 
-  return row ?? null;
+  if (!row) {
+    return null;
+  }
+
+  return toLegacyInputDocumentRow(row);
 }
 
 export function deleteCausalSourceItem(itemId: string): boolean {
