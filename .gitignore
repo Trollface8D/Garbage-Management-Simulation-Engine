@@ -22,3 +22,10 @@ graphdbc*.pt
 graphc*.pickle
 
 *.m4a
+# build artifact ignore
+dist/
+build/
+*.egg-info/
+.venv*
+resources/
+/.DS_Store

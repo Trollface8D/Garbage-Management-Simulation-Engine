@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import BackToHome from "../../components/back-to-home";
 import {
     findComponentById,
@@ -18,10 +18,6 @@ type TextBlock = {
 };
 
 type ToolMode = "edit" | "split";
-
-type LoadOptions = {
-    silentFailure?: boolean;
-};
 
 const DEFAULT_EDITOR_TEXT =
     "Select a Causal component from the dashboard to load its base text. You can then split by click, merge selected blocks, or rechunk the whole document.";
@@ -44,36 +40,6 @@ function buildBlocksFromTexts(texts: string[]): TextBlock[] {
         return [createBlock(DEFAULT_EDITOR_TEXT)];
     }
     return cleaned.map((text) => createBlock(text));
-}
-
-function extractChunkTexts(payload: unknown): string[] {
-    if (!Array.isArray(payload)) {
-        return [];
-    }
-
-    return payload
-        .map((item) => {
-            if (typeof item === "string") {
-                return item;
-            }
-
-            if (item && typeof item === "object") {
-                const candidate = item as { text?: unknown; chunkText?: unknown; content?: unknown };
-                if (typeof candidate.text === "string") {
-                    return candidate.text;
-                }
-                if (typeof candidate.chunkText === "string") {
-                    return candidate.chunkText;
-                }
-                if (typeof candidate.content === "string") {
-                    return candidate.content;
-                }
-            }
-
-            return "";
-        })
-        .map((text) => text.trim())
-        .filter(Boolean);
 }
 
 function splitIntoFixedWordChunks(fullText: string, chunkSize: number): string[] {
@@ -137,27 +103,25 @@ function CausalExtractChunkingContent() {
 
     const componentId = searchParams.get("componentId");
     const queryProjectId = searchParams.get("projectId");
-    const initialJobId = searchParams.get("jobId") ?? "";
     const queryTitle = searchParams.get("title");
     const initialItemId = searchParams.get("itemId") ?? "";
     const initialItemStatus = searchParams.get("itemStatus") ?? "";
+    const initialSourceType = searchParams.get("sourceType") ?? "";
+    const initialFileName = searchParams.get("fileName") ?? "";
 
     const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
     const selectedProjectId = queryProjectId ?? getProjectIdForComponent(componentId);
 
     const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Unselected component";
-    const engineApiBase = process.env.NEXT_PUBLIC_ENGINE_API_BASE ?? "http://127.0.0.1:8000";
 
     const [blocks, setBlocks] = useState<TextBlock[]>(() => buildBlocksFromTexts([]));
     const [activeIndex, setActiveIndex] = useState<number>(0);
     const [toolMode, setToolMode] = useState<ToolMode>("edit");
     const [selectedForJoin, setSelectedForJoin] = useState<number[]>([]);
-    const [jobIdInput, setJobIdInput] = useState<string>(initialJobId);
-    const [isLoadingBackend, setIsLoadingBackend] = useState<boolean>(false);
     const [loadStatus, setLoadStatus] = useState<string>("");
     const [chunkSaveStatus, setChunkSaveStatus] = useState<string>("");
+    const [isSavingChunks, setIsSavingChunks] = useState<boolean>(false);
     const [projects, setProjects] = useState<SimulationProject[]>([]);
-    const saveDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const isCutMode = toolMode === "split";
 
@@ -165,7 +129,12 @@ function CausalExtractChunkingContent() {
         () => projects.find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
         [projects, selectedProjectId],
     );
-    const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
+    const hasOriginalAttachment = Boolean(
+        initialItemId && (initialSourceType === "audio" || !/\.txt$/i.test(initialFileName)),
+    );
+    const attachmentHref = initialItemId
+        ? `/api/causal-source/file?itemId=${encodeURIComponent(initialItemId)}`
+        : "";
 
     useEffect(() => {
         const loadProjectList = async () => {
@@ -173,61 +142,6 @@ function CausalExtractChunkingContent() {
         };
 
         void loadProjectList();
-    }, []);
-
-    const loadFromBackend = useCallback(
-        async (targetJobId: string, options: LoadOptions = {}): Promise<void> => {
-            const trimmedJobId = targetJobId.trim();
-            if (!trimmedJobId) {
-                if (!options.silentFailure) {
-                    setLoadStatus("Enter a job id before loading backend chunks.");
-                }
-                return;
-            }
-
-            setIsLoadingBackend(true);
-            setLoadStatus("Loading chunks from backend...");
-
-            try {
-                const response = await fetch(`${engineApiBase}/pipeline/jobs/${encodeURIComponent(trimmedJobId)}/artifacts/chunks`);
-                if (!response.ok) {
-                    throw new Error(`Backend responded with status ${String(response.status)}.`);
-                }
-
-                const payload: unknown = await response.json();
-                const chunkTexts = extractChunkTexts(payload);
-
-                if (chunkTexts.length === 0) {
-                    throw new Error("No chunk text was returned for this job id.");
-                }
-
-                setBlocks(buildBlocksFromTexts(chunkTexts));
-                setActiveIndex(0);
-                setSelectedForJoin([]);
-                setToolMode("edit");
-                setLoadStatus(`Loaded ${String(chunkTexts.length)} chunks from backend.`);
-            } catch (error) {
-                if (!options.silentFailure) {
-                    const message = error instanceof Error ? error.message : "Unable to load backend chunks.";
-                    setLoadStatus(`Backend load failed: ${message}`);
-                }
-            } finally {
-                setIsLoadingBackend(false);
-            }
-        },
-        [engineApiBase],
-    );
-
-    useEffect(() => {
-        setJobIdInput(initialJobId);
-    }, [initialJobId]);
-
-    useEffect(() => {
-        return () => {
-            if (saveDebounceTimerRef.current) {
-                clearTimeout(saveDebounceTimerRef.current);
-            }
-        };
     }, []);
 
     useEffect(() => {
@@ -241,11 +155,6 @@ function CausalExtractChunkingContent() {
 
         if (!componentId) {
             setLoadStatus("No component was selected from the dashboard. Showing default editor text.");
-            return;
-        }
-
-        if (initialJobId.trim()) {
-            void loadFromBackend(initialJobId, { silentFailure: true });
             return;
         }
 
@@ -283,7 +192,7 @@ function CausalExtractChunkingContent() {
         }
 
         setLoadStatus("Loaded seed text based on the selected dashboard component.");
-    }, [componentId, initialItemId, initialItemStatus, initialJobId, loadFromBackend]);
+    }, [componentId, initialItemId, initialItemStatus]);
 
     const handleEdit = (index: number, nextText: string) => {
         setBlocks((prev) => {
@@ -387,9 +296,9 @@ function CausalExtractChunkingContent() {
         setLoadStatus(`AI chunking completed with ${String(rechunked.length)} blocks.`);
     };
 
-    useEffect(() => {
+    const handleSaveChunks = useCallback(async () => {
         if (!initialItemId || !selectedProjectId || !componentId) {
-            setChunkSaveStatus("");
+            setChunkSaveStatus("Select a source item before saving chunks.");
             return;
         }
 
@@ -399,33 +308,28 @@ function CausalExtractChunkingContent() {
             return;
         }
 
-        if (saveDebounceTimerRef.current) {
-            clearTimeout(saveDebounceTimerRef.current);
-        }
-
+        setIsSavingChunks(true);
         setChunkSaveStatus("Saving chunks...");
 
-        saveDebounceTimerRef.current = setTimeout(() => {
-            void (async () => {
-                try {
-                    const result = await saveTextChunksForItem({
-                        experimentItemId: initialItemId,
-                        projectId: selectedProjectId,
-                        componentId,
-                        chunks: chunkTexts,
-                        model: "manual-chunking",
-                        chunkSizeWords: 20,
-                        chunkOverlapWords: 0,
-                    });
+        try {
+            const result = await saveTextChunksForItem({
+                experimentItemId: initialItemId,
+                projectId: selectedProjectId,
+                componentId,
+                chunks: chunkTexts,
+                model: "manual-chunking",
+                chunkSizeWords: 20,
+                chunkOverlapWords: 0,
+            });
 
-                    setChunkSaveStatus(
-                        `Saved ${String(result.savedChunks)} chunk${result.savedChunks === 1 ? "" : "s"} to TextChunk.`,
-                    );
-                } catch {
-                    setChunkSaveStatus("Unable to save chunks to TextChunk.");
-                }
-            })();
-        }, 450);
+            setChunkSaveStatus(
+                `Saved ${String(result.savedChunks)} chunk${result.savedChunks === 1 ? "" : "s"} to TextChunk.`,
+            );
+        } catch {
+            setChunkSaveStatus("Unable to save chunks to TextChunk.");
+        } finally {
+            setIsSavingChunks(false);
+        }
     }, [blocks, componentId, initialItemId, selectedProjectId]);
 
     return (
@@ -445,41 +349,13 @@ function CausalExtractChunkingContent() {
                         </div>
                     </div>
                     <BackToHome
-                        href={projectBackHref}
+                        href="/"
                         label="Back to project"
+                        useHistoryBack
                         containerClassName=""
                         className="rounded-md px-3 py-2"
                     />
                 </header>
-
-                <section className="mb-6 rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-                        <div>
-                            <label htmlFor="job-id" className="mb-2 block text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                                Optional backend job id
-                            </label>
-                            <input
-                                id="job-id"
-                                type="text"
-                                value={jobIdInput}
-                                onChange={(event) => setJobIdInput(event.target.value)}
-                                placeholder="Paste pipeline job id to load chunks artifact"
-                                className="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
-                            />
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => void loadFromBackend(jobIdInput)}
-                            disabled={isLoadingBackend}
-                            className="rounded-md border border-sky-500 bg-sky-500/15 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                            {isLoadingBackend ? "Loading..." : "Load backend chunks"}
-                        </button>
-                    </div>
-
-                    <p className="mt-3 text-xs text-neutral-400">{loadStatus}</p>
-                    <p className="mt-1 text-xs text-emerald-300">{chunkSaveStatus}</p>
-                </section>
 
                 <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[auto_1fr] lg:items-start">
                     <aside className="lg:sticky lg:top-6">
@@ -532,7 +408,33 @@ function CausalExtractChunkingContent() {
                             </button>
                         </div>
 
+                        <button
+                            type="button"
+                            onClick={() => void handleSaveChunks()}
+                            disabled={isSavingChunks || !initialItemId || !selectedProjectId || !componentId}
+                            className="mt-3 w-full rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
+                        >
+                            {isSavingChunks ? "Saving..." : "Save chunks"}
+                        </button>
+
+                        {hasOriginalAttachment && (
+                            <article className="mt-3 w-full max-w-xs rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Original file</p>
+                                <p className="mt-1 break-all text-sm text-neutral-200">{initialFileName || "attachment"}</p>
+                                <a
+                                    href={attachmentHref}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-3 inline-flex items-center rounded-md border border-sky-700 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/20"
+                                >
+                                    Open attachment
+                                </a>
+                            </article>
+                        )}
+
                         <p className="mt-3 text-xs text-neutral-400">Join selected: {String(selectedForJoin.length)}</p>
+                        <p className="mt-2 max-w-xs text-xs text-neutral-400">{loadStatus}</p>
+                        <p className="mt-1 max-w-xs text-xs text-emerald-300">{chunkSaveStatus}</p>
                     </aside>
 
                     <div>

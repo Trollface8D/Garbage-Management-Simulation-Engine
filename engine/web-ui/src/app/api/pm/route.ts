@@ -264,6 +264,9 @@ export async function POST(request: Request) {
       const sourceType = asString(payload, "sourceType").trim();
       const status = asString(payload, "status").trim();
       const textContent = asString(payload, "textContent");
+      const inputModeRaw = asString(payload, "inputMode").trim();
+      const storagePathOrBlobRaw = asString(payload, "storagePathOrBlob");
+      const transcriptTextRaw = asString(payload, "transcriptText");
       const tags = asArray<string>(payload, "tags").filter((tag) => typeof tag === "string");
 
       if (!id || !projectId || !componentId || !label || !fileName || !sourceType || !status) {
@@ -289,6 +292,15 @@ export async function POST(request: Request) {
           status,
           tags,
           textContent,
+          inputMode:
+            inputModeRaw === "upload" ||
+            inputModeRaw === "manual_text" ||
+            inputModeRaw === "api" ||
+            inputModeRaw === "other"
+              ? inputModeRaw
+              : undefined,
+          storagePathOrBlob: storagePathOrBlobRaw.trim() ? storagePathOrBlobRaw : null,
+          transcriptText: transcriptTextRaw.trim() ? transcriptTextRaw : null,
         }),
       );
     }
