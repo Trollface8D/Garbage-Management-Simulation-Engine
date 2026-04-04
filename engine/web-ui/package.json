@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "db:bootstrap": "tsx scripts/bootstrap-db.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
     "predev": "npm run db:bootstrap",
     "dev": "next dev --webpack",
     "prestart": "npm run db:bootstrap",
@@ -14,6 +17,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
+    "drizzle-orm": "^0.45.2",
     "next": "16.2.0",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^5.6.205",
@@ -26,6 +30,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.0",
     "tailwindcss": "^4",

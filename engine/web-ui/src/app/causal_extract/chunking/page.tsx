@@ -298,7 +298,7 @@ function CausalExtractChunkingContent() {
 
     const handleSaveChunks = useCallback(async () => {
         if (!initialItemId || !selectedProjectId || !componentId) {
-            setChunkSaveStatus("Select a source item before saving chunks.");
+            setChunkSaveStatus("Save unavailable: this page is not linked to a stored source item.");
             return;
         }
 
@@ -321,7 +321,6 @@ function CausalExtractChunkingContent() {
                 chunkSizeWords: 20,
                 chunkOverlapWords: 0,
             });
-
             setChunkSaveStatus(
                 `Saved ${String(result.savedChunks)} chunk${result.savedChunks === 1 ? "" : "s"} to TextChunk.`,
             );
@@ -331,6 +330,8 @@ function CausalExtractChunkingContent() {
             setIsSavingChunks(false);
         }
     }, [blocks, componentId, initialItemId, selectedProjectId]);
+
+    const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 
     return (
         <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
@@ -348,13 +349,22 @@ function CausalExtractChunkingContent() {
                             <span className="text-sm text-neutral-300">{selectedProjectName}</span>
                         </div>
                     </div>
-                    <BackToHome
-                        href="/"
-                        label="Back to project"
-                        useHistoryBack
-                        containerClassName=""
-                        className="rounded-md px-3 py-2"
-                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                        <BackToHome
+                            href={projectBackHref}
+                            label="Back to project"
+                            containerClassName=""
+                            className="rounded-md px-3 py-2"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => void handleSaveChunks()}
+                            disabled={isSavingChunks || !initialItemId || !selectedProjectId || !componentId}
+                            className="rounded-md border border-emerald-600 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-55"
+                        >
+                            {isSavingChunks ? "Saving..." : "Save chunks"}
+                        </button>
+                    </div>
                 </header>
 
                 <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[auto_1fr] lg:items-start">

@@ -1,8 +1,8 @@
-import db, { databasePath, runLegacyMigrationsOnce } from "../src/lib/db-modules/connection";
+import db, { bootstrapDatabase, databasePath } from "@/lib/db-modules/connection";
 
 function main(): void {
-  runLegacyMigrationsOnce();
-  console.log(`[db:bootstrap] Legacy migration check complete: ${databasePath}`);
+  bootstrapDatabase();
+  console.log(`[db:bootstrap] Drizzle migrations applied: ${databasePath}`);
   db.close();
 }
 

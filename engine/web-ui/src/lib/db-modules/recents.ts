@@ -1,48 +1,51 @@
-import db from "./connection";
-import type { RecentArtifact, RecentRow } from "./types";
+import { desc, sql } from "drizzle-orm";
+import drizzleDb from "./drizzle";
+import { recents } from "./schema";
+import type { RecentArtifact } from "./types";
 
 export function listRecents(): RecentArtifact[] {
-  const rows = db
-    .prepare(
-      `SELECT component_id, title, category, project_id, href, opened_at
-       FROM recents
-       ORDER BY opened_at DESC`,
-    )
-    .all() as RecentRow[];
+  const rows = drizzleDb
+    .select()
+    .from(recents)
+    .orderBy(desc(recents.openedAt))
+    .all();
 
   return rows.map((row) => ({
-    componentId: row.component_id,
+    componentId: row.componentId,
     title: row.title,
-    category: row.category,
-    projectId: row.project_id ?? undefined,
+    category: row.category as RecentArtifact["category"],
+    projectId: row.projectId ?? undefined,
     href: row.href,
-    openedAt: row.opened_at,
+    openedAt: row.openedAt,
   }));
 }
 
 export function trackRecent(item: Omit<RecentArtifact, "openedAt">): RecentArtifact {
   const openedAt = new Date().toISOString();
 
-  db.prepare(
-    `INSERT INTO recents (component_id, title, category, project_id, href, opened_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(component_id) DO UPDATE SET
-       title = excluded.title,
-       category = excluded.category,
-       project_id = excluded.project_id,
-       href = excluded.href,
-       opened_at = excluded.opened_at`,
-  ).run(item.componentId, item.title, item.category, item.projectId ?? null, item.href, openedAt);
+  drizzleDb
+    .insert(recents)
+    .values({
+      componentId: item.componentId,
+      title: item.title,
+      category: item.category,
+      projectId: item.projectId ?? null,
+      href: item.href,
+      openedAt,
+    })
+    .onConflictDoUpdate({
+      target: recents.componentId,
+      set: {
+        title: item.title,
+        category: item.category,
+        projectId: item.projectId ?? null,
+        href: item.href,
+        openedAt,
+      },
+    })
+    .run();
 
-  db.prepare(
-    `DELETE FROM recents
-     WHERE component_id NOT IN (
-       SELECT component_id
-       FROM recents
-       ORDER BY opened_at DESC
-       LIMIT 30
-     )`,
-  ).run();
+  pruneRecents(30);
 
   return {
     ...item,
@@ -51,33 +54,39 @@ export function trackRecent(item: Omit<RecentArtifact, "openedAt">): RecentArtif
 }
 
 export function upsertRecentForMigration(recent: RecentArtifact, fallbackOpenedAt: string): void {
-  db.prepare(
-    `INSERT INTO recents (component_id, title, category, project_id, href, opened_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(component_id) DO UPDATE SET
-       title = excluded.title,
-       category = excluded.category,
-       project_id = excluded.project_id,
-       href = excluded.href,
-       opened_at = excluded.opened_at`,
-  ).run(
-    recent.componentId,
-    recent.title,
-    recent.category,
-    recent.projectId ?? null,
-    recent.href,
-    recent.openedAt || fallbackOpenedAt,
-  );
+  drizzleDb
+    .insert(recents)
+    .values({
+      componentId: recent.componentId,
+      title: recent.title,
+      category: recent.category,
+      projectId: recent.projectId ?? null,
+      href: recent.href,
+      openedAt: recent.openedAt || fallbackOpenedAt,
+    })
+    .onConflictDoUpdate({
+      target: recents.componentId,
+      set: {
+        title: recent.title,
+        category: recent.category,
+        projectId: recent.projectId ?? null,
+        href: recent.href,
+        openedAt: recent.openedAt || fallbackOpenedAt,
+      },
+    })
+    .run();
 }
 
 export function pruneRecents(maxItems: number): void {
-  db.prepare(
-    `DELETE FROM recents
-     WHERE component_id NOT IN (
-       SELECT component_id
-       FROM recents
-       ORDER BY opened_at DESC
-       LIMIT ?
-     )`,
-  ).run(maxItems);
+  const safeLimit = Math.max(0, Math.floor(maxItems));
+
+  drizzleDb.run(sql`
+    DELETE FROM recents
+    WHERE component_id NOT IN (
+      SELECT component_id
+      FROM recents
+      ORDER BY opened_at DESC
+      LIMIT ${safeLimit}
+    )
+  `);
 }

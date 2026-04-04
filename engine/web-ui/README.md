@@ -44,9 +44,8 @@ The PM dashboard and causal extraction workspace data are stored in a local SQLi
 - Component-project relationships
 - Soft-delete state for trash
 - Recent opened artifacts
-- Experiment/source item metadata
+- Causal document metadata
 - Input documents (uploaded/manual text)
-- Pipeline jobs
 - Text chunks produced by chunking
 - Extraction/follow-up pipeline entities
 
@@ -56,24 +55,15 @@ Pipeline run artifacts are still managed by the Python backend output directorie
 
 - `engine/web-ui/local.db`
 
-When the app starts and the PM API is called, required tables are created automatically by `src/lib/db-modules/connection.ts`.
+At startup, Drizzle migrations are applied by `src/lib/db-modules/connection.ts`.
 
-### Main tables
+Schema ownership:
 
-- `projects`: `id`, `name`, `created_at`, `updated_at` (+ soft-delete metadata)
-- `simulation_components`: `id`, `title`, `category`, `last_edited_at` (+ soft-delete metadata)
-- `component_project_links`: `id`, `component_id`, `project_id`, `role`
-- `experiment_items`: `id`, `project_id`, `component_id`, `label`, `source_type`, `status`, `file_name`, `created_at`
-- `input_documents`: `id`, `experiment_item_id`, `input_mode`, `source_type`, `original_file_name`, `storage_path_or_blob`, `raw_text`, `transcript_text`, `uploaded_at`
-- `pipeline_jobs`: `id`, `project_id`, `component_id`, `input_document_id`, `status`, `model`, `chunk_size_words`, `chunk_overlap_words`, `started_at`, `finished_at`, `error_message`
-- `text_chunks`: `id`, `pipeline_job_id`, `chunk_index`, `text`, `start_offset`, `end_offset`, `created_at`
-- `extraction_classes`: `id`, `pipeline_job_id`, `chunk_id`, `pattern_type`, `sentence_type`, `marked_type`, `explicit_type`, `marker`, `source_text`
-- `causal_triples`: `id`, `extraction_class_id`, `head`, `relationship`, `tail`, `detail`
-- `follow_up_questions`: `id`, `causal_triple_id`, `source_text`, `sentence_type`, `question_text`, `generated_by`, `generated_at`, `is_filtered_in`
-- `follow_up_answers`: `id`, `follow_up_question_id`, `answer_text`, `answered_by`, `answered_at`
-- `submission_batches`: `id`, `pipeline_job_id`, `scope_type`, `scope_ref`, `submitted_count`, `status_message`, `submitted_at`
-- `pipeline_artifacts`: `id`, `pipeline_job_id`, `artifact_type`, `file_path`, `file_format`, `created_at`
-- `generated_entities`: `id`, `pipeline_job_id`, `entity_name`, `artifact_id`
+- Source of truth: `src/lib/db-modules/schema.ts`
+- Generated migrations: `drizzle/*.sql`
+- Migration metadata: `drizzle/meta/*`
+
+Do not manually edit generated files under `drizzle/` unless absolutely necessary.
 
 ### Setup steps
 
@@ -89,8 +79,26 @@ npm install
 npm run dev
 ```
 
-3. Open the app once (`/`, `/pm/...`, `/trash`, or `/recents`).
-	This triggers PM API calls and initializes SQLite tables if they do not exist.
+3. (Optional) Run migrations manually:
+
+```bash
+npm run db:bootstrap
+```
+
+4. Open the app once (`/`, `/pm/...`, `/trash`, or `/recents`).
+	This triggers PM API calls and uses the migrated SQLite schema.
+
+### Schema change workflow
+
+1. Update schema in `src/lib/db-modules/schema.ts`.
+2. Generate migration SQL:
+
+```bash
+npm run db:generate
+```
+
+3. Commit both schema and generated migration files.
+4. Run app/bootstrap so migrations are applied.
 
 ### How CRUD works
 
@@ -132,9 +140,9 @@ After successful migration, legacy keys are cleared and marker is set.
 
 ### Causal extract persistence notes
 
-- Uploading files or submitting manual text creates/updates an `experiment_item` and stores content in `input_documents`.
-- Editing/splitting/joining chunks in `causal_extract/chunking` saves chunks into `text_chunks` and writes a `pipeline_jobs` record.
-- After chunk save, item status is updated from `raw_text` (shown as "not chunked" in UI) to `chunked`.
+- Uploading files or submitting manual text creates/updates a `causal_project_documents` row and stores content in `input_documents`.
+- Editing/splitting/joining chunks in `causal_extract/chunking` saves chunks into `text_chunks`.
+- After chunk save, item status is updated from `raw_text` (shown as "not chunked" in UI) to `chunked` on `causal_project_documents`.
 - Opening a chunked item in the chunking page loads saved chunks from `text_chunks` as editable blocks.
 
 ### Troubleshooting
