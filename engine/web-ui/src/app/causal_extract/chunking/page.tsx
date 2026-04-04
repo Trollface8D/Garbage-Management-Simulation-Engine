@@ -144,53 +144,6 @@ function CausalExtractChunkingContent() {
         void loadProjectList();
     }, []);
 
-    const loadFromBackend = useCallback(
-        async (targetJobId: string, options: LoadOptions = {}): Promise<void> => {
-            const trimmedJobId = targetJobId.trim();
-            if (!trimmedJobId) {
-                if (!options.silentFailure) {
-                    setLoadStatus("Enter a job id before loading backend chunks.");
-                }
-                return;
-            }
-
-            setIsLoadingBackend(true);
-            setLoadStatus("Loading chunks from backend...");
-
-            try {
-                const response = await fetch(`${engineApiBase}/pipeline/jobs/${encodeURIComponent(trimmedJobId)}/artifacts/chunks`);
-                if (!response.ok) {
-                    throw new Error(`Backend responded with status ${String(response.status)}.`);
-                }
-
-                const payload: unknown = await response.json();
-                const chunkTexts = extractChunkTexts(payload);
-
-                if (chunkTexts.length === 0) {
-                    throw new Error("No chunk text was returned for this job id.");
-                }
-
-                setBlocks(buildBlocksFromTexts(chunkTexts));
-                setActiveIndex(0);
-                setSelectedForJoin([]);
-                setToolMode("edit");
-                setLoadStatus(`Loaded ${String(chunkTexts.length)} chunks from backend.`);
-            } catch (error) {
-                if (!options.silentFailure) {
-                    const message = error instanceof Error ? error.message : "Unable to load backend chunks.";
-                    setLoadStatus(`Backend load failed: ${message}`);
-                }
-            } finally {
-                setIsLoadingBackend(false);
-            }
-        },
-        [engineApiBase],
-    );
-
-    useEffect(() => {
-        setJobIdInput(initialJobId);
-    }, [initialJobId]);
-
     useEffect(() => {
         const seedTexts = getSeedBlocksForComponent(componentId);
         const initialTexts = seedTexts.length > 0 ? seedTexts : [DEFAULT_EDITOR_TEXT];
@@ -344,9 +297,7 @@ function CausalExtractChunkingContent() {
     };
 
     const handleSaveChunks = useCallback(async () => {
-    const handleSaveChunks = useCallback(async () => {
         if (!initialItemId || !selectedProjectId || !componentId) {
-            setChunkSaveStatus("Select a source item before saving chunks.");
             setChunkSaveStatus("Save unavailable: this page is not linked to a stored source item.");
             return;
         }
@@ -357,7 +308,6 @@ function CausalExtractChunkingContent() {
             return;
         }
 
-        setIsSavingChunks(true);
         setIsSavingChunks(true);
         setChunkSaveStatus("Saving chunks...");
 
@@ -371,25 +321,6 @@ function CausalExtractChunkingContent() {
                 chunkSizeWords: 20,
                 chunkOverlapWords: 0,
             });
-        try {
-            const result = await saveTextChunksForItem({
-                experimentItemId: initialItemId,
-                projectId: selectedProjectId,
-                componentId,
-                chunks: chunkTexts,
-                model: "manual-chunking",
-                chunkSizeWords: 20,
-                chunkOverlapWords: 0,
-            });
-
-            setChunkSaveStatus(
-                `Saved ${String(result.savedChunks)} chunk${result.savedChunks === 1 ? "" : "s"} to TextChunk.`,
-            );
-        } catch {
-            setChunkSaveStatus("Unable to save chunks to TextChunk.");
-        } finally {
-            setIsSavingChunks(false);
-        }
             setChunkSaveStatus(
                 `Saved ${String(result.savedChunks)} chunk${result.savedChunks === 1 ? "" : "s"} to TextChunk.`,
             );
@@ -399,6 +330,8 @@ function CausalExtractChunkingContent() {
             setIsSavingChunks(false);
         }
     }, [blocks, componentId, initialItemId, selectedProjectId]);
+
+    const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 
     return (
         <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
@@ -418,10 +351,9 @@ function CausalExtractChunkingContent() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <BackToHome
-                            href="/"
+                            href={projectBackHref}
                             label="Back to project"
-                            useHistoryBack
-                        containerClassName=""
+                            containerClassName=""
                             className="rounded-md px-3 py-2"
                         />
                         <button
