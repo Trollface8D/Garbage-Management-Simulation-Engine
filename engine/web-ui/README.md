@@ -163,3 +163,21 @@ The FastAPI sidecar:
 
 - Large inputs may take time because pipeline stages call external model APIs.
 - Generated files and run outputs remain on disk under `Engine/output/pipeline_runs/fastapi_runs`.
+
+## Map Extraction Workspace (Placeholder Integration)
+
+A new map artifact workspace is available at `/map/{componentId}`.
+
+Current implementation status:
+- Uses separate extract and edit endpoints.
+- Includes placeholder local API routes:
+	- `POST /api/map/extract`
+	- `POST /api/map/edit`
+- Endpoint override env vars are already wired:
+	- `NEXT_PUBLIC_MAP_EXTRACT_ENDPOINT`
+	- `NEXT_PUBLIC_MAP_EDIT_ENDPOINT`
+- Auth is not enabled by default, but request hooks are prepared in `src/lib/map-api-client.ts` (`getAuthHeaders`).
+
+SQLite persistence note:
+- The map page currently saves snapshots in browser localStorage as an interim step.
+- For production persistence/indexing, add map-specific tables (for example `map_graph_jobs`, `map_vertices`, `map_edges`, `map_edit_history`) and move save/load from localStorage into `/api/pm` or dedicated map APIs.
