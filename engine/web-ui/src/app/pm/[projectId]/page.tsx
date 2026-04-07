@@ -216,6 +216,19 @@ export default function ProjectDashboardPage() {
         href: targetHref,
       });
       router.push(targetHref);
+      return;
+    }
+
+    if (category === "Map") {
+      const targetHref = `/${categoryPath.Map}/${encodeURIComponent(createdArtifactId)}`;
+      await trackRecentArtifact({
+        componentId: createdArtifactId,
+        title,
+        category: "Map",
+        projectId,
+        href: targetHref,
+      });
+      router.push(targetHref);
     }
   };
 
