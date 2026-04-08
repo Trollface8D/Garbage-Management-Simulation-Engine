@@ -9,13 +9,17 @@ import {
   type SimulationProject,
 } from "@/lib/simulation-components";
 import BackToHome from "../../components/back-to-home";
-import { loadProjects } from "@/lib/pm-storage";
+import {
+  loadChunkExtractionsForItem,
+  loadProjects,
+  loadTextChunkRecordsForItem,
+} from "@/lib/pm-storage";
 
 type ExtractedTriple = {
   head: string;
   relationship: string;
   tail: string;
-  detail: string;
+  detail: string | null;
 };
 
 type ExtractionClass = {
@@ -33,80 +37,39 @@ type ExtractionPayload = {
   classes: ExtractionClass[];
 };
 
-const CHUNK_OPTIONS = ["chunk 1", "chunk 2", "chunk 3", "chunk 4"];
+type ChunkOption = {
+  id: string;
+  label: string;
+  text: string;
+};
+
+type ExtractApiResponse = {
+  records?: ExtractionClass[];
+  error?: string;
+  detail?: string;
+};
+
+type ChunkExtractResult = {
+  ok: boolean;
+  classes: ExtractionClass[];
+  error?: string;
+};
 
 const SINGLE_CHUNK_SOURCE_TEXT =
   "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย... พังหมด";
 
-function buildClassRecords(contextLabel: string): ExtractionClass[] {
-  if (contextLabel === "chunk 1") {
-    return [
-      {
-        pattern_type: "C",
-        sentence_type: "SB",
-        marked_type: "M",
-        explicit_type: "E",
-        marker: "ทำให้ (makes/causes)",
-        source_text: SINGLE_CHUNK_SOURCE_TEXT,
-        extracted: [
-          {
-            head: "Garbage collectors using rough handling",
-            relationship: "causes",
-            tail: "equipment damage",
-            detail: "using feet to hit bins",
-          },
-          {
-            head: "Aggressive unloading routine",
-            relationship: "causes",
-            tail: "bin wheel failure",
-            detail: "impact force damages wheel joints",
-          },
-        ],
-      },
-      {
-        pattern_type: "C",
-        sentence_type: "SB",
-        marked_type: "M",
-        explicit_type: "E",
-        marker: "ส่งผลให้ (results in)",
-        source_text:
-          "การเทถังแรงและไม่ระวังส่งผลให้ขอบถังแตกและต้องหยุดใช้งานชั่วคราว",
-        extracted: [
-          {
-            head: "Forceful dumping behavior",
-            relationship: "causes",
-            tail: "temporary bin downtime",
-            detail: "cracked bin edges from repeated impacts",
-          },
-        ],
-      },
-    ];
-  }
+const FALLBACK_CHUNKS: ChunkOption[] = [
+  {
+    id: "fallback-chunk-1",
+    label: "chunk 1",
+    text: SINGLE_CHUNK_SOURCE_TEXT,
+  },
+];
 
-  return [
-    {
-      pattern_type: "C",
-      sentence_type: "SB",
-      marked_type: "M",
-      explicit_type: "E",
-      marker: "ทำให้ (makes/causes)",
-      source_text: SINGLE_CHUNK_SOURCE_TEXT,
-      extracted: [
-        {
-          head: `${contextLabel} rough collection practice`,
-          relationship: "causes",
-          tail: "equipment damage",
-          detail: `localized impact in ${contextLabel}`,
-        },
-      ],
-    },
-  ];
-}
-
-function buildSingleChunkPayload(selectedChunk: string): ExtractionPayload {
+function buildSingleChunkPayload(selectedChunk: ChunkOption, classes: ExtractionClass[]): ExtractionPayload {
   return {
-    chunk_label: selectedChunk,
-    classes: buildClassRecords(selectedChunk),
+    chunk_label: selectedChunk.label,
+    classes,
   };
 }
 
@@ -116,6 +79,8 @@ function CausalExtractPageContent() {
   const componentId = searchParams.get("componentId");
   const queryProjectId = searchParams.get("projectId");
   const queryTitle = searchParams.get("title");
+  const itemId = searchParams.get("itemId") ?? "";
+  const itemFileName = searchParams.get("fileName") ?? "";
 
   const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
   const selectedProjectId = queryProjectId ?? getProjectIdForComponent(componentId);
@@ -135,20 +100,122 @@ function CausalExtractPageContent() {
     [projects, selectedProjectId],
   );
 
-  const [selectedChunk, setSelectedChunk] = useState<string>("chunk 1");
+  const [chunkOptions, setChunkOptions] = useState<ChunkOption[]>([]);
+  const [chunkLoadStatus, setChunkLoadStatus] = useState<string>("");
+  const [selectedChunkId, setSelectedChunkId] = useState<string>("");
   const [isExtracted, setIsExtracted] = useState<boolean>(false);
   const [viewAllMode, setViewAllMode] = useState<boolean>(false);
   const [extractionData, setExtractionData] = useState<ExtractionPayload | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
+  const [isExtractingAll, setIsExtractingAll] = useState<boolean>(false);
+  const [extractStatus, setExtractStatus] = useState<string>("");
   const [chunkExtractionMap, setChunkExtractionMap] = useState<Record<string, ExtractionPayload>>({});
 
-  const viewAllPayloads = CHUNK_OPTIONS.map((chunk) => chunkExtractionMap[chunk] ?? buildSingleChunkPayload(chunk));
+  useEffect(() => {
+    let isCancelled = false;
 
-  const handleSelectSingleChunk = (chunk: string) => {
-    setSelectedChunk(chunk);
+    const hydrateChunks = async () => {
+      if (!itemId) {
+        setChunkOptions(FALLBACK_CHUNKS);
+        setSelectedChunkId(FALLBACK_CHUNKS[0]?.id ?? "");
+        setChunkLoadStatus("No file selected. Showing fallback chunk list.");
+        setIsExtracted(false);
+        setExtractionData(null);
+        setViewAllMode(false);
+        setChunkExtractionMap({});
+        return;
+      }
+
+      try {
+        const [savedChunks, existingExtractions] = await Promise.all([
+          loadTextChunkRecordsForItem(itemId),
+          loadChunkExtractionsForItem(itemId),
+        ]);
+        if (isCancelled) {
+          return;
+        }
+
+        if (savedChunks.length === 0) {
+          setChunkOptions([]);
+          setSelectedChunkId("");
+          setChunkLoadStatus(
+            `No saved chunks found for ${itemFileName || "this file"}. Please chunk and save first.`,
+          );
+          setIsExtracted(false);
+          setExtractionData(null);
+          setViewAllMode(false);
+          setChunkExtractionMap({});
+          return;
+        }
+
+        const nextChunkOptions: ChunkOption[] = savedChunks
+          .map((chunk) => ({
+            id: chunk.id,
+            chunkIndex: chunk.chunkIndex,
+            text: chunk.text.trim(),
+          }))
+          .filter((chunk) => chunk.text.length > 0)
+          .sort((a, b) => a.chunkIndex - b.chunkIndex)
+          .map((chunk, index) => ({
+            id: chunk.id,
+            label: `chunk ${String(index + 1)}`,
+            text: chunk.text,
+          }));
+
+        const chunkLabelMap = new Map(nextChunkOptions.map((chunk) => [chunk.id, chunk.label]));
+        const hydratedMap: Record<string, ExtractionPayload> = {};
+        for (const extraction of existingExtractions) {
+          const label = chunkLabelMap.get(extraction.chunkId);
+          if (!label) {
+            continue;
+          }
+          hydratedMap[extraction.chunkId] = {
+            chunk_label: label,
+            classes: extraction.classes,
+          };
+        }
+
+        setChunkOptions(nextChunkOptions);
+        setSelectedChunkId(nextChunkOptions[0].id);
+        setChunkLoadStatus(
+          `Loaded ${String(nextChunkOptions.length)} chunk${nextChunkOptions.length === 1 ? "" : "s"} from ${itemFileName || "selected file"} (${String(Object.keys(hydratedMap).length)} already extracted).`,
+        );
+        const firstChunkPayload = hydratedMap[nextChunkOptions[0].id] ?? null;
+        setIsExtracted(Boolean(firstChunkPayload));
+        setExtractionData(firstChunkPayload);
+        setViewAllMode(false);
+        setChunkExtractionMap(hydratedMap);
+      } catch {
+        if (isCancelled) {
+          return;
+        }
+        setChunkOptions([]);
+        setSelectedChunkId("");
+        setChunkLoadStatus("Unable to load saved chunks for this file.");
+        setIsExtracted(false);
+        setExtractionData(null);
+        setViewAllMode(false);
+        setChunkExtractionMap({});
+      }
+    };
+
+    void hydrateChunks();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [itemFileName, itemId]);
+
+  const viewAllPayloads = chunkOptions.map(
+    (chunk) => chunkExtractionMap[chunk.id] ?? buildSingleChunkPayload(chunk, []),
+  );
+
+  const handleSelectSingleChunk = (chunkId: string) => {
+    setSelectedChunkId(chunkId);
     setViewAllMode(false);
+    setExtractStatus("");
 
-    const existingPayload = chunkExtractionMap[chunk] ?? null;
+    const existingPayload = chunkExtractionMap[chunkId] ?? null;
     if (existingPayload) {
       setIsExtracted(true);
       setExtractionData(existingPayload);
@@ -159,27 +226,138 @@ function CausalExtractPageContent() {
     setExtractionData(null);
   };
 
+  const requestChunkExtraction = async (chunk: ChunkOption): Promise<ChunkExtractResult> => {
+    try {
+      const response = await fetch("/api/causal-extract/extract", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          inputText: chunk.text,
+          causalProjectDocumentId: itemId || undefined,
+          chunkId: chunk.id,
+        }),
+      });
+
+      const payload = (await response.json()) as ExtractApiResponse;
+      if (!response.ok) {
+        return {
+          ok: false,
+          classes: [],
+          error: payload.error || payload.detail || "Extraction request failed.",
+        };
+      }
+
+      return {
+        ok: true,
+        classes: Array.isArray(payload.records) ? payload.records : [],
+      };
+    } catch {
+      return {
+        ok: false,
+        classes: [],
+        error: "Failed to call extraction API.",
+      };
+    }
+  };
+
   const handleExtract = async () => {
+    const selectedChunkData = chunkOptions.find((chunk) => chunk.id === selectedChunkId);
+    if (!selectedChunkData) {
+      return;
+    }
+
     setIsExtracting(true);
+    setExtractStatus("");
 
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 500);
-    });
+    try {
+      const result = await requestChunkExtraction(selectedChunkData);
+      if (!result.ok) {
+        const message = result.error || "Extraction request failed.";
+        setIsExtracted(false);
+        setExtractionData(null);
+        setExtractStatus(message);
+        return;
+      }
 
-    const payload = buildSingleChunkPayload(selectedChunk);
+      const classes = result.classes;
+      const chunkPayload = buildSingleChunkPayload(selectedChunkData, classes);
 
-    setChunkExtractionMap((prev) => ({
-      ...prev,
-      [selectedChunk]: payload,
-    }));
-    setExtractionData(payload);
-    setIsExtracted(true);
-    setIsExtracting(false);
+      setChunkExtractionMap((prev) => ({
+        ...prev,
+        [selectedChunkData.id]: chunkPayload,
+      }));
+      setExtractionData(chunkPayload);
+      setIsExtracted(true);
+      setExtractStatus(
+        `Extracted ${String(classes.length)} class${classes.length === 1 ? "" : "es"} from ${selectedChunkData.label}.`,
+      );
+    } catch {
+      setIsExtracted(false);
+      setExtractionData(null);
+      setExtractStatus("Failed to call extraction API.");
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const handleExtractAll = async () => {
+    if (chunkOptions.length === 0) {
+      return;
+    }
+
+    setIsExtractingAll(true);
+    setExtractStatus(`Extracting 0/${String(chunkOptions.length)} chunks...`);
+
+    let successCount = 0;
+    let failedCount = 0;
+    const failedLabels: string[] = [];
+
+    try {
+      for (let index = 0; index < chunkOptions.length; index += 1) {
+        const chunk = chunkOptions[index];
+        setExtractStatus(`Extracting ${String(index + 1)}/${String(chunkOptions.length)}: ${chunk.label}`);
+
+        const result = await requestChunkExtraction(chunk);
+        if (!result.ok) {
+          failedCount += 1;
+          failedLabels.push(chunk.label);
+          continue;
+        }
+
+        const chunkPayload = buildSingleChunkPayload(chunk, result.classes);
+        setChunkExtractionMap((prev) => ({
+          ...prev,
+          [chunk.id]: chunkPayload,
+        }));
+        successCount += 1;
+      }
+
+      setViewAllMode(true);
+      setSelectedChunkId("view-all");
+      setExtractionData(null);
+      setIsExtracted(false);
+
+      if (failedCount === 0) {
+        setExtractStatus(`Extracted all ${String(successCount)} chunks successfully.`);
+      } else {
+        setExtractStatus(
+          `Extracted ${String(successCount)} chunk${successCount === 1 ? "" : "s"}, failed ${String(failedCount)} (${failedLabels.join(", ")}).`,
+        );
+      }
+    } finally {
+      setIsExtractingAll(false);
+    }
   };
 
   const handleActivateViewAll = () => {
-    setSelectedChunk("view all");
+    if (chunkOptions.length === 0) {
+      return;
+    }
+    setSelectedChunkId("view-all");
     setViewAllMode(true);
+    setExtractStatus("");
   };
 
   return (
@@ -216,28 +394,44 @@ function CausalExtractPageContent() {
           <aside className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-4">
             <h2 className="text-lg font-bold text-neutral-100">Chunk list</h2>
             <p className="mt-1 text-xs text-neutral-400">Select a single chunk or use view all mode.</p>
+            <p className="mt-2 text-xs text-neutral-500">{chunkLoadStatus}</p>
+            <p className="mt-1 text-xs text-emerald-300">{extractStatus}</p>
 
             <div className="mt-4 space-y-2">
-              {CHUNK_OPTIONS.map((chunk) => {
-                const isActive = !viewAllMode && selectedChunk === chunk;
+              {chunkOptions.map((chunk) => {
+                const isActive = !viewAllMode && selectedChunkId === chunk.id;
+                const isChunkExtracted = Boolean(chunkExtractionMap[chunk.id]);
 
                 return (
                   <button
                     type="button"
-                    key={chunk}
-                    onClick={() => handleSelectSingleChunk(chunk)}
+                    key={chunk.id}
+                    onClick={() => handleSelectSingleChunk(chunk.id)}
                     className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm transition ${
                       isActive
                         ? "border-sky-500 bg-sky-950/30 text-sky-200"
                         : "border-neutral-700 bg-neutral-900 text-neutral-200 hover:border-neutral-500"
                     } w-full text-left`}
                   >
-                    <span className="font-medium">
-                      {chunk}
+                    <span>
+                      <span className="block font-medium">{chunk.label}</span>
+                      {isChunkExtracted && (
+                        <span className="mt-1 inline-flex rounded-full border border-emerald-700 bg-emerald-900/30 px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                          extracted
+                        </span>
+                      )}
+                      <span className="mt-1 block text-xs text-neutral-400">
+                        {chunk.text.length > 60 ? `${chunk.text.slice(0, 60)}...` : chunk.text}
+                      </span>
                     </span>
                   </button>
                 );
               })}
+              {chunkOptions.length === 0 && (
+                <p className="rounded-md border border-dashed border-neutral-700 px-3 py-2 text-xs text-neutral-400">
+                  No chunks available for this file.
+                </p>
+              )}
             </div>
 
             <div className="mt-4 rounded-md border border-neutral-700 bg-neutral-900 p-3">
@@ -245,13 +439,22 @@ function CausalExtractPageContent() {
                 <button
                   type="button"
                   onClick={handleActivateViewAll}
+                  disabled={chunkOptions.length === 0 || isExtractingAll}
                   className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
                     viewAllMode
                       ? "bg-sky-950/40 text-sky-200"
                       : "bg-neutral-800 text-neutral-200 hover:bg-neutral-700"
-                  }`}
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
                 >
                   view all
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExtractAll}
+                  disabled={chunkOptions.length === 0 || isExtracting || isExtractingAll}
+                  className="rounded-md bg-sky-900/40 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isExtractingAll ? "Extracting all..." : "Extract all"}
                 </button>
               </div>
             </div>
@@ -309,6 +512,9 @@ function CausalExtractPageContent() {
                           <div className="mt-4 rounded-lg border border-neutral-700 bg-neutral-800/70 p-4">
                             <p className="text-xs uppercase tracking-wide text-neutral-400">extracted</p>
                             <div className="mt-3 space-y-3">
+                              {item.extracted.length === 0 && (
+                                <p className="text-xs text-neutral-400">No extracted relations returned.</p>
+                              )}
                               {item.extracted.map((relation, relationIndex) => (
                                 <dl
                                   key={`${payload.chunk_label}-${String(index)}-${String(relationIndex)}`}
@@ -340,12 +546,16 @@ function CausalExtractPageContent() {
                   </div>
                 ))}
               </div>
+            ) : chunkOptions.length === 0 ? (
+              <div className="flex min-h-[360px] items-center justify-center text-sm text-neutral-400">
+                No chunked data found for this file yet. Open chunking page and save chunks first.
+              </div>
             ) : !isExtracted ? (
               <div className="flex min-h-[360px] items-center justify-center">
                 <button
                   type="button"
                   onClick={handleExtract}
-                  disabled={isExtracting}
+                  disabled={isExtracting || isExtractingAll}
                   className="rounded-lg border border-neutral-600 bg-neutral-800 px-8 py-3 text-base font-semibold text-neutral-100 transition hover:border-sky-500 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {isExtracting ? "Extracting..." : "Extract"}
@@ -403,6 +613,9 @@ function CausalExtractPageContent() {
                       <div className="mt-4 rounded-lg border border-neutral-700 bg-neutral-800/70 p-4">
                         <p className="text-xs uppercase tracking-wide text-neutral-400">extracted</p>
                         <div className="mt-3 space-y-3">
+                          {item.extracted.length === 0 && (
+                            <p className="text-xs text-neutral-400">No extracted relations returned.</p>
+                          )}
                           {item.extracted.map((relation, relationIndex) => (
                             <dl
                               key={`${extractionData.chunk_label}-${String(index)}-${String(relationIndex)}`}

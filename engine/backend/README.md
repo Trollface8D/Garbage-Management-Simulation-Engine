@@ -35,7 +35,7 @@ This guide explains how the backend is structured, how to add another pipeline, 
 From workspace root:
 
 ```powershell
-python -m Engine.backend --serve-api --host 127.0.0.1 --port 8000
+python -m engine.backend --serve-api --host 127.0.0.1 --port 8000
 ```
 
 ### 2) Run single pipeline from CLI (no API server)

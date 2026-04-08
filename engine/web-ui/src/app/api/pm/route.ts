@@ -11,7 +11,9 @@ import {
   listComponents,
   listDeletedComponents,
   listDeletedProjects,
+  listLatestTextChunkRecordsForExperimentItem,
   listLatestTextChunksForExperimentItem,
+  listLatestChunkExtractionsForExperimentItem,
   listProjects,
   listRecents,
   migrateLegacyData,
@@ -34,7 +36,9 @@ type PMResource =
   | "recents"
   | "causal-source-items"
   | "causal-source-item"
-  | "text-chunks";
+  | "text-chunks"
+  | "text-chunk-records"
+  | "chunk-extractions";
 
 type PMAction =
   | "create-project"
@@ -123,6 +127,22 @@ export async function GET(request: Request) {
       }
 
       return NextResponse.json(listLatestTextChunksForExperimentItem(itemId));
+    }
+    case "text-chunk-records": {
+      const itemId = (url.searchParams.get("itemId") ?? "").trim();
+      if (!itemId) {
+        return badRequest("itemId is required for text-chunk-records.");
+      }
+
+      return NextResponse.json(listLatestTextChunkRecordsForExperimentItem(itemId));
+    }
+    case "chunk-extractions": {
+      const itemId = (url.searchParams.get("itemId") ?? "").trim();
+      if (!itemId) {
+        return badRequest("itemId is required for chunk-extractions.");
+      }
+
+      return NextResponse.json(listLatestChunkExtractionsForExperimentItem(itemId));
     }
     default:
       return badRequest("Unsupported resource.");
