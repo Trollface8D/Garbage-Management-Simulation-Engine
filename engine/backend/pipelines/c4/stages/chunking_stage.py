@@ -1,6 +1,6 @@
 import re
 
-from ..adapters.gemini_client import GeminiGateway
+from ....infra.gemini_client import GeminiGateway
 from ..models import ChunkRecord
 
 

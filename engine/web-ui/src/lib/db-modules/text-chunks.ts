@@ -4,6 +4,12 @@ import drizzleDb from "./drizzle";
 import { causalProjectDocuments, inputDocuments, textChunks } from "./schema";
 import type { SaveTextChunksInput, SaveTextChunksResult } from "./types";
 
+export type TextChunkRecord = {
+  id: string;
+  chunkIndex: number;
+  text: string;
+};
+
 function buildChunkOffsets(chunks: string[]): Array<{ text: string; start: number; end: number }> {
   let cursor = 0;
 
@@ -31,6 +37,32 @@ export function listLatestTextChunksForExperimentItem(experimentItemId: string):
     .all();
 
   return rows.map((row) => row.text).filter((text) => text.trim().length > 0);
+}
+
+export function listLatestTextChunkRecordsForExperimentItem(experimentItemId: string): TextChunkRecord[] {
+  const trimmedItemId = experimentItemId.trim();
+  if (!trimmedItemId) {
+    return [];
+  }
+
+  const rows = drizzleDb
+    .select({
+      id: textChunks.id,
+      chunkIndex: textChunks.chunkIndex,
+      text: textChunks.text,
+    })
+    .from(textChunks)
+    .where(eq(textChunks.causalProjectDocumentId, trimmedItemId))
+    .orderBy(asc(textChunks.chunkIndex))
+    .all();
+
+  return rows
+    .map((row) => ({
+      id: row.id,
+      chunkIndex: row.chunkIndex,
+      text: row.text,
+    }))
+    .filter((row) => row.text.trim().length > 0);
 }
 
 export function saveTextChunks(input: SaveTextChunksInput): SaveTextChunksResult {

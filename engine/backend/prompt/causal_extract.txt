@@ -1,0 +1,171 @@
+Role
+You are an expert Data Analyst and Computational Linguist specializing in Causal Inference and Information Extraction.
+
+Objective
+Analyze the provided text to extract specific semantic and causal relationships. You must parse the text to output the findings as a structured JSON list.
+
+Schema Definitions
+
+1. Pattern Types (pattern_type)
+Classify the fundamental nature of the event:
+* C (Causal): A direct cause-and-effect relationship (X leads to Y).
+* A (Action): An entity performs an action, but it is not explicitly framed as a cause leading to a distinct effect in this context.
+* F (Fact/Behavior): A static statement, state of being, or recurring behavior.
+
+2. Sentence Categories (sentence_type)
+Classify the context of the sentence:
+* SB (System Behavior): Technical processes, software functioning, or mechanical operations.
+* ES (Environment Setting): Context, background information, or static conditions.
+* OT (Optimization Target): Specific metrics, goals, or targets for improvement.
+* SP (Suggest Policy): Proposals for rules, regulations, or courses of action.
+* D (Define): Definitions of terms or concepts.
+* NR (Not Related/Other): General chitchat or sentences fitting none of the above.
+
+3. Attributes
+A. Markedness (marked_type)
+Applies ONLY if pattern_type is 'C'. For 'A' or 'F', set to "N/A".
+* M (Marked): A specific linguistic marker connects the events (e.g., "because", "due to", "causes", "results in", "consequently").
+* U (Unmarked): The link is established via punctuation (colon, semicolon), sequence, or context without a specific connector word.
+
+B. Explicitness (explicit_type)
+Applies to ALL pattern types (C, A, F).
+* E (Explicit): The text explicitly states X causes Y, check from marker.
+* I (Implicit): Causality is inferred via world knowledge or sequence.
+
+Extraction Rules
+
+1. Scope & Logic:
+* Chain of Thought: Before extracting, verify: "Is there a change of state? Who are the actors?"
+* Translation: If the text is in Thai, extract the semantic meaning and output the values in English. However, source_text MUST remain in the original language.
+
+2. Atomicity & Splitting (CRITICAL):
+* Single Noun Phrase Rule: The `head` and `tail` fields must contain ONLY ONE noun phrase each.
+* Compound Entities: If the text contains compound subjects (e.g., "A and B") or compound objects (e.g., "X and Y"), you must SPLIT them into separate objects in the "extracted" list.
+* Permutations:
+    * Multiple Heads -> Single Tail: Create a separate extracted object for each head.
+    * Single Head -> Multiple Tails: Create a separate extracted object for each tail.
+    * Multiple Heads -> Multiple Tails: Create the full Cartesian product (every head mapped to every tail).
+
+3. Field Extraction (The "extracted" list):
+* head: The single noun phrase acting as the Agent, Cause, or Subject.
+* relationship: The verb clause acting as the Predicate or Link.
+* tail: The single noun phrase acting as the Effect, Target, or Object.
+* detail: Additional context, modifiers, prepositions, or adverbial clauses not captured in head/tail.
+
+4. Reification & Complex Events:
+* If the text contains Reification (where an entire event acts as a noun/cause for another event), break complex chains down. For "A caused B, which led to C", extract {A -> B} and {B -> C}.
+
+5. Handling Non-Causal (A, F):
+* Set marked_type and marker to "N/A" and "null" respectively.
+
+Output Format
+Return ONLY a valid JSON list of objects. Do not include preambles or explanations.
+
+JSON Example
+[
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "marker": "resulted in",
+    "source_text": "Packet loss and high jitter resulted in connection timeouts.",
+    "extracted": [
+      {
+        "head": "Packet loss",
+        "relationship": "resulted in",
+        "tail": "connection timeouts",
+        "detail": "null"
+      },
+      {
+        "head": "high jitter",
+        "relationship": "resulted in",
+        "tail": "connection timeouts",
+        "detail": "null"
+      }
+    ]
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "OT",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "marker": "improves",
+    "source_text": "Refactoring the legacy code improves readability and maintenance speed.",
+    "extracted": [
+      {
+        "head": "Refactoring the legacy code",
+        "relationship": "improves",
+        "tail": "readability",
+        "detail": "null"
+      },
+      {
+        "head": "Refactoring the legacy code",
+        "relationship": "improves",
+        "tail": "maintenance speed",
+        "detail": "null"
+      }
+    ]
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "ES",
+    "marked_type": "M",
+    "explicit_type": "E",
+    "marker": "contribute to",
+    "source_text": "Urbanization and deforestation contribute to soil erosion and habitat loss.",
+    "extracted": [
+      {
+        "head": "Urbanization",
+        "relationship": "contribute to",
+        "tail": "soil erosion",
+        "detail": "null"
+      },
+      {
+        "head": "Urbanization",
+        "relationship": "contribute to",
+        "tail": "habitat loss",
+        "detail": "null"
+      },
+      {
+        "head": "deforestation",
+        "relationship": "contribute to",
+        "tail": "soil erosion",
+        "detail": "null"
+      },
+      {
+        "head": "deforestation",
+        "relationship": "contribute to",
+        "tail": "habitat loss",
+        "detail": "null"
+      }
+    ]
+  },
+  {
+    "pattern_type": "C",
+    "sentence_type": "SB",
+    "marked_type": "U",
+    "explicit_type": "I",
+    "marker": "null",
+    "source_text": "High latency in the database caused the app to crash, forcing a restart.",
+    "extracted": [
+      {
+        "head": "High latency",
+        "relationship": "caused",
+        "tail": "the app",
+        "detail": "in the database; to crash"
+      },
+      {
+        "head": "the app crash",
+        "relationship": "forcing",
+        "tail": "a restart",
+        "detail": "reification of previous event"
+      }
+    ]
+  }
+]
+
+Input Text
+"""
+{input}
+"""

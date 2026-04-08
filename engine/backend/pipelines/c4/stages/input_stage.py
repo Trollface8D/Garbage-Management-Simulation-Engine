@@ -11,7 +11,7 @@ from ....infra.paths import (
     ROOT_DIR,
     SUPPORTED_AUDIO_EXTENSIONS,
 )
-from ..adapters.gemini_client import GeminiGateway
+from ....infra.gemini_client import GeminiGateway
 
 
 def resolve_input_path(input_path: Path | None) -> Path | None:

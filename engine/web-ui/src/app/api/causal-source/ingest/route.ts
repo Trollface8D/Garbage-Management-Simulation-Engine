@@ -1,8 +1,17 @@
 import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
+import { and, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import db, { upsertCausalSourceItem, type CausalSourceItem } from "@/lib/db";
+import { upsertCausalSourceItem, type CausalSourceItem } from "@/lib/db";
+import drizzleDb from "@/lib/db-modules/drizzle";
+import {
+  componentProjectLinks,
+  componentTrash,
+  projectComponents,
+  projects,
+  projectTrash,
+} from "@/lib/db-modules/schema";
 
 type SupportedSourceType = "text" | "audio";
 
@@ -23,19 +32,36 @@ function normalizeFileName(fileName: string): string {
 }
 
 function projectExists(projectId: string): boolean {
-  const row = db
-    .prepare("SELECT id FROM projects WHERE id = ? AND deleted_at IS NULL LIMIT 1")
-    .get(projectId) as { id: string } | undefined;
+  const row = drizzleDb
+    .select({ id: projects.id })
+    .from(projects)
+    .leftJoin(projectTrash, eq(projectTrash.projectId, projects.id))
+    .where(and(eq(projects.id, projectId), isNull(projectTrash.projectId)))
+    .limit(1)
+    .get();
 
-  return Boolean(row?.id);
+  return Boolean(row);
 }
 
-function componentExists(componentId: string): boolean {
-  const row = db
-    .prepare("SELECT id FROM simulation_components WHERE id = ? AND deleted_at IS NULL LIMIT 1")
-    .get(componentId) as { id: string } | undefined;
+function componentExists(projectId: string, componentId: string): boolean {
+  const row = drizzleDb
+    .select({ id: projectComponents.id })
+    .from(projectComponents)
+    .innerJoin(componentProjectLinks, eq(componentProjectLinks.componentId, projectComponents.id))
+    .leftJoin(componentTrash, eq(componentTrash.componentId, projectComponents.id))
+    .leftJoin(projectTrash, eq(projectTrash.projectId, componentProjectLinks.projectId))
+    .where(
+      and(
+        eq(projectComponents.id, componentId),
+        eq(componentProjectLinks.projectId, projectId),
+        isNull(componentTrash.componentId),
+        isNull(projectTrash.projectId),
+      ),
+    )
+    .limit(1)
+    .get();
 
-  return Boolean(row?.id);
+  return Boolean(row);
 }
 
 function detectSourceType(file: File): SupportedSourceType {
@@ -152,36 +178,36 @@ async function extractPdfWithGemini(buffer: Buffer, fileName: string): Promise<s
   );
 }
 
-async function extractPdfWithLocalParser(buffer: Buffer): Promise<string> {
-  const { PDFParse } = await import("pdf-parse");
-  const parser = new PDFParse({ data: buffer });
+// async function extractPdfWithLocalParser(buffer: Buffer): Promise<string> {
+//   const { PDFParse } = await import("pdf-parse");
+//   const parser = new PDFParse({ data: buffer });
 
-  try {
-    const result = await parser.getText();
-    return (result.text ?? "").trim();
-  } finally {
-    await parser.destroy().catch(() => undefined);
-  }
-}
+//   try {
+//     const result = await parser.getText();
+//     return (result.text ?? "").trim();
+//   } finally {
+//     await parser.destroy().catch(() => undefined);
+//   }
+// }
 
 async function extractRawTextFromUploadedFile(file: File, buffer: Buffer, sourceType: SupportedSourceType): Promise<string> {
   if (sourceType === "audio") {
     return transcribeAudioWithGemini(buffer, file.type, file.name);
   }
 
-  if (isPdfFile(file)) {
-    try {
-      const localText = await extractPdfWithLocalParser(buffer);
-      if (localText) {
-        return localText;
-      }
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "unknown local parser error";
-      console.warn(`[causal-source/ingest] Local PDF parser failed, falling back to Gemini: ${reason}`);
-    }
+  // if (isPdfFile(file)) {
+  //   try {
+  //     const localText = await extractPdfWithLocalParser(buffer);
+  //     if (localText) {
+  //       return localText;
+  //     }
+  //   } catch (error) {
+  //     const reason = error instanceof Error ? error.message : "unknown local parser error";
+  //     console.warn(`[causal-source/ingest] Local PDF parser failed, falling back to Gemini: ${reason}`);
+  //   }
 
-    return extractPdfWithGemini(buffer, file.name);
-  }
+  //   return extractPdfWithGemini(buffer, file.name);
+  // }
 
   if (isTextLikeFile(file)) {
     return buffer.toString("utf8").trim();
@@ -214,8 +240,8 @@ export async function POST(request: Request) {
     return badRequest(`projectId '${projectId}' was not found or is deleted.`);
   }
 
-  if (!componentExists(componentId)) {
-    return badRequest(`componentId '${componentId}' was not found or is deleted.`);
+  if (!componentExists(projectId, componentId)) {
+    return badRequest(`componentId '${componentId}' was not found in project '${projectId}' or is deleted.`);
   }
 
   const sourceType = detectSourceType(file);

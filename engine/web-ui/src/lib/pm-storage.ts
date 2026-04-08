@@ -66,7 +66,9 @@ type PMGetResource =
   | "recents"
   | "causal-source-items"
   | "causal-source-item"
-  | "text-chunks";
+  | "text-chunks"
+  | "text-chunk-records"
+  | "chunk-extractions";
 
 type PMAction =
   | "create-project"
@@ -96,6 +98,35 @@ export type SaveTextChunksInput = {
 export type SaveTextChunksResult = {
   pipelineJobId: string;
   savedChunks: number;
+};
+
+export type TextChunkRecord = {
+  id: string;
+  chunkIndex: number;
+  text: string;
+};
+
+export type ChunkExtractedRelationRecord = {
+  head: string;
+  relationship: string;
+  tail: string;
+  detail: string | null;
+};
+
+export type ChunkExtractionClassRecord = {
+  pattern_type: string;
+  sentence_type: string;
+  marked_type: string;
+  explicit_type: string;
+  marker: string;
+  source_text: string;
+  extracted: ChunkExtractedRelationRecord[];
+};
+
+export type ChunkExtractionRecord = {
+  chunkId: string;
+  chunkIndex: number;
+  classes: ChunkExtractionClassRecord[];
 };
 
 let migrationPromise: Promise<void> | null = null;
@@ -369,6 +400,44 @@ export async function loadTextChunksForItem(itemId: string): Promise<string[]> {
   }
 
   return (await response.json()) as string[];
+}
+
+export async function loadTextChunkRecordsForItem(itemId: string): Promise<TextChunkRecord[]> {
+  await ensureLegacyMigration();
+
+  const url = new URL(PM_API_PATH, window.location.origin);
+  url.searchParams.set("resource", "text-chunk-records");
+  url.searchParams.set("itemId", itemId);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`PM GET failed (${String(response.status)}): text-chunk-records`);
+  }
+
+  return (await response.json()) as TextChunkRecord[];
+}
+
+export async function loadChunkExtractionsForItem(itemId: string): Promise<ChunkExtractionRecord[]> {
+  await ensureLegacyMigration();
+
+  const url = new URL(PM_API_PATH, window.location.origin);
+  url.searchParams.set("resource", "chunk-extractions");
+  url.searchParams.set("itemId", itemId);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`PM GET failed (${String(response.status)}): chunk-extractions`);
+  }
+
+  return (await response.json()) as ChunkExtractionRecord[];
 }
 
 export async function saveCausalSourceItem(item: CausalSourceItemInput): Promise<CausalSourceItem> {

@@ -62,6 +62,7 @@ Enum submit_scope_type {
 Table projects {
     id varchar [pk]
     name varchar [not null, unique]
+    deleted_at timestamp
     created_at timestamp [not null]
     updated_at timestamp [not null]
 }

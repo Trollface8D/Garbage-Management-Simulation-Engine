@@ -39,7 +39,19 @@ export {
   upsertCausalSourceItem,
 } from "./db-modules/causal-source-items";
 
-export { listLatestTextChunksForExperimentItem, saveTextChunks } from "./db-modules/text-chunks";
+export {
+  listLatestTextChunkRecordsForExperimentItem,
+  listLatestTextChunksForExperimentItem,
+  saveTextChunks,
+  type TextChunkRecord,
+} from "./db-modules/text-chunks";
+
+export {
+  listLatestChunkExtractionsForExperimentItem,
+  type ChunkExtractionRecord,
+  type ExtractionClassRecord as ChunkExtractionClassRecord,
+  type ExtractedRelationRecord as ChunkExtractedRelationRecord,
+} from "./db-modules/chunk-extractions";
 
 export { migrateLegacyData } from "./db-modules/migration";
 

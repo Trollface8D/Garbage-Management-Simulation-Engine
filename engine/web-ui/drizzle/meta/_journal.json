@@ -15,6 +15,13 @@
       "when": 1775294537308,
       "tag": "0001_vengeful_lionheart",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1775639300000,
+      "tag": "0002_add_projects_deleted_at",
+      "breakpoints": true
     }
   ]
 }

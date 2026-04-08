@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ...infra.io_utils import preview, read_text, slugify, write_json, write_text
-from .adapters.gemini_client import GeminiGateway
+from ...infra.gemini_client import GeminiGateway
 from .stages import (
     chunk_text_with_topic_summaries,
     collect_template_context,

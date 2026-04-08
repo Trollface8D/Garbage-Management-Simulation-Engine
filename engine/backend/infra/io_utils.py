@@ -6,7 +6,7 @@ from typing import Any
 
 
 def resolve_api_key() -> str | None:
-    return os.getenv("API_KEY") or os.getenv("GOOGLE_API_KEY")
+    return os.getenv("GEMINI_API_KEY") or os.getenv("API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 
 def read_text(path: Path) -> str:
