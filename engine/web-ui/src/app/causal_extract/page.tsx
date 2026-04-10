@@ -411,7 +411,7 @@ function CausalExtractHomeContent() {
                         <div className="mt-4 rounded-xl border border-dashed border-neutral-600 bg-neutral-900/70 p-4">
                             <p className="text-sm font-semibold text-neutral-200">Upload source files</p>
                             <p className="mt-1 text-xs text-neutral-400">
-                                Add text, PDF, or audio files. Audio will be transcribed to text on the backend.
+                                Add .txt, .pdf, or audio files. Audio will be transcribed to text on the backend.
                             </p>
                             <button
                                 type="button"
@@ -426,7 +426,7 @@ function CausalExtractHomeContent() {
                                 ref={filePickerRef}
                                 type="file"
                                 multiple
-                                accept=".txt,.pdf,text/plain,application/pdf,audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac"
+                                accept=".txt,.pdf,audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac,.webm"
                                 onChange={(event) => {
                                     void handleFilesSelected(event);
                                 }}
