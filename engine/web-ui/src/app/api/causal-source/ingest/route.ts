@@ -195,19 +195,9 @@ async function extractRawTextFromUploadedFile(file: File, buffer: Buffer, source
     return transcribeAudioWithGemini(buffer, file.type, file.name);
   }
 
-  // if (isPdfFile(file)) {
-  //   try {
-  //     const localText = await extractPdfWithLocalParser(buffer);
-  //     if (localText) {
-  //       return localText;
-  //     }
-  //   } catch (error) {
-  //     const reason = error instanceof Error ? error.message : "unknown local parser error";
-  //     console.warn(`[causal-source/ingest] Local PDF parser failed, falling back to Gemini: ${reason}`);
-  //   }
-
-  //   return extractPdfWithGemini(buffer, file.name);
-  // }
+  if (isPdfFile(file)) {
+    return extractPdfWithGemini(buffer, file.name);
+  }
 
   if (isTextLikeFile(file)) {
     return buffer.toString("utf8").trim();
