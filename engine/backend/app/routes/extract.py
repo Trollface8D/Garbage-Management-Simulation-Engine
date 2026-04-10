@@ -1,3 +1,4 @@
+from io import BytesIO
 from typing import Any
 from uuid import uuid4
 
@@ -23,12 +24,30 @@ from ..services.structure_extractor import (
 router = APIRouter(tags=["extract"])
 
 
-def _extract_text_from_txt_file(text_file: UploadFile) -> str:
+def _resolve_uploaded_file_type(text_file: UploadFile) -> str:
     filename = (text_file.filename or "").strip().lower()
-    if not filename.endswith(".txt"):
-        raise ValueError("Only .txt files are supported")
+    if filename.endswith(".txt"):
+        return "txt"
+    if filename.endswith(".pdf"):
+        return "pdf"
+    raise ValueError("Only .txt and .pdf files are supported")
 
-    return filename
+
+def _extract_text_from_pdf_bytes(file_bytes: bytes) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:
+        raise RuntimeError("PDF support requires pypdf to be installed on the server.") from exc
+
+    try:
+        reader = PdfReader(BytesIO(file_bytes))
+    except Exception as exc:
+        raise ValueError("Uploaded PDF could not be read.") from exc
+
+    text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+    if not text:
+        raise ValueError("No extractable text found in PDF.")
+    return text
 
 
 async def _resolve_raw_text_from_request(request: Request) -> tuple[str | None, dict[str, Any]]:
@@ -81,17 +100,26 @@ async def extract_structure(
 
     if textFile is not None:
         try:
-            _extract_text_from_txt_file(textFile)
+            file_type = _resolve_uploaded_file_type(textFile)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
         file_bytes = await textFile.read()
         if not file_bytes:
             return JSONResponse({"error": "Uploaded file is empty."}, status_code=400)
-        try:
-            input_text = file_bytes.decode("utf-8").strip()
-        except UnicodeDecodeError:
-            return JSONResponse({"error": "Text file must be UTF-8 encoded."}, status_code=400)
+
+        if file_type == "txt":
+            try:
+                input_text = file_bytes.decode("utf-8").strip()
+            except UnicodeDecodeError:
+                return JSONResponse({"error": "Text file must be UTF-8 encoded."}, status_code=400)
+        else:
+            try:
+                input_text = _extract_text_from_pdf_bytes(file_bytes)
+            except ValueError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=400)
+            except RuntimeError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=500)
 
     if not input_text:
         return JSONResponse({"error": "No text content provided for extraction."}, status_code=400)
