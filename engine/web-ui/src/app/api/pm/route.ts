@@ -4,6 +4,7 @@ import {
   createComponent,
   createProject,
   deleteCausalSourceItem,
+  getCausalArtifactsForItem,
   getCausalSourceItem,
   hardDeleteComponent,
   hardDeleteProject,
@@ -19,6 +20,7 @@ import {
   migrateLegacyData,
   restoreComponent,
   restoreProject,
+  saveCausalArtifacts,
   softDeleteComponent,
   softDeleteProject,
   saveTextChunks,
@@ -38,7 +40,8 @@ type PMResource =
   | "causal-source-item"
   | "text-chunks"
   | "text-chunk-records"
-  | "chunk-extractions";
+  | "chunk-extractions"
+  | "causal-artifacts";
 
 type PMAction =
   | "create-project"
@@ -53,7 +56,8 @@ type PMAction =
   | "track-recent"
   | "upsert-causal-source-item"
   | "delete-causal-source-item"
-  | "save-text-chunks";
+  | "save-text-chunks"
+  | "save-causal-artifacts";
 
 type PMActionRequest = {
   action: PMAction;
@@ -141,8 +145,15 @@ export async function GET(request: Request) {
       if (!itemId) {
         return badRequest("itemId is required for chunk-extractions.");
       }
-
       return NextResponse.json(listLatestChunkExtractionsForExperimentItem(itemId));
+    }
+    case "causal-artifacts": {
+      const itemId = (url.searchParams.get("itemId") ?? "").trim();
+      if (!itemId) {
+        return badRequest("itemId is required for causal-artifacts.");
+      }
+
+      return NextResponse.json(getCausalArtifactsForItem(itemId));
     }
     default:
       return badRequest("Unsupported resource.");
@@ -363,6 +374,24 @@ export async function POST(request: Request) {
           model,
           chunkSizeWords,
           chunkOverlapWords,
+        }),
+      );
+    }
+
+    case "save-causal-artifacts": {
+      const experimentItemId = asString(payload, "experimentItemId").trim();
+      const rawExtraction = asArray(payload, "rawExtraction") as Parameters<typeof saveCausalArtifacts>[0]["rawExtraction"];
+      const followUp = asArray(payload, "followUp") as Parameters<typeof saveCausalArtifacts>[0]["followUp"];
+
+      if (!experimentItemId) {
+        return badRequest("experimentItemId is required.");
+      }
+
+      return NextResponse.json(
+        saveCausalArtifacts({
+          experimentItemId,
+          rawExtraction,
+          followUp,
         }),
       );
     }
