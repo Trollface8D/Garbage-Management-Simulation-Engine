@@ -58,25 +58,6 @@ type ChunkExtractResult = {
   classes: ExtractionClass[];
   error?: string;
 };
-type CausalExportPayload = {
-  export_type: "causal";
-  version: "1.0";
-  exported_at: string;
-  project_id: string;
-  component_id: string;
-  item_id: string;
-  file_name: string;
-  raw_extraction: ExtractionPayload[];
-  follow_up: FollowUpExportRecord[];
-  chunk_snapshot: Array<{
-    index: number;
-    metadata: {
-      length: number;
-      source: "text_chunks";
-    };
-    content: string;
-  }>;
-};
 
 const SINGLE_CHUNK_SOURCE_TEXT =
   "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย... พังหมด";
@@ -94,22 +75,6 @@ function buildSingleChunkPayload(selectedChunk: ChunkOption, classes: Extraction
     chunk_label: selectedChunk.label,
     classes,
   };
-}
-
-function sanitizeFilenameSegment(value: string): string {
-  return value.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "item";
-}
-
-function downloadJsonFile(fileName: string, payload: unknown): void {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const href = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(href);
 }
 
 function CausalExtractPageContent() {
@@ -150,7 +115,6 @@ function CausalExtractPageContent() {
   const [chunkExtractionMap, setChunkExtractionMap] = useState<Record<string, ExtractionPayload>>({});
   const [followUpRecords, setFollowUpRecords] = useState<FollowUpExportRecord[]>([]);
   const [extractStatus, setExtractStatus] = useState<string>("");
-  const [exportStatus, setExportStatus] = useState<string>("");
 
   useEffect(() => {
     if (!itemId) {
@@ -464,49 +428,6 @@ function CausalExtractPageContent() {
     }
   };
 
-  const handleExportCausal = async () => {
-    if (!itemId || !selectedProjectId || !componentId) {
-      setExportStatus("Export unavailable: no item selected.");
-      return;
-    }
-
-    const rawExtraction = Object.values(chunkExtractionMap);
-    if (rawExtraction.length === 0) {
-      setExportStatus("No extraction artifact available to export.");
-      return;
-    }
-
-    try {
-      const chunks = await loadTextChunksForItem(itemId);
-      const payload: CausalExportPayload = {
-        export_type: "causal",
-        version: "1.0",
-        exported_at: new Date().toISOString(),
-        project_id: selectedProjectId,
-        component_id: componentId,
-        item_id: itemId,
-        file_name: itemFileName,
-        raw_extraction: rawExtraction,
-        follow_up: followUpRecords,
-        chunk_snapshot: chunks.map((content, index) => ({
-          index,
-          metadata: {
-            length: content.length,
-            source: "text_chunks",
-          },
-          content,
-        })),
-      };
-
-      const stamp = new Date().toISOString().replace(/[.:]/g, "-");
-      const fileName = `${sanitizeFilenameSegment(itemFileName || itemId)}-causal-${stamp}.json`;
-      downloadJsonFile(fileName, payload);
-      setExportStatus("Causal artifact exported.");
-    } catch {
-      setExportStatus("Unable to export causal artifact.");
-    }
-  };
-
   const handleActivateViewAll = () => {
     if (chunkOptions.length === 0) {
       return;
@@ -538,14 +459,6 @@ function CausalExtractPageContent() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handleExportCausal()}
-              disabled={!itemId}
-              className="rounded-md border border-sky-600 bg-sky-500/10 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-55"
-            >
-              Export causal
-            </button>
             <BackToHome
               href="/"
               label="Back to project"
@@ -557,7 +470,6 @@ function CausalExtractPageContent() {
         </header>
 
         {extractStatus ? <p className="mb-3 text-xs text-emerald-300">{extractStatus}</p> : null}
-        {exportStatus ? <p className="mb-3 text-xs text-sky-200">{exportStatus}</p> : null}
 
         <section className="grid gap-5 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 backdrop-blur-sm md:grid-cols-[280px_1fr] md:p-6">
           <aside className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-4">

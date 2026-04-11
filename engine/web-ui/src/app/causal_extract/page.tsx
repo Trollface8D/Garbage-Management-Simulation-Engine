@@ -13,6 +13,7 @@ import {
 } from "@/lib/simulation-components";
 import {
     deleteCausalSourceItem,
+    loadCausalArtifactsForItem,
     loadCausalSourceItems,
     loadComponents,
     loadProjects,
@@ -69,6 +70,32 @@ type CausalImportPayload = {
     }>;
 };
 
+type ArtifactBundleExportPayload = {
+    export_type: "causal_bundle";
+    version: "1.0";
+    exported_at: string;
+    project_id: string;
+    component_id: string;
+    item: {
+        id: string;
+        label: string;
+        file_name: string;
+        source_type: SourceType;
+        status: DataStatus;
+        tags: string[];
+    };
+    chunks: Array<{
+        index: number;
+        metadata: {
+            length: number;
+            source: "text_chunks";
+        };
+        content: string;
+    }>;
+    raw_extraction: ExtractionPayloadRecord[];
+    follow_up: FollowUpExportRecord[];
+};
+
 function isChunkingImportPayload(value: unknown): value is ChunkingImportPayload {
     if (!value || typeof value !== "object") {
         return false;
@@ -85,6 +112,15 @@ function isCausalImportPayload(value: unknown): value is CausalImportPayload {
 
     const payload = value as Partial<CausalImportPayload>;
     return payload.export_type === "causal" && Array.isArray(payload.raw_extraction);
+}
+
+function isArtifactBundleImportPayload(value: unknown): value is ArtifactBundleExportPayload {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const payload = value as Partial<ArtifactBundleExportPayload>;
+    return payload.export_type === "causal_bundle" && payload.item !== undefined && Array.isArray(payload.chunks);
 }
 
 function isFeatureTab(value: string | null): value is FeatureTab {
@@ -120,6 +156,22 @@ function createLocalId(prefix: string): string {
         return `${prefix}-${crypto.randomUUID()}`;
     }
     return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sanitizeFilenameSegment(value: string): string {
+    return value.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "item";
+}
+
+function downloadJsonFile(fileName: string, payload: unknown): void {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(href);
 }
 
 function CausalExtractHomeContent() {
@@ -336,6 +388,68 @@ function CausalExtractHomeContent() {
                 const text = await file.text();
                 const parsed = JSON.parse(text) as unknown;
 
+                if (isArtifactBundleImportPayload(parsed)) {
+                    const chunks = [...parsed.chunks]
+                        .sort((left, right) => left.index - right.index)
+                        .map((entry) => (typeof entry.content === "string" ? entry.content.trim() : ""))
+                        .filter(Boolean);
+
+                    const extractionPayload = Array.isArray(parsed.raw_extraction) ? parsed.raw_extraction : [];
+                    const followUpPayload = Array.isArray(parsed.follow_up) ? parsed.follow_up : [];
+
+                    const status: DataStatus = extractionPayload.length > 0
+                        ? "extracted"
+                        : chunks.length > 0
+                            ? "chunked"
+                            : "raw_text";
+
+                    const itemId = createLocalId("imported-bundle");
+                    const inferredName =
+                        parsed.item.file_name?.trim() || file.name || `${itemId}.txt`;
+
+                    const sourceText = chunks.length > 0
+                        ? chunks.join("\n\n")
+                        : extractionPayload
+                            .flatMap((chunk) => chunk.classes.map((item) => item.source_text).filter(Boolean))
+                            .join("\n\n");
+
+                    const savedItem = await saveCausalSourceItem({
+                        id: itemId,
+                        projectId: selectedProjectId,
+                        componentId,
+                        label: parsed.item.label?.trim() || "imported artifact bundle",
+                        fileName: inferredName,
+                        sourceType: parsed.item.source_type === "audio" ? "audio" : "text",
+                        status,
+                        tags: Array.from(new Set(["imported", "bundle", ...(parsed.item.tags ?? [])])),
+                        textContent: sourceText,
+                    });
+
+                    if (chunks.length > 0) {
+                        await saveTextChunksForItem({
+                            experimentItemId: itemId,
+                            projectId: selectedProjectId,
+                            componentId,
+                            chunks,
+                            model: "imported-json",
+                            chunkSizeWords: 20,
+                            chunkOverlapWords: 0,
+                        });
+                    }
+
+                    if (extractionPayload.length > 0 || followUpPayload.length > 0) {
+                        await saveCausalArtifactsForItem({
+                            experimentItemId: itemId,
+                            rawExtraction: extractionPayload,
+                            followUp: followUpPayload,
+                        });
+                    }
+
+                    appendImportedItem({ ...savedItem, status }, file.type || "application/json");
+                    importedCount += 1;
+                    continue;
+                }
+
                 if (isChunkingImportPayload(parsed)) {
                     const chunks = [...parsed.chunks]
                         .sort((left, right) => left.index - right.index)
@@ -439,6 +553,55 @@ function CausalExtractHomeContent() {
         }
 
         setUploadStatus(`Imported ${String(importedCount)} file(s) successfully.`);
+    };
+
+    const handleExportItemBundle = (item: ExperimentItem) => {
+        void (async () => {
+            if (!selectedProjectId || !componentId) {
+                setUploadStatus("Select a component first before exporting artifacts.");
+                return;
+            }
+
+            try {
+                const [chunks, causalArtifacts] = await Promise.all([
+                    loadTextChunksForItem(item.id).catch(() => []),
+                    loadCausalArtifactsForItem(item.id).catch(() => ({ raw_extraction: [], follow_up: [] })),
+                ]);
+
+                const payload: ArtifactBundleExportPayload = {
+                    export_type: "causal_bundle",
+                    version: "1.0",
+                    exported_at: new Date().toISOString(),
+                    project_id: selectedProjectId,
+                    component_id: componentId,
+                    item: {
+                        id: item.id,
+                        label: item.label,
+                        file_name: item.fileName,
+                        source_type: item.sourceType,
+                        status: item.status,
+                        tags: item.tags,
+                    },
+                    chunks: chunks.map((content, index) => ({
+                        index,
+                        metadata: {
+                            length: content.length,
+                            source: "text_chunks",
+                        },
+                        content,
+                    })),
+                    raw_extraction: causalArtifacts.raw_extraction,
+                    follow_up: causalArtifacts.follow_up,
+                };
+
+                const stamp = new Date().toISOString().replace(/[.:]/g, "-");
+                const fileName = `${sanitizeFilenameSegment(item.fileName || item.id)}-bundle-${stamp}.json`;
+                downloadJsonFile(fileName, payload);
+                setUploadStatus(`Exported bundle for ${item.fileName}.`);
+            } catch {
+                setUploadStatus(`Unable to export bundle for ${item.fileName}.`);
+            }
+        })();
     };
 
     const handleFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -656,7 +819,7 @@ function CausalExtractHomeContent() {
                                 className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20"
                                 aria-label="Import artifact JSON"
                             >
-                                <span>Import artifact JSON</span>
+                                <span>Import artifact bundle JSON</span>
                             </button>
                             <input
                                 ref={importPickerRef}
@@ -802,6 +965,23 @@ function CausalExtractHomeContent() {
                                                 <p className={`text-xs font-semibold ${chunkCount > 0 ? "text-emerald-300" : "text-neutral-400"}`}>
                                                     {String(chunkCount)} chunk{chunkCount === 1 ? "" : "s"}
                                                 </p>
+                                                <button
+                                                    type="button"
+                                                    onClick={(event) => {
+                                                        event.preventDefault();
+                                                        event.stopPropagation();
+                                                        handleExportItemBundle(item);
+                                                    }}
+                                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-700 bg-sky-500/10 text-sky-200 transition hover:bg-sky-500/20"
+                                                    aria-label={`Export bundle for ${item.fileName}`}
+                                                    title="Export bundle JSON"
+                                                >
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                                                        <path d="M12 3v12" />
+                                                        <path d="M8 11l4 4 4-4" />
+                                                        <path d="M5 19h14" />
+                                                    </svg>
+                                                </button>
                                                 {(activeFeature === "chunking" || activeFeature === "extract") && (
                                                     <button
                                                         type="button"
