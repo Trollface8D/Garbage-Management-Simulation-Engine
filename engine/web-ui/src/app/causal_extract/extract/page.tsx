@@ -147,9 +147,9 @@ function CausalExtractPageContent() {
   const [extractionData, setExtractionData] = useState<ExtractionPayload | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [isExtractingAll, setIsExtractingAll] = useState<boolean>(false);
-  const [extractStatus, setExtractStatus] = useState<string>("");
   const [chunkExtractionMap, setChunkExtractionMap] = useState<Record<string, ExtractionPayload>>({});
   const [followUpRecords, setFollowUpRecords] = useState<FollowUpExportRecord[]>([]);
+  const [extractStatus, setExtractStatus] = useState<string>("");
   const [exportStatus, setExportStatus] = useState<string>("");
 
   useEffect(() => {
