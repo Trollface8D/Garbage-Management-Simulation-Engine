@@ -63,16 +63,6 @@ export type {
   SaveCausalArtifactsResult,
 } from "./db-modules/causal-artifacts";
 
-export { getCausalArtifactsForItem, saveCausalArtifacts } from "./db-modules/causal-artifacts";
-
-export type {
-  CausalArtifactsPayload,
-  ExtractionPayloadRecord,
-  FollowUpExportRecord,
-  SaveCausalArtifactsInput,
-  SaveCausalArtifactsResult,
-} from "./db-modules/causal-artifacts";
-
 export { migrateLegacyData } from "./db-modules/migration";
 
 export { default } from "./db-modules/connection";
