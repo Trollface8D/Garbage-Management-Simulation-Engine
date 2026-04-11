@@ -9,7 +9,13 @@ import {
   type SimulationProject,
 } from "@/lib/simulation-components";
 import BackToHome from "../../components/back-to-home";
-import { loadProjects } from "@/lib/pm-storage";
+import {
+  loadCausalArtifactsForItem,
+  loadProjects,
+  loadTextChunksForItem,
+  saveCausalArtifactsForItem,
+  type FollowUpExportRecord,
+} from "@/lib/pm-storage";
 
 type ExtractedTriple = {
   head: string;
@@ -31,6 +37,26 @@ type ExtractionClass = {
 type ExtractionPayload = {
   chunk_label: string;
   classes: ExtractionClass[];
+};
+
+type CausalExportPayload = {
+  export_type: "causal";
+  version: "1.0";
+  exported_at: string;
+  project_id: string;
+  component_id: string;
+  item_id: string;
+  file_name: string;
+  raw_extraction: ExtractionPayload[];
+  follow_up: FollowUpExportRecord[];
+  chunk_snapshot: Array<{
+    index: number;
+    metadata: {
+      length: number;
+      source: "text_chunks";
+    };
+    content: string;
+  }>;
 };
 
 const CHUNK_OPTIONS = ["chunk 1", "chunk 2", "chunk 3", "chunk 4"];
@@ -110,12 +136,30 @@ function buildSingleChunkPayload(selectedChunk: string): ExtractionPayload {
   };
 }
 
+function sanitizeFilenameSegment(value: string): string {
+  return value.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "item";
+}
+
+function downloadJsonFile(fileName: string, payload: unknown): void {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(href);
+}
+
 function CausalExtractPageContent() {
   const searchParams = useSearchParams();
 
   const componentId = searchParams.get("componentId");
   const queryProjectId = searchParams.get("projectId");
   const queryTitle = searchParams.get("title");
+  const itemId = searchParams.get("itemId") ?? "";
+  const itemFileName = searchParams.get("fileName") ?? "causal-source.txt";
 
   const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
   const selectedProjectId = queryProjectId ?? getProjectIdForComponent(componentId);
@@ -141,6 +185,58 @@ function CausalExtractPageContent() {
   const [extractionData, setExtractionData] = useState<ExtractionPayload | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [chunkExtractionMap, setChunkExtractionMap] = useState<Record<string, ExtractionPayload>>({});
+  const [followUpRecords, setFollowUpRecords] = useState<FollowUpExportRecord[]>([]);
+  const [extractStatus, setExtractStatus] = useState<string>("");
+  const [exportStatus, setExportStatus] = useState<string>("");
+
+  useEffect(() => {
+    if (!itemId) {
+      setChunkExtractionMap({});
+      setFollowUpRecords([]);
+      setIsExtracted(false);
+      setExtractionData(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadArtifacts = async () => {
+      try {
+        const artifacts = await loadCausalArtifactsForItem(itemId);
+        if (cancelled) {
+          return;
+        }
+
+        const nextMap: Record<string, ExtractionPayload> = {};
+        for (const chunk of artifacts.raw_extraction) {
+          nextMap[chunk.chunk_label] = {
+            chunk_label: chunk.chunk_label,
+            classes: chunk.classes,
+          };
+        }
+
+        setChunkExtractionMap(nextMap);
+        setFollowUpRecords(artifacts.follow_up ?? []);
+        if (nextMap[selectedChunk]) {
+          setExtractionData(nextMap[selectedChunk]);
+          setIsExtracted(true);
+        } else {
+          setExtractionData(null);
+          setIsExtracted(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setExtractStatus("Unable to load saved extraction artifacts.");
+        }
+      }
+    };
+
+    void loadArtifacts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [itemId, selectedChunk]);
 
   const viewAllPayloads = CHUNK_OPTIONS.map((chunk) => chunkExtractionMap[chunk] ?? buildSingleChunkPayload(chunk));
 
@@ -161,6 +257,7 @@ function CausalExtractPageContent() {
 
   const handleExtract = async () => {
     setIsExtracting(true);
+    setExtractStatus("");
 
     await new Promise((resolve) => {
       window.setTimeout(resolve, 500);
@@ -168,13 +265,72 @@ function CausalExtractPageContent() {
 
     const payload = buildSingleChunkPayload(selectedChunk);
 
-    setChunkExtractionMap((prev) => ({
-      ...prev,
-      [selectedChunk]: payload,
-    }));
+    setChunkExtractionMap((prev) => {
+      const next = {
+        ...prev,
+        [selectedChunk]: payload,
+      };
+
+      if (itemId) {
+        const rawExtraction = Object.values(next);
+        void saveCausalArtifactsForItem({
+          experimentItemId: itemId,
+          rawExtraction,
+          followUp: followUpRecords,
+        }).catch(() => {
+          setExtractStatus("Extraction generated but failed to persist artifacts.");
+        });
+      }
+
+      return next;
+    });
     setExtractionData(payload);
     setIsExtracted(true);
     setIsExtracting(false);
+    setExtractStatus("Extraction generated.");
+  };
+
+  const handleExportCausal = async () => {
+    if (!itemId || !selectedProjectId || !componentId) {
+      setExportStatus("Export unavailable: no item selected.");
+      return;
+    }
+
+    const rawExtraction = Object.values(chunkExtractionMap);
+    if (rawExtraction.length === 0) {
+      setExportStatus("No extraction artifact available to export.");
+      return;
+    }
+
+    try {
+      const chunks = await loadTextChunksForItem(itemId);
+      const payload: CausalExportPayload = {
+        export_type: "causal",
+        version: "1.0",
+        exported_at: new Date().toISOString(),
+        project_id: selectedProjectId,
+        component_id: componentId,
+        item_id: itemId,
+        file_name: itemFileName,
+        raw_extraction: rawExtraction,
+        follow_up: followUpRecords,
+        chunk_snapshot: chunks.map((content, index) => ({
+          index,
+          metadata: {
+            length: content.length,
+            source: "text_chunks",
+          },
+          content,
+        })),
+      };
+
+      const stamp = new Date().toISOString().replace(/[.:]/g, "-");
+      const fileName = `${sanitizeFilenameSegment(itemFileName || itemId)}-causal-${stamp}.json`;
+      downloadJsonFile(fileName, payload);
+      setExportStatus("Causal artifact exported.");
+    } catch {
+      setExportStatus("Unable to export causal artifact.");
+    }
   };
 
   const handleActivateViewAll = () => {
@@ -203,14 +359,27 @@ function CausalExtractPageContent() {
               <span className="text-sm text-neutral-300">{selectedProjectName}</span>
             </div>
           </div>
-          <BackToHome
-            href="/"
-            label="Back to project"
-            useHistoryBack
-            containerClassName=""
-            className="rounded-md px-3 py-2"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleExportCausal()}
+              disabled={!itemId}
+              className="rounded-md border border-sky-600 bg-sky-500/10 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              Export causal
+            </button>
+            <BackToHome
+              href="/"
+              label="Back to project"
+              useHistoryBack
+              containerClassName=""
+              className="rounded-md px-3 py-2"
+            />
+          </div>
         </header>
+
+        {extractStatus ? <p className="mb-3 text-xs text-emerald-300">{extractStatus}</p> : null}
+        {exportStatus ? <p className="mb-3 text-xs text-sky-200">{exportStatus}</p> : null}
 
         <section className="grid gap-5 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 backdrop-blur-sm md:grid-cols-[280px_1fr] md:p-6">
           <aside className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-4">
@@ -341,7 +510,7 @@ function CausalExtractPageContent() {
                 ))}
               </div>
             ) : !isExtracted ? (
-              <div className="flex min-h-[360px] items-center justify-center">
+              <div className="flex min-h-90 items-center justify-center">
                 <button
                   type="button"
                   onClick={handleExtract}
@@ -433,7 +602,7 @@ function CausalExtractPageContent() {
                 </div>
               </div>
             ) : (
-              <div className="flex min-h-[360px] items-center justify-center text-sm text-neutral-400">
+              <div className="flex min-h-90 items-center justify-center text-sm text-neutral-400">
                 Select chunks to see aggregated extraction output.
               </div>
             )}

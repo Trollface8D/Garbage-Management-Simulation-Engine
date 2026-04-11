@@ -66,7 +66,8 @@ type PMGetResource =
   | "recents"
   | "causal-source-items"
   | "causal-source-item"
-  | "text-chunks";
+  | "text-chunks"
+  | "causal-artifacts";
 
 type PMAction =
   | "create-project"
@@ -81,7 +82,69 @@ type PMAction =
   | "track-recent"
   | "upsert-causal-source-item"
   | "delete-causal-source-item"
-  | "save-text-chunks";
+  | "save-text-chunks"
+  | "save-causal-artifacts";
+
+export type ExtractedTriple = {
+  head: string;
+  relationship: string;
+  tail: string;
+  detail: string;
+};
+
+export type ExtractionClassRecord = {
+  pattern_type: string;
+  sentence_type: string;
+  marked_type: string;
+  explicit_type: string;
+  marker: string;
+  source_text: string;
+  extracted: ExtractedTriple[];
+};
+
+export type ExtractionPayloadRecord = {
+  chunk_label: string;
+  classes: ExtractionClassRecord[];
+};
+
+export type FollowUpExportQuestion = {
+  question_text: string;
+  generated_by: string;
+  generated_at: string;
+  is_filtered_in: boolean;
+  answer_text?: string;
+  answered_by?: string;
+  answered_at?: string;
+};
+
+export type FollowUpExportRecord = {
+  source_text: string;
+  sentence_type: string;
+  causal_ref?: {
+    head: string;
+    relationship: string;
+    tail: string;
+    detail: string;
+  };
+  questions: FollowUpExportQuestion[];
+};
+
+export type CausalArtifactsPayload = {
+  raw_extraction: ExtractionPayloadRecord[];
+  follow_up: FollowUpExportRecord[];
+};
+
+export type SaveCausalArtifactsInput = {
+  experimentItemId: string;
+  rawExtraction: ExtractionPayloadRecord[];
+  followUp?: FollowUpExportRecord[];
+};
+
+export type SaveCausalArtifactsResult = {
+  savedClasses: number;
+  savedCausal: number;
+  savedFollowUps: number;
+};
 
 export type SaveTextChunksInput = {
   experimentItemId: string;
@@ -413,6 +476,31 @@ export async function deleteCausalSourceItem(itemId: string): Promise<void> {
 
 export async function saveTextChunksForItem(input: SaveTextChunksInput): Promise<SaveTextChunksResult> {
   const result = await pmPost<SaveTextChunksResult>("save-text-chunks", input);
+  notifyPMStorageChanged();
+  return result;
+}
+
+export async function loadCausalArtifactsForItem(itemId: string): Promise<CausalArtifactsPayload> {
+  await ensureLegacyMigration();
+
+  const url = new URL(PM_API_PATH, window.location.origin);
+  url.searchParams.set("resource", "causal-artifacts");
+  url.searchParams.set("itemId", itemId);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`PM GET failed (${String(response.status)}): causal-artifacts`);
+  }
+
+  return (await response.json()) as CausalArtifactsPayload;
+}
+
+export async function saveCausalArtifactsForItem(input: SaveCausalArtifactsInput): Promise<SaveCausalArtifactsResult> {
+  const result = await pmPost<SaveCausalArtifactsResult>("save-causal-artifacts", input);
   notifyPMStorageChanged();
   return result;
 }

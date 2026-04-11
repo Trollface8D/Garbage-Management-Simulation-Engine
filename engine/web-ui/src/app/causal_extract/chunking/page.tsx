@@ -19,6 +19,24 @@ type TextBlock = {
 
 type ToolMode = "edit" | "split";
 
+type ChunkExportPayload = {
+    export_type: "chunking";
+    version: "1.0";
+    exported_at: string;
+    project_id: string;
+    component_id: string;
+    item_id: string;
+    file_name: string;
+    chunks: Array<{
+        index: number;
+        metadata: {
+            length: number;
+            source: "manual_chunking_editor";
+        };
+        content: string;
+    }>;
+};
+
 const DEFAULT_EDITOR_TEXT =
     "Select a Causal component from the dashboard to load its base text. You can then split by click, merge selected blocks, or rechunk the whole document.";
 
@@ -54,6 +72,22 @@ function splitIntoFixedWordChunks(fullText: string, chunkSize: number): string[]
     }
 
     return chunks;
+}
+
+function sanitizeFilenameSegment(value: string): string {
+    return value.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "item";
+}
+
+function downloadJsonFile(fileName: string, payload: unknown): void {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(href);
 }
 
 function CursorToolIcon({ className }: { className?: string }) {
@@ -121,6 +155,7 @@ function CausalExtractChunkingContent() {
     const [loadStatus, setLoadStatus] = useState<string>("");
     const [chunkSaveStatus, setChunkSaveStatus] = useState<string>("");
     const [isSavingChunks, setIsSavingChunks] = useState<boolean>(false);
+    const [exportStatus, setExportStatus] = useState<string>("");
     const [projects, setProjects] = useState<SimulationProject[]>([]);
 
     const isCutMode = toolMode === "split";
@@ -331,6 +366,42 @@ function CausalExtractChunkingContent() {
         }
     }, [blocks, componentId, initialItemId, selectedProjectId]);
 
+    const handleExportChunks = useCallback(() => {
+        if (!initialItemId || !selectedProjectId || !componentId) {
+            setExportStatus("Export unavailable: this page is not linked to a stored source item.");
+            return;
+        }
+
+        const chunkTexts = blocks.map((block) => block.text.trim()).filter(Boolean);
+        if (chunkTexts.length === 0) {
+            setExportStatus("No chunks to export.");
+            return;
+        }
+
+        const payload: ChunkExportPayload = {
+            export_type: "chunking",
+            version: "1.0",
+            exported_at: new Date().toISOString(),
+            project_id: selectedProjectId,
+            component_id: componentId,
+            item_id: initialItemId,
+            file_name: initialFileName || "chunked-text.txt",
+            chunks: chunkTexts.map((content, index) => ({
+                index,
+                metadata: {
+                    length: content.length,
+                    source: "manual_chunking_editor",
+                },
+                content,
+            })),
+        };
+
+        const stamp = new Date().toISOString().replace(/[.:]/g, "-");
+        const fileName = `${sanitizeFilenameSegment(initialFileName || initialItemId)}-chunks-${stamp}.json`;
+        downloadJsonFile(fileName, payload);
+        setExportStatus(`Exported ${String(payload.chunks.length)} chunk${payload.chunks.length === 1 ? "" : "s"}.`);
+    }, [blocks, componentId, initialFileName, initialItemId, selectedProjectId]);
+
     const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 
     return (
@@ -364,8 +435,18 @@ function CausalExtractChunkingContent() {
                         >
                             {isSavingChunks ? "Saving..." : "Save chunks"}
                         </button>
+                        <button
+                            type="button"
+                            onClick={handleExportChunks}
+                            disabled={!initialItemId || !selectedProjectId || !componentId}
+                            className="rounded-md border border-sky-600 bg-sky-500/10 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-55"
+                        >
+                            Export chunks
+                        </button>
                     </div>
                 </header>
+
+                {exportStatus ? <p className="mb-4 text-xs text-sky-200">{exportStatus}</p> : null}
 
                 <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[auto_1fr] lg:items-start">
                     <aside className="lg:sticky lg:top-6">
