@@ -1397,6 +1397,43 @@ export default function FollowUpGenerationPage({
         </p>
       </header>
 
+      <div>
+        <div>
+          <p className="mb-3 text-sm font-semibold text-neutral-200">Select implicit causal for question generation</p>
+          <div className="space-y-3">
+            {visibleCausalItems.map((causal, index) => {
+              const generated = generatedBySourceText.get(causal.source_text);
+
+              return (
+                <CausalCard
+                  key={causal.source_text}
+                  causal={causal}
+                  index={index}
+                  generatedQuestions={generated?.generated_questions ?? []}
+                  isPanelOpen={openedPanels.has(causal.source_text)}
+                  onTogglePanel={() => toggleGeneratedPanel(causal.source_text)}
+                  onGenerateForCausal={() => void handleGenerateForCausal(causal)}
+                  isGeneratingForCausal={generatingSources.has(causal.source_text)}
+                  answers={answersBySource[causal.source_text] ?? {}}
+                  onAnswerChange={(question, answer) => handleAnswerChange(causal.source_text, question, answer)}
+                  newQuestionDraft={newQuestionDraftBySource[causal.source_text] ?? ""}
+                  onNewQuestionDraftChange={(value) => handleNewQuestionDraftChange(causal.source_text, value)}
+                  onAddQuestionSet={() => handleAddQuestionSet(causal.source_text)}
+                  onSubmitGroup={() => void handleSubmitGroup(causal.source_text, generated?.generated_questions ?? [])}
+                  groupSubmitMessage={groupSubmitStatus[causal.source_text] ?? ""}
+                />
+              );
+            })}
+
+            {includeImplicit && visibleCausalItems.length === 0 ? (
+              <p className="rounded-lg border border-neutral-700 bg-neutral-950/80 p-3 text-sm text-neutral-300">
+                No implicit causal items (explicit_type = I) found for question generation.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-3">
           <button
