@@ -6,6 +6,7 @@ import {
   deleteCausalSourceItem,
   getCausalArtifactsForItem,
   getCausalSourceItem,
+  listFollowUpRecordsForExperimentItem,
   hardDeleteComponent,
   hardDeleteProject,
   listCausalSourceItems,
@@ -21,6 +22,8 @@ import {
   restoreComponent,
   restoreProject,
   saveCausalArtifacts,
+  saveFollowUpAnswers,
+  saveFollowUpQuestions,
   softDeleteComponent,
   softDeleteProject,
   saveTextChunks,
@@ -41,7 +44,8 @@ type PMResource =
   | "text-chunks"
   | "text-chunk-records"
   | "chunk-extractions"
-  | "causal-artifacts";
+  | "causal-artifacts"
+  | "follow-up-records";
 
 type PMAction =
   | "create-project"
@@ -57,7 +61,9 @@ type PMAction =
   | "upsert-causal-source-item"
   | "delete-causal-source-item"
   | "save-text-chunks"
-  | "save-causal-artifacts";
+  | "save-causal-artifacts"
+  | "save-follow-up-questions"
+  | "save-follow-up-answers";
 
 type PMActionRequest = {
   action: PMAction;
@@ -154,6 +160,14 @@ export async function GET(request: Request) {
       }
 
       return NextResponse.json(getCausalArtifactsForItem(itemId));
+    }
+    case "follow-up-records": {
+      const itemId = (url.searchParams.get("itemId") ?? "").trim();
+      if (!itemId) {
+        return badRequest("itemId is required for follow-up-records.");
+      }
+
+      return NextResponse.json(listFollowUpRecordsForExperimentItem(itemId));
     }
     default:
       return badRequest("Unsupported resource.");
@@ -392,6 +406,38 @@ export async function POST(request: Request) {
           experimentItemId,
           rawExtraction,
           followUp,
+        }),
+      );
+    }
+
+    case "save-follow-up-questions": {
+      const experimentItemId = asString(payload, "experimentItemId").trim();
+      const records = asArray(payload, "records") as Parameters<typeof saveFollowUpQuestions>[0]["records"];
+
+      if (!experimentItemId) {
+        return badRequest("experimentItemId is required.");
+      }
+
+      return NextResponse.json(
+        saveFollowUpQuestions({
+          experimentItemId,
+          records,
+        }),
+      );
+    }
+
+    case "save-follow-up-answers": {
+      const experimentItemId = asString(payload, "experimentItemId").trim();
+      const answers = asArray(payload, "answers") as Parameters<typeof saveFollowUpAnswers>[0]["answers"];
+
+      if (!experimentItemId) {
+        return badRequest("experimentItemId is required.");
+      }
+
+      return NextResponse.json(
+        saveFollowUpAnswers({
+          experimentItemId,
+          answers,
         }),
       );
     }
