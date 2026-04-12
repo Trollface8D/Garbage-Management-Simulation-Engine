@@ -53,14 +53,25 @@ export {
   type ExtractedRelationRecord as ChunkExtractedRelationRecord,
 } from "./db-modules/chunk-extractions";
 
-export { getCausalArtifactsForItem, saveCausalArtifacts } from "./db-modules/causal-artifacts";
+export {
+  getCausalArtifactsForItem,
+  listFollowUpRecordsForExperimentItem,
+  saveCausalArtifacts,
+  saveFollowUpAnswers,
+  saveFollowUpQuestions,
+} from "./db-modules/causal-artifacts";
 
 export type {
   CausalArtifactsPayload,
   ExtractionPayloadRecord,
+  FollowUpRecord,
   FollowUpExportRecord,
   SaveCausalArtifactsInput,
   SaveCausalArtifactsResult,
+  SaveFollowUpAnswersInput,
+  SaveFollowUpAnswersResult,
+  SaveFollowUpQuestionsInput,
+  SaveFollowUpQuestionsResult,
 } from "./db-modules/causal-artifacts";
 
 export { migrateLegacyData } from "./db-modules/migration";

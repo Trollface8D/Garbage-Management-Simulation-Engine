@@ -1,6 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  loadFollowUpRecordsForItem,
+  saveFollowUpAnswersForItem,
+  saveFollowUpQuestionsForItem,
+  type FollowUpRecord,
+} from "@/lib/pm-storage";
 
 export interface CausalTriple {
   head: string;
@@ -10,6 +16,7 @@ export interface CausalTriple {
 }
 
 export interface CausalItem {
+  chunk_label?: string;
   pattern_type: string;
   sentence_type: string;
   marked_type: string;
@@ -27,106 +34,98 @@ export interface GeneratedQuestionsData {
 
 type FollowUpGenerationPageProps = {
   initialCausalItems?: CausalItem[];
+  includeImplicit?: boolean;
+  experimentItemId?: string;
+  initialFollowUpRecords?: FollowUpRecord[];
 };
 
-const mockCausalItems: CausalItem[] = [
-  {
-    pattern_type: "C",
-    sentence_type: "SB",
-    marked_type: "U",
-    explicit_type: "I",
-    marker: null,
-    source_text: "But it still has not solved the routing bottleneck for night collection shifts.",
-    extracted: [
-      {
-        head: "The compact design of the cage",
-        relationship: "causes",
-        tail: "difficulty for the cleaners",
-        detail: "because it is too small",
-      },
-    ],
-  },
-  {
-    pattern_type: "C",
-    sentence_type: "SP",
-    marked_type: "U",
-    explicit_type: "I",
-    marker: null,
-    source_text: "When transfer windows are reduced, truck queues become unpredictable at district hubs.",
-    extracted: [
-      {
-        head: "Reduced transfer windows",
-        relationship: "causes",
-        tail: "queue instability",
-        detail: "because inbound trucks overlap in short time windows",
-      },
-    ],
-  },
-  {
-    pattern_type: "C",
-    sentence_type: "SB",
-    marked_type: "U",
-    explicit_type: "I",
-    marker: null,
-    source_text: "Policy changes affect load balancing, but the impact conditions remain unclear.",
-    extracted: [
-      {
-        head: "Changing the policy",
-        relationship: "causes",
-        tail: "changes in system state",
-        detail: "through allocation rules and timing constraints",
-      },
-    ],
-  },
-  {
-    pattern_type: "C",
-    sentence_type: "SP",
-    marked_type: "U",
-    explicit_type: "I",
-    marker: null,
-    source_text: "If sorting staff are reduced during peak hours, contamination rates can rise across downstream routes.",
-    extracted: [
-      {
-        head: "Reduced sorting staff",
-        relationship: "causes",
-        tail: "higher contamination rates",
-        detail: "because verification steps are skipped during overload",
-      },
-    ],
-  },
-  {
-    pattern_type: "C",
-    sentence_type: "SB",
-    marked_type: "U",
-    explicit_type: "I",
-    marker: null,
-    source_text: "Delayed route reassignment can amplify fuel usage when district demand shifts unexpectedly.",
-    extracted: [
-      {
-        head: "Delayed route reassignment",
-        relationship: "causes",
-        tail: "increased fuel usage",
-        detail: "through repeated detours and idle waiting",
-      },
-    ],
-  },
-  {
-    pattern_type: "C",
-    sentence_type: "SP",
-    marked_type: "U",
-    explicit_type: "I",
-    marker: null,
-    source_text: "When transfer hubs lack synchronized unloading windows, cross-zone pickup plans become unstable.",
-    extracted: [
-      {
-        head: "Unsynchronized unloading windows",
-        relationship: "causes",
-        tail: "cross-zone pickup instability",
-        detail: "because vehicles miss planned handoff intervals",
-      },
-    ],
-  },
-];
+function toGeneratedResults(records: FollowUpRecord[]): GeneratedQuestionsData[] {
+  const bySource = new Map<string, { sentenceType: string; questions: string[]; questionSet: Set<string> }>();
+
+  for (const record of records) {
+    const sourceText = (record.sourceText || "").trim();
+    if (!sourceText) {
+      continue;
+    }
+
+    const existing = bySource.get(sourceText) ?? {
+      sentenceType: (record.sentenceType || "").trim(),
+      questions: [],
+      questionSet: new Set<string>(),
+    };
+
+    for (const question of record.questions ?? []) {
+      const text = (question.questionText || "").trim();
+      if (!text || existing.questionSet.has(text)) {
+        continue;
+      }
+
+      existing.questionSet.add(text);
+      existing.questions.push(text);
+    }
+
+    bySource.set(sourceText, existing);
+  }
+
+  return Array.from(bySource.entries()).map(([sourceText, value]) => ({
+    source_text: sourceText,
+    sentence_type: value.sentenceType,
+    generated_questions: value.questions,
+  }));
+}
+
+function toAnswersMap(records: FollowUpRecord[]): Record<string, Record<string, string>> {
+  const answers: Record<string, Record<string, string>> = {};
+
+  for (const record of records) {
+    const sourceText = (record.sourceText || "").trim();
+    if (!sourceText) {
+      continue;
+    }
+
+    for (const question of record.questions ?? []) {
+      const questionText = (question.questionText || "").trim();
+      if (!questionText) {
+        continue;
+      }
+
+      if (!answers[sourceText]) {
+        answers[sourceText] = {};
+      }
+
+      answers[sourceText][questionText] = question.answerText ?? "";
+    }
+  }
+
+  return answers;
+}
+
+function toQuestionIdMap(records: FollowUpRecord[]): Record<string, Record<string, string>> {
+  const questionIds: Record<string, Record<string, string>> = {};
+
+  for (const record of records) {
+    const sourceText = (record.sourceText || "").trim();
+    if (!sourceText) {
+      continue;
+    }
+
+    for (const question of record.questions ?? []) {
+      const questionText = (question.questionText || "").trim();
+      const questionId = (question.questionId || "").trim();
+      if (!questionText || !questionId) {
+        continue;
+      }
+
+      if (!questionIds[sourceText]) {
+        questionIds[sourceText] = {};
+      }
+
+      questionIds[sourceText][questionText] = questionId;
+    }
+  }
+
+  return questionIds;
+}
 
 function GoogleGIcon() {
   return (
@@ -161,6 +160,9 @@ function CausalCard({
   isGeneratingForCausal,
   answers,
   onAnswerChange,
+  newQuestionDraft,
+  onNewQuestionDraftChange,
+  onAddQuestionSet,
   onSubmitGroup,
   groupSubmitMessage,
 }: {
@@ -173,18 +175,30 @@ function CausalCard({
   isGeneratingForCausal: boolean;
   answers: Record<string, string>;
   onAnswerChange: (question: string, answer: string) => void;
+  newQuestionDraft: string;
+  onNewQuestionDraftChange: (value: string) => void;
+  onAddQuestionSet: () => void;
   onSubmitGroup: () => void;
   groupSubmitMessage: string;
 }) {
-  const extracted = causal.extracted[0];
   const hasQuestions = generatedQuestions.length > 0;
   const panelLabel = hasQuestions
     ? `Generated questions (${String(generatedQuestions.length)})`
     : "Generated questions";
 
   return (
-    <article className="rounded-xl border-2 border-neutral-700 bg-neutral-900/80 p-4">
+    <article className="rounded-xl border border-neutral-700 bg-neutral-900/80 p-4 text-sm text-neutral-200">
       <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {causal.chunk_label ? (
+            <span className="inline-flex rounded-full border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-300">
+              {causal.chunk_label}
+            </span>
+          ) : null}
+          <span className="inline-flex rounded-full border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-300">
+            class {String(index + 1)}
+          </span>
+        </div>
         <button
           type="button"
           onClick={onGenerateForCausal}
@@ -193,29 +207,70 @@ function CausalCard({
         >
           {isGeneratingForCausal ? "Generating..." : "Generate question"}
         </button>
-        <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Causal {String(index + 1)}</span>
       </div>
 
-      <p className="mb-3 rounded-lg border border-neutral-700 bg-neutral-950/90 p-3 text-sm text-neutral-200">
-        {causal.source_text}
-      </p>
-
-      {extracted ? (
-        <div className="grid gap-2 text-xs text-neutral-300 sm:grid-cols-2">
-          <p className="rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
-            <span className="font-semibold text-neutral-100">Head:</span> {extracted.head}
-          </p>
-          <p className="rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
-            <span className="font-semibold text-neutral-100">Relation:</span> {extracted.relationship}
-          </p>
-          <p className="rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
-            <span className="font-semibold text-neutral-100">Tail:</span> {extracted.tail}
-          </p>
-          <p className="rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
-            <span className="font-semibold text-neutral-100">Detail:</span> {extracted.detail}
-          </p>
+      <dl className="grid gap-3 md:grid-cols-2">
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-neutral-400">pattern_type</dt>
+          <dd className="mt-1 font-semibold text-neutral-100">{causal.pattern_type}</dd>
         </div>
-      ) : null}
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-neutral-400">sentence_type</dt>
+          <dd className="mt-1 font-semibold text-neutral-100">{causal.sentence_type}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-neutral-400">marked_type</dt>
+          <dd className="mt-1 font-semibold text-neutral-100">{causal.marked_type}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-neutral-400">explicit_type</dt>
+          <dd className="mt-1 font-semibold text-neutral-100">{causal.explicit_type}</dd>
+        </div>
+      </dl>
+
+      <div className="mt-4">
+        <p className="text-xs uppercase tracking-wide text-neutral-400">marker</p>
+        <p className="mt-1 text-neutral-100">{causal.marker || "-"}</p>
+      </div>
+
+      <div className="mt-4">
+        <p className="text-xs uppercase tracking-wide text-neutral-400">source_text</p>
+        <p className="mt-1 rounded-md border border-neutral-700 bg-neutral-800/70 p-3 text-neutral-200">
+          {causal.source_text}
+        </p>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-neutral-700 bg-neutral-800/70 p-4">
+        <p className="text-xs uppercase tracking-wide text-neutral-400">extracted</p>
+        <div className="mt-3 space-y-3">
+          {causal.extracted.length === 0 ? (
+            <p className="text-xs text-neutral-400">No extracted relations returned.</p>
+          ) : null}
+          {causal.extracted.map((relation, relationIndex) => (
+            <dl
+              key={`${causal.source_text}-${String(index)}-${String(relationIndex)}`}
+              className="rounded-md border border-neutral-700 bg-neutral-900/70 p-3"
+            >
+              <div>
+                <dt className="text-xs text-neutral-400">head</dt>
+                <dd className="text-neutral-100">{relation.head}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-neutral-400">relationship</dt>
+                <dd className="text-neutral-100">{relation.relationship}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-neutral-400">tail</dt>
+                <dd className="text-neutral-100">{relation.tail}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-neutral-400">detail</dt>
+                <dd className="text-neutral-100">{relation.detail}</dd>
+              </div>
+            </dl>
+          ))}
+        </div>
+      </div>
 
       <div className="mt-4 overflow-hidden rounded-lg border border-sky-700/40 bg-neutral-900/85">
         <button
@@ -230,6 +285,26 @@ function CausalCard({
 
         {isPanelOpen ? (
           <div className="border-t border-neutral-700 p-3">
+            <div className="mb-3 flex items-center gap-2">
+              <input
+                type="text"
+                value={newQuestionDraft}
+                onChange={(event) => onNewQuestionDraftChange(event.target.value)}
+                placeholder="Type a new follow-up question"
+                className="h-9 w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
+              />
+              <button
+                type="button"
+                onClick={onAddQuestionSet}
+                disabled={!newQuestionDraft.trim()}
+                title="Add new question and answer box"
+                aria-label="Add new question and answer box"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-sky-600 bg-sky-500/10 text-lg font-bold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+              >
+                +
+              </button>
+            </div>
+
             {isGeneratingForCausal ? (
               <p className="text-sm text-neutral-400">Generating questions...</p>
             ) : null}
@@ -278,51 +353,259 @@ function CausalCard({
   );
 }
 
-async function buildMockGeneratedResults(selectedItems: CausalItem[]): Promise<GeneratedQuestionsData[]> {
-  await new Promise((resolve) => setTimeout(resolve, 900));
-
-  return selectedItems.map((item) => {
-    const focusEntity = item.extracted[0]?.head ?? "this factor";
-    const targetEntity = item.extracted[0]?.tail ?? "the system state";
-
-    return {
-      source_text: item.source_text,
-      sentence_type: "SP",
-      generated_questions: [
-        `How exactly does ${focusEntity} lead to improvements in ${targetEntity} within the simulation?`,
-        `What specific assumptions are made when predicting how ${focusEntity} affects ${targetEntity}?`,
-        `Under what operating constraints does ${focusEntity} stop influencing ${targetEntity} as expected?`,
-        `What additional data should be collected to validate the causal path from ${focusEntity} to ${targetEntity}?`,
-      ],
-    };
+async function requestGeneratedQuestions(causalItems: CausalItem[]): Promise<GeneratedQuestionsData[]> {
+  const response = await fetch("/api/causal-extract/follow-up", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ causalItems }),
   });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { records?: GeneratedQuestionsData[]; error?: string; detail?: string }
+    | null;
+
+  if (!response.ok) {
+    const detail = payload?.detail ? ` ${payload.detail}` : "";
+    throw new Error(payload?.error ? `${payload.error}${detail}` : `Follow-up generation failed (${String(response.status)}).`);
+  }
+
+  return Array.isArray(payload?.records) ? payload.records : [];
 }
 
-export default function FollowUpGenerationPage({ initialCausalItems = mockCausalItems }: FollowUpGenerationPageProps) {
-  const [generatedResults, setGeneratedResults] = useState<GeneratedQuestionsData[]>([]);
-  const [openedPanels, setOpenedPanels] = useState<Set<string>>(() => new Set());
+function toCausalRef(causal: CausalItem):
+  | {
+      head: string;
+      relationship: string;
+      tail: string;
+      detail: string;
+    }
+  | undefined {
+  const relation = causal.extracted[0];
+  if (!relation) {
+    return undefined;
+  }
+
+  return {
+    head: relation.head,
+    relationship: relation.relationship,
+    tail: relation.tail,
+    detail: relation.detail,
+  };
+}
+
+function isLikelyInternetAnswerable(question: string): boolean {
+  const normalized = question.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const internetAnswerableSignals = [
+    /\bwhat is\b/,
+    /\bdefine\b|\bdefinition\b/,
+    /\bexplain\b.*\bconcept\b/,
+    /\bhistory of\b/,
+    /\bglobal\b|\bworldwide\b/,
+    /\bstandard\b|\bguideline\b|\bbest practice\b/,
+    /\blaw\b|\bregulation\b|\bpolicy framework\b/,
+    /\bstatistics\b|\btrend\b|\bmarket data\b/,
+    /\bexample\b|\bcase study\b/,
+    /\bcompare\b.*\bcountr(?:y|ies)\b/,
+    /\bpublic data\b|\bopen data\b/,
+  ];
+
+  const internalContextSignals = [
+    /\bthis simulation\b|\bour simulation\b/,
+    /\bthis project\b|\bour project\b/,
+    /\bthis causal\b|\bcausal path\b/,
+    /\binput text\b|\bsource text\b/,
+    /\boperating constraints\b|\bassumptions? used here\b/,
+    /\bvalidate\b.*\bfrom (?:our|this) data\b/,
+  ];
+
+  if (internalContextSignals.some((pattern) => pattern.test(normalized))) {
+    return false;
+  }
+
+  return internetAnswerableSignals.some((pattern) => pattern.test(normalized));
+}
+
+export default function FollowUpGenerationPage({
+  initialCausalItems = [],
+  includeImplicit = true,
+  experimentItemId,
+  initialFollowUpRecords = [],
+}: FollowUpGenerationPageProps) {
+  const [generatedResults, setGeneratedResults] = useState<GeneratedQuestionsData[]>(() => toGeneratedResults(initialFollowUpRecords));
+  const [questionIdsBySource, setQuestionIdsBySource] = useState<Record<string, Record<string, string>>>(() =>
+    toQuestionIdMap(initialFollowUpRecords),
+  );
+  const [openedPanels, setOpenedPanels] = useState<Set<string>>(() =>
+    new Set(toGeneratedResults(initialFollowUpRecords).map((result) => result.source_text)),
+  );
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [generatingSources, setGeneratingSources] = useState<Set<string>>(() => new Set());
   const [isFiltering, setIsFiltering] = useState(false);
-  const [answersBySource, setAnswersBySource] = useState<Record<string, Record<string, string>>>({});
+  const [answersBySource, setAnswersBySource] = useState<Record<string, Record<string, string>>>(() =>
+    toAnswersMap(initialFollowUpRecords),
+  );
+  const [newQuestionDraftBySource, setNewQuestionDraftBySource] = useState<Record<string, string>>({});
   const [groupSubmitStatus, setGroupSubmitStatus] = useState<Record<string, string>>({});
   const [allSubmitStatus, setAllSubmitStatus] = useState("");
+  const [generationStatus, setGenerationStatus] = useState("");
 
-  const hasGenerated = generatedResults.length > 0;
+  const hasGenerated = generatedResults.some((result) => result.generated_questions.length > 0);
+
+  useEffect(() => {
+    const hydratedResults = toGeneratedResults(initialFollowUpRecords);
+    setGeneratedResults(hydratedResults);
+    setQuestionIdsBySource(toQuestionIdMap(initialFollowUpRecords));
+    setAnswersBySource(toAnswersMap(initialFollowUpRecords));
+    setOpenedPanels(new Set(hydratedResults.map((result) => result.source_text)));
+    setNewQuestionDraftBySource({});
+    setGroupSubmitStatus({});
+    setAllSubmitStatus("");
+    setGenerationStatus("");
+  }, [experimentItemId, initialFollowUpRecords]);
+
+  const visibleCausalItems = useMemo(() => {
+    if (includeImplicit) {
+      return initialCausalItems.filter((item) => item.explicit_type.trim().toUpperCase() === "I");
+    }
+
+    return initialCausalItems;
+  }, [includeImplicit, initialCausalItems]);
 
   const generatedBySourceText = useMemo(() => {
     return new Map(generatedResults.map((result) => [result.source_text, result]));
   }, [generatedResults]);
 
-  const handleGenerateAllQuestions = async () => {
-    setIsGeneratingAll(true);
+  const ensureExperimentItemId = (): string => {
+    const itemId = (experimentItemId || "").trim();
+    if (!itemId) {
+      throw new Error("No selected causal source item. Open follow-up from an extracted source file.");
+    }
 
-    const results = await buildMockGeneratedResults(initialCausalItems);
-    setGeneratedResults(results);
-    setOpenedPanels(new Set(results.map((result) => result.source_text)));
-    setGroupSubmitStatus({});
-    setAllSubmitStatus("");
-    setIsGeneratingAll(false);
+    return itemId;
+  };
+
+  const reloadFollowUpRecords = async (itemId: string): Promise<FollowUpRecord[]> => {
+    const records = await loadFollowUpRecordsForItem(itemId);
+    const hydratedResults = toGeneratedResults(records);
+    setGeneratedResults(hydratedResults);
+    setQuestionIdsBySource(toQuestionIdMap(records));
+    setAnswersBySource(toAnswersMap(records));
+    return records;
+  };
+
+  const handleNewQuestionDraftChange = (sourceText: string, value: string) => {
+    setNewQuestionDraftBySource((previous) => ({
+      ...previous,
+      [sourceText]: value,
+    }));
+  };
+
+  const handleAddQuestionSet = (sourceText: string) => {
+    const nextQuestion = (newQuestionDraftBySource[sourceText] ?? "").trim();
+    if (!nextQuestion) {
+      return;
+    }
+
+    const existingQuestions = generatedBySourceText.get(sourceText)?.generated_questions ?? [];
+    const isDuplicate = existingQuestions.some(
+      (question) => question.trim().toLowerCase() === nextQuestion.toLowerCase(),
+    );
+
+    if (isDuplicate) {
+      setGenerationStatus("This question already exists in the current set.");
+      return;
+    }
+
+    setGeneratedResults((previous) => {
+      const bySource = new Map(previous.map((result) => [result.source_text, result]));
+      const current = bySource.get(sourceText);
+      if (current) {
+        bySource.set(sourceText, {
+          ...current,
+          generated_questions: [...current.generated_questions, nextQuestion],
+        });
+      } else {
+        const sourceCausal = initialCausalItems.find((item) => item.source_text === sourceText);
+        bySource.set(sourceText, {
+          source_text: sourceText,
+          sentence_type: sourceCausal?.sentence_type ?? "",
+          generated_questions: [nextQuestion],
+        });
+      }
+
+      return visibleCausalItems
+        .map((item) => bySource.get(item.source_text))
+        .filter((item): item is GeneratedQuestionsData => Boolean(item));
+    });
+
+    setAnswersBySource((previous) => ({
+      ...previous,
+      [sourceText]: {
+        ...(previous[sourceText] ?? {}),
+        [nextQuestion]: previous[sourceText]?.[nextQuestion] ?? "",
+      },
+    }));
+
+    setNewQuestionDraftBySource((previous) => ({
+      ...previous,
+      [sourceText]: "",
+    }));
+
+    setOpenedPanels((previous) => {
+      const next = new Set(previous);
+      next.add(sourceText);
+      return next;
+    });
+
+    setGroupSubmitStatus((previous) => ({
+      ...previous,
+      [sourceText]: "",
+    }));
+    setGenerationStatus("Added a new question and answer box. Fill the answer, then submit.");
+  };
+
+  const handleGenerateAllQuestions = async () => {
+    if (visibleCausalItems.length === 0) {
+      setGenerationStatus("No causal items are currently displayed.");
+      return;
+    }
+
+    setIsGeneratingAll(true);
+    setGenerationStatus("");
+
+    try {
+      const itemId = ensureExperimentItemId();
+      const generatedRows = await requestGeneratedQuestions(visibleCausalItems);
+      const generatedBySource = new Map(generatedRows.map((row) => [row.source_text, row]));
+
+      await saveFollowUpQuestionsForItem({
+        experimentItemId: itemId,
+        records: visibleCausalItems.map((item) => ({
+          sourceText: item.source_text,
+          sentenceType: item.sentence_type,
+          generatedQuestions: generatedBySource.get(item.source_text)?.generated_questions ?? [],
+          causalRef: toCausalRef(item),
+          generatedBy: "system",
+        })),
+      });
+
+      await reloadFollowUpRecords(itemId);
+      setOpenedPanels(new Set(visibleCausalItems.map((item) => item.source_text)));
+      setGroupSubmitStatus({});
+      setAllSubmitStatus("");
+      setGenerationStatus(`Generated follow-up questions for ${String(visibleCausalItems.length)} displayed causal item(s).`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to generate follow-up questions.";
+      setGenerationStatus(message);
+    } finally {
+      setIsGeneratingAll(false);
+    }
   };
 
   const handleGenerateForCausal = async (causal: CausalItem) => {
@@ -331,31 +614,48 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
       next.add(causal.source_text);
       return next;
     });
+    setGenerationStatus("");
 
-    const [result] = await buildMockGeneratedResults([causal]);
+    try {
+      const itemId = ensureExperimentItemId();
+      const generatedRows = await requestGeneratedQuestions([causal]);
+      const generated = generatedRows.find((row) => row.source_text === causal.source_text);
 
-    if (result) {
-      setGeneratedResults((previous) => {
-        const bySource = new Map(previous.map((item) => [item.source_text, item]));
-        bySource.set(result.source_text, result);
-
-        return initialCausalItems
-          .map((item) => bySource.get(item.source_text))
-          .filter((item): item is GeneratedQuestionsData => Boolean(item));
+      await saveFollowUpQuestionsForItem({
+        experimentItemId: itemId,
+        records: [
+          {
+            sourceText: causal.source_text,
+            sentenceType: causal.sentence_type,
+            generatedQuestions: generated?.generated_questions ?? [],
+            causalRef: toCausalRef(causal),
+            generatedBy: "system",
+          },
+        ],
       });
 
+      await reloadFollowUpRecords(itemId);
       setOpenedPanels((previous) => {
         const next = new Set(previous);
         next.add(causal.source_text);
         return next;
       });
-    }
 
-    setGeneratingSources((previous) => {
-      const next = new Set(previous);
-      next.delete(causal.source_text);
-      return next;
-    });
+      if ((generated?.generated_questions.length ?? 0) === 0) {
+        setGenerationStatus("No follow-up questions were generated for this causal item.");
+      } else {
+        setGenerationStatus(`Generated ${String(generated?.generated_questions.length ?? 0)} question(s) for selected causal.`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to generate follow-up questions.";
+      setGenerationStatus(message);
+    } finally {
+      setGeneratingSources((previous) => {
+        const next = new Set(previous);
+        next.delete(causal.source_text);
+        return next;
+      });
+    }
   };
 
   const handleAnswerChange = (sourceText: string, question: string, answer: string) => {
@@ -388,22 +688,66 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
     setIsFiltering(true);
     await new Promise((resolve) => setTimeout(resolve, 650));
 
+    let removedCount = 0;
+    let keptCount = 0;
+
     const filtered = generatedResults.map((result) => {
-      const keptQuestions = result.generated_questions.filter((question) =>
-        /(simulation|system|policy|state|assumption|predict)/i.test(question),
-      );
+      const keptQuestions = result.generated_questions.filter((question) => {
+        const shouldFilterOut = isLikelyInternetAnswerable(question);
+        if (shouldFilterOut) {
+          removedCount += 1;
+          return false;
+        }
+        keptCount += 1;
+        return true;
+      });
 
       return {
         ...result,
-        generated_questions: keptQuestions.length > 0 ? keptQuestions : result.generated_questions.slice(0, 1),
+        generated_questions: keptQuestions,
       };
     });
 
     setGeneratedResults(filtered);
+    setGenerationStatus(`Filter completed: removed ${String(removedCount)} internet-answerable question(s), kept ${String(keptCount)} context-specific question(s).`);
     setIsFiltering(false);
   };
 
-  const handleSubmitGroup = (sourceText: string, questions: string[]) => {
+  const ensureQuestionIdsForSource = async (
+    itemId: string,
+    sourceText: string,
+    questions: string[],
+  ): Promise<Record<string, string>> => {
+    const currentIds = questionIdsBySource[sourceText] ?? {};
+    const hasMissingIds = questions.some((question) => !(currentIds[question] ?? "").trim());
+    if (!hasMissingIds) {
+      return currentIds;
+    }
+
+    const sourceCausal = initialCausalItems.find((item) => item.source_text === sourceText);
+    if (!sourceCausal) {
+      throw new Error("Unable to map this causal source when saving custom questions.");
+    }
+
+    await saveFollowUpQuestionsForItem({
+      experimentItemId: itemId,
+      records: [
+        {
+          sourceText,
+          sentenceType: sourceCausal.sentence_type,
+          generatedQuestions: questions,
+          causalRef: toCausalRef(sourceCausal),
+          generatedBy: "user",
+        },
+      ],
+    });
+
+    const records = await reloadFollowUpRecords(itemId);
+    const refreshedIds = toQuestionIdMap(records)[sourceText] ?? {};
+    return refreshedIds;
+  };
+
+  const handleSubmitGroup = async (sourceText: string, questions: string[]) => {
     if (questions.length === 0) {
       setGroupSubmitStatus((previous) => ({
         ...previous,
@@ -423,13 +767,42 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
       return;
     }
 
-    setGroupSubmitStatus((previous) => ({
-      ...previous,
-      [sourceText]: `Submitted ${String(questions.length)} Q&A item(s) for this causal.`,
-    }));
+    try {
+      const itemId = ensureExperimentItemId();
+      const questionIds = await ensureQuestionIdsForSource(itemId, sourceText, questions);
+      const unresolvedCount = questions.filter((question) => !(questionIds[question] ?? "").trim()).length;
+      if (unresolvedCount > 0) {
+        setGroupSubmitStatus((previous) => ({
+          ...previous,
+          [sourceText]: "Unable to map one or more questions to database records.",
+        }));
+        return;
+      }
+
+      await saveFollowUpAnswersForItem({
+        experimentItemId: itemId,
+        answers: questions.map((question) => ({
+          questionId: questionIds[question],
+          answerText: (answers[question] ?? "").trim(),
+          answeredBy: "user",
+        })),
+      });
+
+      await reloadFollowUpRecords(itemId);
+      setGroupSubmitStatus((previous) => ({
+        ...previous,
+        [sourceText]: `Submitted ${String(questions.length)} Q&A item(s) for this causal.`,
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to submit this Q&A group.";
+      setGroupSubmitStatus((previous) => ({
+        ...previous,
+        [sourceText]: message,
+      }));
+    }
   };
 
-  const handleSubmitAllQA = () => {
+  const handleSubmitAllQA = async () => {
     if (!hasGenerated) {
       setAllSubmitStatus("No generated questions available to submit yet.");
       return;
@@ -452,7 +825,47 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
       return;
     }
 
-    setAllSubmitStatus(`Submitted all Question & Answer successfully (${String(qaPairs.length)} item(s)).`);
+    try {
+      const itemId = ensureExperimentItemId();
+      const sourceToQuestions = new Map<string, string[]>();
+      for (const pair of qaPairs) {
+        const current = sourceToQuestions.get(pair.sourceText) ?? [];
+        current.push(pair.question);
+        sourceToQuestions.set(pair.sourceText, current);
+      }
+
+      const resolvedIdsBySource: Record<string, Record<string, string>> = {};
+      for (const [sourceText, questions] of sourceToQuestions.entries()) {
+        resolvedIdsBySource[sourceText] = await ensureQuestionIdsForSource(itemId, sourceText, questions);
+      }
+
+      const answersPayload = qaPairs
+      .map(({ sourceText, question }) => {
+        const questionId = resolvedIdsBySource[sourceText]?.[question] ?? "";
+        return {
+          questionId,
+          answerText: (answersBySource[sourceText]?.[question] ?? "").trim(),
+          answeredBy: "user",
+        };
+      })
+      .filter((entry) => entry.questionId.trim().length > 0);
+
+      if (answersPayload.length !== qaPairs.length) {
+        setAllSubmitStatus("Some questions are not mapped to database records yet. Please review and try again.");
+        return;
+      }
+
+      await saveFollowUpAnswersForItem({
+        experimentItemId: itemId,
+        answers: answersPayload,
+      });
+
+      await reloadFollowUpRecords(itemId);
+      setAllSubmitStatus(`Submitted all Question & Answer successfully (${String(qaPairs.length)} item(s)).`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to submit all Q&A.";
+      setAllSubmitStatus(message);
+    }
   };
 
   return (
@@ -469,7 +882,7 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
         <div>
           <p className="mb-3 text-sm font-semibold text-neutral-200">Select implicit causal for question generation</p>
           <div className="space-y-3">
-            {initialCausalItems.map((causal, index) => {
+            {visibleCausalItems.map((causal, index) => {
               const generated = generatedBySourceText.get(causal.source_text);
 
               return (
@@ -484,11 +897,20 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
                   isGeneratingForCausal={generatingSources.has(causal.source_text)}
                   answers={answersBySource[causal.source_text] ?? {}}
                   onAnswerChange={(question, answer) => handleAnswerChange(causal.source_text, question, answer)}
-                  onSubmitGroup={() => handleSubmitGroup(causal.source_text, generated?.generated_questions ?? [])}
+                  newQuestionDraft={newQuestionDraftBySource[causal.source_text] ?? ""}
+                  onNewQuestionDraftChange={(value) => handleNewQuestionDraftChange(causal.source_text, value)}
+                  onAddQuestionSet={() => handleAddQuestionSet(causal.source_text)}
+                  onSubmitGroup={() => void handleSubmitGroup(causal.source_text, generated?.generated_questions ?? [])}
                   groupSubmitMessage={groupSubmitStatus[causal.source_text] ?? ""}
                 />
               );
             })}
+
+            {includeImplicit && visibleCausalItems.length === 0 ? (
+              <p className="rounded-lg border border-neutral-700 bg-neutral-950/80 p-3 text-sm text-neutral-300">
+                No implicit causal items (explicit_type = I) found for question generation.
+              </p>
+            ) : null}
           </div>
         </div>
       </div>
@@ -497,7 +919,7 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={handleGenerateAllQuestions}
+            onClick={() => void handleGenerateAllQuestions()}
             disabled={isGeneratingAll}
             className="rounded-lg border border-emerald-500 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
           >
@@ -508,6 +930,8 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
             type="button"
             onClick={handleRunFilter}
             disabled={isFiltering || !hasGenerated || generatedResults.length === 0}
+            title="Filter out questions that can be answered on the internet."
+            aria-label="Filter out questions that can be answered on the internet"
             className="rounded-lg border border-sky-500 bg-sky-500/20 px-4 py-2 text-sm font-bold text-sky-200 transition hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
           >
             {isFiltering ? "RUNNING FILTER..." : "Run filter"}
@@ -516,13 +940,18 @@ export default function FollowUpGenerationPage({ initialCausalItems = mockCausal
 
         <button
           type="button"
-          onClick={handleSubmitAllQA}
+          onClick={() => void handleSubmitAllQA()}
           className="rounded-lg border border-neutral-700 bg-neutral-950 px-5 py-2 text-sm font-bold tracking-wide text-neutral-100 transition hover:border-neutral-500"
         >
           Submit all Question & Answer
         </button>
       </div>
 
+      <p className="mt-2 text-xs text-neutral-400">
+        Run filter will filter out questions that can be answered on the internet.
+      </p>
+
+      {generationStatus ? <p className="mt-3 text-sm text-neutral-300">{generationStatus}</p> : null}
       {allSubmitStatus ? <p className="mt-3 text-sm text-neutral-300">{allSubmitStatus}</p> : null}
     </section>
   );
