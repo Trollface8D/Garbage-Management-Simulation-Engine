@@ -13,13 +13,18 @@ import {
 } from "@/lib/simulation-components";
 import {
     deleteCausalSourceItem,
+    loadCausalArtifactsForItem,
     loadCausalSourceItems,
     loadComponents,
     loadProjects,
+    saveCausalArtifactsForItem,
+    saveTextChunksForItem,
     loadTextChunksForItem,
     saveCausalSourceItem,
     uploadCausalSourceFile,
     type CausalSourceItem,
+    type FollowUpExportRecord,
+    type ExtractionPayloadRecord,
 } from "@/lib/pm-storage";
 
 type FeatureTab = "chunking" | "extract" | "follow_up";
@@ -40,6 +45,83 @@ type UploadedLocalFile = {
     fileName: string;
     fileType: string;
 };
+
+type ChunkingImportPayload = {
+    export_type: "chunking";
+    version: "1.0";
+    file_name?: string;
+    chunks: Array<{
+        index: number;
+        metadata?: Record<string, unknown>;
+        content: string;
+    }>;
+};
+
+type CausalImportPayload = {
+    export_type: "causal";
+    version: "1.0";
+    file_name?: string;
+    raw_extraction: ExtractionPayloadRecord[];
+    follow_up?: FollowUpExportRecord[];
+    chunk_snapshot?: Array<{
+        index: number;
+        metadata?: Record<string, unknown>;
+        content: string;
+    }>;
+};
+
+type ArtifactBundleExportPayload = {
+    export_type: "causal_bundle";
+    version: "1.0";
+    exported_at: string;
+    project_id: string;
+    component_id: string;
+    item: {
+        id: string;
+        label: string;
+        file_name: string;
+        source_type: SourceType;
+        status: DataStatus;
+        tags: string[];
+    };
+    chunks: Array<{
+        index: number;
+        metadata: {
+            length: number;
+            source: "text_chunks";
+        };
+        content: string;
+    }>;
+    raw_extraction: ExtractionPayloadRecord[];
+    follow_up: FollowUpExportRecord[];
+};
+
+function isChunkingImportPayload(value: unknown): value is ChunkingImportPayload {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const payload = value as Partial<ChunkingImportPayload>;
+    return payload.export_type === "chunking" && Array.isArray(payload.chunks);
+}
+
+function isCausalImportPayload(value: unknown): value is CausalImportPayload {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const payload = value as Partial<CausalImportPayload>;
+    return payload.export_type === "causal" && Array.isArray(payload.raw_extraction);
+}
+
+function isArtifactBundleImportPayload(value: unknown): value is ArtifactBundleExportPayload {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const payload = value as Partial<ArtifactBundleExportPayload>;
+    return payload.export_type === "causal_bundle" && payload.item !== undefined && Array.isArray(payload.chunks);
+}
 
 function isFeatureTab(value: string | null): value is FeatureTab {
     return value === "chunking" || value === "extract" || value === "follow_up";
@@ -74,6 +156,22 @@ function createLocalId(prefix: string): string {
         return `${prefix}-${crypto.randomUUID()}`;
     }
     return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sanitizeFilenameSegment(value: string): string {
+    return value.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "item";
+}
+
+function downloadJsonFile(fileName: string, payload: unknown): void {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(href);
 }
 
 function CausalExtractHomeContent() {
@@ -125,6 +223,7 @@ function CausalExtractHomeContent() {
     const [uploadStatus, setUploadStatus] = useState<string>("");
     const [isHydratingItems, setIsHydratingItems] = useState<boolean>(false);
     const filePickerRef = useRef<HTMLInputElement | null>(null);
+    const importPickerRef = useRef<HTMLInputElement | null>(null);
 
     const selectedProjectName = useMemo(
         () =>
@@ -241,6 +340,270 @@ function CausalExtractHomeContent() {
         filePickerRef.current?.click();
     };
 
+    const handleOpenImportPicker = () => {
+        importPickerRef.current?.click();
+    };
+
+    const appendImportedItem = (saved: CausalSourceItem, sourceFileType = "application/json") => {
+        setExperimentItems((prev) => [
+            {
+                id: saved.id,
+                label: saved.label,
+                fileName: saved.fileName,
+                sourceType: saved.sourceType,
+                status: saved.status,
+                tags: saved.tags,
+            },
+            ...prev,
+        ]);
+
+        setUploadedFiles((prev) => [
+            {
+                id: saved.id,
+                fileName: saved.fileName,
+                fileType: sourceFileType,
+            },
+            ...prev,
+        ]);
+    };
+
+    const handleImportFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const picked = Array.from(event.target.files ?? []);
+        event.currentTarget.value = "";
+
+        if (picked.length === 0) {
+            return;
+        }
+
+        if (!selectedProjectId || !componentId) {
+            setUploadStatus("Select a component first before importing artifacts.");
+            return;
+        }
+
+        const errors: string[] = [];
+        let importedCount = 0;
+
+        for (const file of picked) {
+            try {
+                const text = await file.text();
+                const parsed = JSON.parse(text) as unknown;
+
+                if (isArtifactBundleImportPayload(parsed)) {
+                    const chunks = [...parsed.chunks]
+                        .sort((left, right) => left.index - right.index)
+                        .map((entry) => (typeof entry.content === "string" ? entry.content.trim() : ""))
+                        .filter(Boolean);
+
+                    const extractionPayload = Array.isArray(parsed.raw_extraction) ? parsed.raw_extraction : [];
+                    const followUpPayload = Array.isArray(parsed.follow_up) ? parsed.follow_up : [];
+
+                    const status: DataStatus = extractionPayload.length > 0
+                        ? "extracted"
+                        : chunks.length > 0
+                            ? "chunked"
+                            : "raw_text";
+
+                    const itemId = createLocalId("imported-bundle");
+                    const inferredName =
+                        parsed.item.file_name?.trim() || file.name || `${itemId}.txt`;
+
+                    const sourceText = chunks.length > 0
+                        ? chunks.join("\n\n")
+                        : extractionPayload
+                            .flatMap((chunk) => chunk.classes.map((item) => item.source_text).filter(Boolean))
+                            .join("\n\n");
+
+                    const savedItem = await saveCausalSourceItem({
+                        id: itemId,
+                        projectId: selectedProjectId,
+                        componentId,
+                        label: parsed.item.label?.trim() || "imported artifact bundle",
+                        fileName: inferredName,
+                        sourceType: parsed.item.source_type === "audio" ? "audio" : "text",
+                        status,
+                        tags: Array.from(new Set(["imported", "bundle", ...(parsed.item.tags ?? [])])),
+                        textContent: sourceText,
+                    });
+
+                    if (chunks.length > 0) {
+                        await saveTextChunksForItem({
+                            experimentItemId: itemId,
+                            projectId: selectedProjectId,
+                            componentId,
+                            chunks,
+                            model: "imported-json",
+                            chunkSizeWords: 20,
+                            chunkOverlapWords: 0,
+                        });
+                    }
+
+                    if (extractionPayload.length > 0 || followUpPayload.length > 0) {
+                        await saveCausalArtifactsForItem({
+                            experimentItemId: itemId,
+                            rawExtraction: extractionPayload,
+                            followUp: followUpPayload,
+                        });
+                    }
+
+                    appendImportedItem({ ...savedItem, status }, file.type || "application/json");
+                    importedCount += 1;
+                    continue;
+                }
+
+                if (isChunkingImportPayload(parsed)) {
+                    const chunks = [...parsed.chunks]
+                        .sort((left, right) => left.index - right.index)
+                        .map((entry) => (typeof entry.content === "string" ? entry.content.trim() : ""))
+                        .filter(Boolean);
+
+                    if (chunks.length === 0) {
+                        throw new Error("Chunking file has no valid chunk content.");
+                    }
+
+                    const itemId = createLocalId("imported-chunk");
+                    const inferredName = parsed.file_name?.trim() || file.name || `${itemId}.txt`;
+                    const savedItem = await saveCausalSourceItem({
+                        id: itemId,
+                        projectId: selectedProjectId,
+                        componentId,
+                        label: "imported chunking artifact",
+                        fileName: inferredName,
+                        sourceType: "text",
+                        status: "raw_text",
+                        tags: ["imported", "chunking"],
+                        textContent: chunks.join("\n\n"),
+                    });
+
+                    await saveTextChunksForItem({
+                        experimentItemId: itemId,
+                        projectId: selectedProjectId,
+                        componentId,
+                        chunks,
+                        model: "imported-json",
+                        chunkSizeWords: 20,
+                        chunkOverlapWords: 0,
+                    });
+
+                    appendImportedItem({ ...savedItem, status: "chunked" }, file.type || "application/json");
+                    importedCount += 1;
+                    continue;
+                }
+
+                if (isCausalImportPayload(parsed)) {
+                    const chunkSnapshot = [...(parsed.chunk_snapshot ?? [])]
+                        .sort((left, right) => left.index - right.index)
+                        .map((entry) => (typeof entry.content === "string" ? entry.content.trim() : ""))
+                        .filter(Boolean);
+                    const itemId = createLocalId("imported-causal");
+                    const inferredName = parsed.file_name?.trim() || file.name || `${itemId}.txt`;
+
+                    const sourceText = chunkSnapshot.length > 0
+                        ? chunkSnapshot.join("\n\n")
+                        : parsed.raw_extraction
+                            .flatMap((chunk) => chunk.classes.map((item) => item.source_text).filter(Boolean))
+                            .join("\n\n");
+
+                    const savedItem = await saveCausalSourceItem({
+                        id: itemId,
+                        projectId: selectedProjectId,
+                        componentId,
+                        label: "imported causal artifact",
+                        fileName: inferredName,
+                        sourceType: "text",
+                        status: "raw_text",
+                        tags: ["imported", "causal"],
+                        textContent: sourceText,
+                    });
+
+                    if (chunkSnapshot.length > 0) {
+                        await saveTextChunksForItem({
+                            experimentItemId: itemId,
+                            projectId: selectedProjectId,
+                            componentId,
+                            chunks: chunkSnapshot,
+                            model: "imported-json",
+                            chunkSizeWords: 20,
+                            chunkOverlapWords: 0,
+                        });
+                    }
+
+                    await saveCausalArtifactsForItem({
+                        experimentItemId: itemId,
+                        rawExtraction: parsed.raw_extraction,
+                        followUp: parsed.follow_up ?? [],
+                    });
+
+                    appendImportedItem({ ...savedItem, status: "extracted" }, file.type || "application/json");
+                    importedCount += 1;
+                    continue;
+                }
+
+                throw new Error("Unsupported export file type.");
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "Unknown import error.";
+                errors.push(`${file.name}: ${message}`);
+            }
+        }
+
+        if (errors.length > 0) {
+            setUploadStatus(
+                `Imported ${String(importedCount)} file(s). Skipped ${String(errors.length)}: ${errors.join(" | ")}`,
+            );
+            return;
+        }
+
+        setUploadStatus(`Imported ${String(importedCount)} file(s) successfully.`);
+    };
+
+    const handleExportItemBundle = (item: ExperimentItem) => {
+        void (async () => {
+            if (!selectedProjectId || !componentId) {
+                setUploadStatus("Select a component first before exporting artifacts.");
+                return;
+            }
+
+            try {
+                const [chunks, causalArtifacts] = await Promise.all([
+                    loadTextChunksForItem(item.id).catch(() => []),
+                    loadCausalArtifactsForItem(item.id).catch(() => ({ raw_extraction: [], follow_up: [] })),
+                ]);
+
+                const payload: ArtifactBundleExportPayload = {
+                    export_type: "causal_bundle",
+                    version: "1.0",
+                    exported_at: new Date().toISOString(),
+                    project_id: selectedProjectId,
+                    component_id: componentId,
+                    item: {
+                        id: item.id,
+                        label: item.label,
+                        file_name: item.fileName,
+                        source_type: item.sourceType,
+                        status: item.status,
+                        tags: item.tags,
+                    },
+                    chunks: chunks.map((content, index) => ({
+                        index,
+                        metadata: {
+                            length: content.length,
+                            source: "text_chunks",
+                        },
+                        content,
+                    })),
+                    raw_extraction: causalArtifacts.raw_extraction,
+                    follow_up: causalArtifacts.follow_up,
+                };
+
+                const stamp = new Date().toISOString().replace(/[.:]/g, "-");
+                const fileName = `${sanitizeFilenameSegment(item.fileName || item.id)}-bundle-${stamp}.json`;
+                downloadJsonFile(fileName, payload);
+                setUploadStatus(`Exported bundle for ${item.fileName}.`);
+            } catch {
+                setUploadStatus(`Unable to export bundle for ${item.fileName}.`);
+            }
+        })();
+    };
+
     const handleFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const picked = Array.from(event.target.files ?? []);
         event.currentTarget.value = "";
@@ -305,6 +668,24 @@ function CausalExtractHomeContent() {
             await deleteCausalSourceItem(targetId);
             setUploadedFiles((prev) => prev.filter((upload) => upload.id !== targetId));
             setExperimentItems((prev) => prev.filter((item) => item.id !== targetId));
+            setChunkCountsByItemId((prev) => {
+                const next = { ...prev };
+                delete next[targetId];
+                return next;
+            });
+        })();
+    };
+
+    const handleDeleteItemCard = (targetId: string) => {
+        void (async () => {
+            await deleteCausalSourceItem(targetId);
+            setUploadedFiles((prev) => prev.filter((upload) => upload.id !== targetId));
+            setExperimentItems((prev) => prev.filter((item) => item.id !== targetId));
+            setChunkCountsByItemId((prev) => {
+                const next = { ...prev };
+                delete next[targetId];
+                return next;
+            });
         })();
     };
 
@@ -429,6 +810,24 @@ function CausalExtractHomeContent() {
                                 accept=".txt,.pdf,text/plain,application/pdf,audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac"
                                 onChange={(event) => {
                                     void handleFilesSelected(event);
+                                }}
+                                className="hidden"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleOpenImportPicker}
+                                className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20"
+                                aria-label="Import artifact JSON"
+                            >
+                                <span>Import artifact bundle JSON</span>
+                            </button>
+                            <input
+                                ref={importPickerRef}
+                                type="file"
+                                multiple
+                                accept="application/json,.json"
+                                onChange={(event) => {
+                                    void handleImportFilesSelected(event);
                                 }}
                                 className="hidden"
                             />
@@ -562,9 +961,49 @@ function CausalExtractHomeContent() {
                                                     </span>
                                                 ))}
                                             </div>
-                                            <p className={`text-xs font-semibold ${chunkCount > 0 ? "text-emerald-300" : "text-neutral-400"}`}>
-                                                {String(chunkCount)} chunk{chunkCount === 1 ? "" : "s"}
-                                            </p>
+                                            <div className="flex items-center gap-2">
+                                                <p className={`text-xs font-semibold ${chunkCount > 0 ? "text-emerald-300" : "text-neutral-400"}`}>
+                                                    {String(chunkCount)} chunk{chunkCount === 1 ? "" : "s"}
+                                                </p>
+                                                <button
+                                                    type="button"
+                                                    onClick={(event) => {
+                                                        event.preventDefault();
+                                                        event.stopPropagation();
+                                                        handleExportItemBundle(item);
+                                                    }}
+                                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-700 bg-sky-500/10 text-sky-200 transition hover:bg-sky-500/20"
+                                                    aria-label={`Export bundle for ${item.fileName}`}
+                                                    title="Export bundle JSON"
+                                                >
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                                                        <path d="M12 3v12" />
+                                                        <path d="M8 11l4 4 4-4" />
+                                                        <path d="M5 19h14" />
+                                                    </svg>
+                                                </button>
+                                                {(activeFeature === "chunking" || activeFeature === "extract") && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(event) => {
+                                                            event.preventDefault();
+                                                            event.stopPropagation();
+                                                            handleDeleteItemCard(item.id);
+                                                        }}
+                                                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-red-800 bg-red-500/10 text-red-300 transition hover:bg-red-500/20"
+                                                        aria-label={`Delete ${item.fileName}`}
+                                                        title="Delete this item"
+                                                    >
+                                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                                                            <path d="M3 6h18" />
+                                                            <path d="M8 6V4h8v2" />
+                                                            <path d="M19 6l-1 14H6L5 6" />
+                                                            <path d="M10 11v6" />
+                                                            <path d="M14 11v6" />
+                                                        </svg>
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                     </Link>
                                         );

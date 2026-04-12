@@ -331,8 +331,6 @@ function CausalExtractChunkingContent() {
         }
     }, [blocks, componentId, initialItemId, selectedProjectId]);
 
-    const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
-
     return (
         <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
             <main className="mx-auto w-full max-w-6xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
@@ -351,8 +349,9 @@ function CausalExtractChunkingContent() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <BackToHome
-                            href={projectBackHref}
+                            href="/"
                             label="Back to project"
+                            useHistoryBack
                             containerClassName=""
                             className="rounded-md px-3 py-2"
                         />
