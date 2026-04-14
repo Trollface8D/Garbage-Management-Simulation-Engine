@@ -1,30 +1,4 @@
-kg_studio/
-├── app.py                 # Core App & State Config
-├── registry.py            # Centralized Disk Cache config
-├── pipeline_engine.py     # Compatibility launcher for backend CLI
-├── backend/
-│   ├── __main__.py        # Canonical module entrypoint
-│   ├── cli.py             # Argument parsing + serve-api switch
-│   ├── app/
-│   │   └── api.py         # FastAPI sidecar app
-│   ├── pipeline/
-│   │   ├── engine.py      # Pipeline orchestration class
-│   │   ├── steps.py       # Chunking/transcription/prompt processing helpers
-│   │   ├── llm_client.py  # Gemini gateway and robust JSON parsing
-│   │   └── types.py       # Shared dataclasses
-│   └── infra/
-│       ├── io_utils.py    # File and naming utilities
-│       └── paths.py       # Paths/defaults/supported audio MIME map
-├── pages/
-│   ├── extraction_page.py # UI for PDF/MP4 -> Gemini
-│   ├── graph_rag_page.py  # The "Inspector" & Selection UI
-│   └── generation_page.py # Generation Log & Output
-├── utils/
-│   ├── graph_engine.py    # BFS Traversal & NetworkX logic
-│   ├── vector_db.py       # GraphVecDB Class (Cleaned up)
-│   └── schemas.py         # Pydantic & Enum definitions
-└── assets/                # Custom CSS for "Window App" look
-
+# Backend 
 ## Backend refactor summary
 
 - Split backend into clear subpackages (`app`, `pipeline`, `infra`) to separate API transport, core orchestration, and utility/config concerns.

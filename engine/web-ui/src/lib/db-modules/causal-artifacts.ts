@@ -703,7 +703,7 @@ export function saveFollowUpAnswers(input: SaveFollowUpAnswersInput): SaveFollow
       const questionId = (entry.questionId || "").trim();
       const answerText = (entry.answerText || "").trim();
 
-      if (!questionId || !answerText || !allowedQuestionIds.has(questionId)) {
+      if (!questionId || !allowedQuestionIds.has(questionId)) {
         continue;
       }
 
@@ -716,6 +716,17 @@ export function saveFollowUpAnswers(input: SaveFollowUpAnswersInput): SaveFollow
         .where(eq(followUpAnswers.questionId, questionId))
         .limit(1)
         .get();
+
+      if (!answerText) {
+        if (existing) {
+          tx
+            .delete(followUpAnswers)
+            .where(eq(followUpAnswers.id, existing.id))
+            .run();
+          savedAnswers += 1;
+        }
+        continue;
+      }
 
       if (existing) {
         tx
