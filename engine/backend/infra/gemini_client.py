@@ -1,10 +1,16 @@
 import json
-import os
+import logging
+import random
 import re
+import time
 from typing import Any
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai.types import GenerateContentConfig, Part, ThinkingConfig
+
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiGateway:
@@ -103,6 +109,26 @@ class GeminiGateway:
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
         }
+
+    @staticmethod
+    def _is_retryable_transient_error(exc: Exception) -> bool:
+        if isinstance(exc, genai_errors.ServerError):
+            return True
+
+        message = str(exc).lower()
+        transient_tokens = (
+            "503",
+            "unavailable",
+            "high demand",
+            "resource exhausted",
+            "temporarily",
+            "timeout",
+            "timed out",
+            "connection reset",
+            "connection aborted",
+            "network",
+        )
+        return any(token in message for token in transient_tokens)
 
     def generate_json(self, prompt: str) -> Any:
         return self.parse_json_relaxed(self.generate_text(prompt, response_json=True))

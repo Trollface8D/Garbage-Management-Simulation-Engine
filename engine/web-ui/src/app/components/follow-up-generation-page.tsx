@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   loadFollowUpRecordsForItem,
   saveFollowUpAnswersForItem,
@@ -38,6 +38,99 @@ type FollowUpGenerationPageProps = {
   experimentItemId?: string;
   initialFollowUpRecords?: FollowUpRecord[];
 };
+
+type AnswerFilterMode = "all" | "unanswered" | "answered";
+
+type FollowUpDraftPayload = {
+  answersBySource: Record<string, Record<string, string>>;
+  updatedAt: string;
+};
+
+const DRAFT_SYNC_THRESHOLD = 3;
+const DRAFT_SYNC_DEBOUNCE_MS = 800;
+
+function getFollowUpDraftStorageKey(experimentItemId?: string): string | null {
+  const itemId = (experimentItemId || "").trim();
+  if (!itemId) {
+    return null;
+  }
+
+  return `pm.follow-up.drafts:${itemId}`;
+}
+
+function readFollowUpDraftFromStorage(experimentItemId?: string): FollowUpDraftPayload | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const key = getFollowUpDraftStorageKey(experimentItemId);
+  if (!key) {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return null;
+    }
+
+    const payload = JSON.parse(raw) as FollowUpDraftPayload;
+    if (!payload || typeof payload !== "object" || typeof payload.answersBySource !== "object") {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function writeFollowUpDraftToStorage(experimentItemId: string, answersBySource: Record<string, Record<string, string>>): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const key = getFollowUpDraftStorageKey(experimentItemId);
+  if (!key) {
+    return;
+  }
+
+  const payload: FollowUpDraftPayload = {
+    answersBySource,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(payload));
+  } catch {
+    // Ignore storage quota errors to avoid blocking typing.
+  }
+}
+
+function mergeAnswersByPriority(
+  serverAnswers: Record<string, Record<string, string>>,
+  localDraftAnswers: Record<string, Record<string, string>>,
+): Record<string, Record<string, string>> {
+  const merged: Record<string, Record<string, string>> = {};
+
+  const sourceKeys = new Set([...Object.keys(localDraftAnswers), ...Object.keys(serverAnswers)]);
+  for (const sourceText of sourceKeys) {
+    const localQuestions = localDraftAnswers[sourceText] ?? {};
+    const serverQuestions = serverAnswers[sourceText] ?? {};
+    const questionKeys = new Set([...Object.keys(localQuestions), ...Object.keys(serverQuestions)]);
+    const byQuestion: Record<string, string> = {};
+
+    for (const question of questionKeys) {
+      const serverValue = serverQuestions[question] ?? "";
+      const hasLocalValue = Object.prototype.hasOwnProperty.call(localQuestions, question);
+      byQuestion[question] = hasLocalValue ? (localQuestions[question] ?? "") : serverValue;
+    }
+
+    merged[sourceText] = byQuestion;
+  }
+
+  return merged;
+}
 
 function toGeneratedResults(records: FollowUpRecord[]): GeneratedQuestionsData[] {
   const bySource = new Map<string, { sentenceType: string; questions: string[]; questionSet: Set<string> }>();
@@ -159,12 +252,18 @@ function CausalCard({
   onGenerateForCausal,
   isGeneratingForCausal,
   answers,
+  filterAnswers,
   onAnswerChange,
+  onAnswerBlur,
   newQuestionDraft,
   onNewQuestionDraftChange,
   onAddQuestionSet,
   onSubmitGroup,
   groupSubmitMessage,
+  answerFilterMode,
+  totalAnsweredCount,
+  totalUnansweredCount,
+  isAddedToCausalStructure,
 }: {
   causal: CausalItem;
   index: number;
@@ -174,14 +273,30 @@ function CausalCard({
   onGenerateForCausal: () => void;
   isGeneratingForCausal: boolean;
   answers: Record<string, string>;
+  filterAnswers: Record<string, string>;
   onAnswerChange: (question: string, answer: string) => void;
+  onAnswerBlur: () => void;
   newQuestionDraft: string;
   onNewQuestionDraftChange: (value: string) => void;
   onAddQuestionSet: () => void;
   onSubmitGroup: () => void;
   groupSubmitMessage: string;
+  answerFilterMode: AnswerFilterMode;
+  totalAnsweredCount: number;
+  totalUnansweredCount: number;
+  isAddedToCausalStructure: boolean;
 }) {
+  const filteredQuestions = generatedQuestions.filter((question) => {
+    const isAnswered = (filterAnswers[question] ?? "").trim().length > 0;
+    if (answerFilterMode === "all") {
+      return true;
+    }
+
+    return answerFilterMode === "answered" ? isAnswered : !isAnswered;
+  });
+
   const hasQuestions = generatedQuestions.length > 0;
+  const hasFilteredQuestions = filteredQuestions.length > 0;
   const panelLabel = hasQuestions
     ? `Generated questions (${String(generatedQuestions.length)})`
     : "Generated questions";
@@ -198,6 +313,11 @@ function CausalCard({
           <span className="inline-flex rounded-full border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-300">
             class {String(index + 1)}
           </span>
+          {isAddedToCausalStructure ? (
+            <span className="inline-flex rounded-full border border-emerald-700 bg-emerald-500/20 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-200">
+              Added to causal structure
+            </span>
+          ) : null}
         </div>
         <button
           type="button"
@@ -315,18 +435,27 @@ function CausalCard({
 
             {hasQuestions ? (
               <div className="space-y-2">
-                {generatedQuestions.map((question) => (
+                <p className="text-xs text-neutral-400">
+                  Showing {answerFilterMode === "all" ? "all" : answerFilterMode} questions: {String(filteredQuestions.length)} of {String(generatedQuestions.length)} (answered {String(totalAnsweredCount)}, unanswered {String(totalUnansweredCount)})
+                </p>
+
+                {hasFilteredQuestions ? filteredQuestions.map((question) => (
                   <div key={question} className="rounded-lg border border-neutral-700 bg-neutral-950/90 p-2">
                     <p className="text-sm text-neutral-100">{question}</p>
                     <textarea
                       value={answers[question] ?? ""}
                       onChange={(event) => onAnswerChange(question, event.target.value)}
+                      onBlur={onAnswerBlur}
                       rows={1}
                       className="mt-2 h-10 w-full resize-y rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
                       placeholder="Type answer for this question"
                     />
                   </div>
-                ))}
+                )) : (
+                  <p className="text-sm text-neutral-400">
+                    No {answerFilterMode} questions in this group right now.
+                  </p>
+                )}
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                   <button
@@ -334,9 +463,9 @@ function CausalCard({
                     onClick={onSubmitGroup}
                     className="rounded-md border border-sky-600 bg-sky-500/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-200 transition hover:bg-sky-500/20"
                   >
-                    Submit this question group
+                    Submit answered in this group
                   </button>
-                  <span className="text-xs text-neutral-400">Provide answers for all questions before submit.</span>
+                  <span className="text-xs text-neutral-400">Unanswered items stay as drafts and can be submitted later.</span>
                 </div>
 
                 {groupSubmitMessage ? <p className="text-xs text-emerald-300">{groupSubmitMessage}</p> : null}
@@ -454,20 +583,63 @@ export default function FollowUpGenerationPage({
   const [groupSubmitStatus, setGroupSubmitStatus] = useState<Record<string, string>>({});
   const [allSubmitStatus, setAllSubmitStatus] = useState("");
   const [generationStatus, setGenerationStatus] = useState("");
+  const [draftSyncStatus, setDraftSyncStatus] = useState("");
+  const [answerFilterMode, setAnswerFilterMode] = useState<AnswerFilterMode>("all");
+  const [submittedSources, setSubmittedSources] = useState<Set<string>>(() => new Set());
+  const [filterBasisAnswersBySource, setFilterBasisAnswersBySource] = useState<Record<string, Record<string, string>>>(() =>
+    toAnswersMap(initialFollowUpRecords),
+  );
+
+  const answersBySourceRef = useRef<Record<string, Record<string, string>>>(answersBySource);
+  const questionIdsBySourceRef = useRef<Record<string, Record<string, string>>>(questionIdsBySource);
+  const generatedResultsRef = useRef<GeneratedQuestionsData[]>(generatedResults);
+  const draftDebounceTimerRef = useRef<number | null>(null);
+  const dirtyAnswerKeysRef = useRef<Set<string>>(new Set());
+  const isDraftSyncInFlightRef = useRef(false);
+  const shouldDraftSyncAgainRef = useRef(false);
+  const flushDraftNowRef = useRef<(reason: "blur" | "leave" | "submit") => void>(() => {});
 
   const hasGenerated = generatedResults.some((result) => result.generated_questions.length > 0);
 
   useEffect(() => {
     const hydratedResults = toGeneratedResults(initialFollowUpRecords);
+    const serverAnswers = toAnswersMap(initialFollowUpRecords);
+    const localDraft = readFollowUpDraftFromStorage(experimentItemId);
+    const mergedAnswers = mergeAnswersByPriority(serverAnswers, localDraft?.answersBySource ?? {});
+
     setGeneratedResults(hydratedResults);
     setQuestionIdsBySource(toQuestionIdMap(initialFollowUpRecords));
-    setAnswersBySource(toAnswersMap(initialFollowUpRecords));
+    setAnswersBySource(mergedAnswers);
+    setFilterBasisAnswersBySource(mergedAnswers);
     setOpenedPanels(new Set(hydratedResults.map((result) => result.source_text)));
     setNewQuestionDraftBySource({});
     setGroupSubmitStatus({});
     setAllSubmitStatus("");
     setGenerationStatus("");
+    setDraftSyncStatus(localDraft ? "Loaded local draft answers." : "");
+
+    const initialSubmittedSources = new Set<string>();
+    for (const record of initialFollowUpRecords) {
+      if ((record.questions ?? []).some((question) => (question.answerText ?? "").trim().length > 0)) {
+        initialSubmittedSources.add(record.sourceText);
+      }
+    }
+    setSubmittedSources(initialSubmittedSources);
+
+    dirtyAnswerKeysRef.current = new Set();
   }, [experimentItemId, initialFollowUpRecords]);
+
+  useEffect(() => {
+    answersBySourceRef.current = answersBySource;
+  }, [answersBySource]);
+
+  useEffect(() => {
+    questionIdsBySourceRef.current = questionIdsBySource;
+  }, [questionIdsBySource]);
+
+  useEffect(() => {
+    generatedResultsRef.current = generatedResults;
+  }, [generatedResults]);
 
   const visibleCausalItems = useMemo(() => {
     if (includeImplicit) {
@@ -493,11 +665,166 @@ export default function FollowUpGenerationPage({
   const reloadFollowUpRecords = async (itemId: string): Promise<FollowUpRecord[]> => {
     const records = await loadFollowUpRecordsForItem(itemId);
     const hydratedResults = toGeneratedResults(records);
+    const serverAnswers = toAnswersMap(records);
+    const localDraft = readFollowUpDraftFromStorage(itemId);
     setGeneratedResults(hydratedResults);
     setQuestionIdsBySource(toQuestionIdMap(records));
-    setAnswersBySource(toAnswersMap(records));
+    const mergedAnswers = mergeAnswersByPriority(serverAnswers, localDraft?.answersBySource ?? {});
+    setAnswersBySource(mergedAnswers);
+    setFilterBasisAnswersBySource(mergedAnswers);
     return records;
   };
+
+  const refreshFilterSnapshot = () => {
+    setFilterBasisAnswersBySource(answersBySourceRef.current);
+  };
+
+  const handleFilterModeChange = (mode: AnswerFilterMode) => {
+    setAnswerFilterMode(mode);
+    refreshFilterSnapshot();
+  };
+
+  const flushDraftAnswersToDatabase = async (reason: "threshold" | "blur" | "leave" | "submit") => {
+    const itemId = (experimentItemId || "").trim();
+    if (!itemId) {
+      return;
+    }
+
+    if (isDraftSyncInFlightRef.current) {
+      shouldDraftSyncAgainRef.current = true;
+      return;
+    }
+
+    const dirtyKeys = Array.from(dirtyAnswerKeysRef.current);
+    if (dirtyKeys.length === 0) {
+      return;
+    }
+
+    isDraftSyncInFlightRef.current = true;
+
+    try {
+      const currentAnswers = answersBySourceRef.current;
+      const currentQuestionIds = questionIdsBySourceRef.current;
+      const sourceToQuestionSet = new Map<string, Set<string>>();
+
+      for (const key of dirtyKeys) {
+        const separator = key.indexOf("||");
+        if (separator <= 0) {
+          continue;
+        }
+
+        const sourceText = key.slice(0, separator);
+        const question = key.slice(separator + 2);
+        const sourceSet = sourceToQuestionSet.get(sourceText) ?? new Set<string>();
+        sourceSet.add(question);
+        sourceToQuestionSet.set(sourceText, sourceSet);
+      }
+
+      const answersPayload: Array<{ questionId: string; answerText: string; answeredBy: string }> = [];
+
+      for (const [sourceText, questionSet] of sourceToQuestionSet.entries()) {
+        const sourceAnswers = currentAnswers[sourceText] ?? {};
+        const questions = Array.from(questionSet);
+        if (questions.length === 0) {
+          continue;
+        }
+
+        const allSourceQuestions = generatedResultsRef.current.find((item) => item.source_text === sourceText)?.generated_questions ?? questions;
+        let sourceQuestionIds = currentQuestionIds[sourceText] ?? {};
+        const hasMissing = allSourceQuestions.some((question) => !(sourceQuestionIds[question] ?? "").trim());
+        if (hasMissing) {
+          sourceQuestionIds = await ensureQuestionIdsForSource(itemId, sourceText, allSourceQuestions);
+        }
+
+        for (const question of questions) {
+          const answerText = (sourceAnswers[question] ?? "").trim();
+          const questionId = (sourceQuestionIds[question] ?? "").trim();
+          if (!questionId) {
+            continue;
+          }
+
+          answersPayload.push({
+            questionId,
+            answerText,
+            answeredBy: "user",
+          });
+        }
+      }
+
+      if (answersPayload.length > 0) {
+        await saveFollowUpAnswersForItem({
+          experimentItemId: itemId,
+          answers: answersPayload,
+        });
+      }
+
+      dirtyAnswerKeysRef.current = new Set();
+      if (reason !== "submit") {
+        setDraftSyncStatus(`Draft synced (${String(answersPayload.length)} answer(s)).`);
+      }
+    } catch {
+      if (reason !== "submit") {
+        setDraftSyncStatus("Draft saved locally. Server sync will retry automatically.");
+      }
+    } finally {
+      isDraftSyncInFlightRef.current = false;
+      if (shouldDraftSyncAgainRef.current) {
+        shouldDraftSyncAgainRef.current = false;
+        void flushDraftAnswersToDatabase("threshold");
+      }
+    }
+  };
+
+  const scheduleDraftSync = () => {
+    if (draftDebounceTimerRef.current !== null) {
+      window.clearTimeout(draftDebounceTimerRef.current);
+    }
+
+    draftDebounceTimerRef.current = window.setTimeout(() => {
+      draftDebounceTimerRef.current = null;
+      void flushDraftAnswersToDatabase("threshold");
+    }, DRAFT_SYNC_DEBOUNCE_MS);
+  };
+
+  const flushDraftNow = (reason: "blur" | "leave" | "submit") => {
+    if (draftDebounceTimerRef.current !== null) {
+      window.clearTimeout(draftDebounceTimerRef.current);
+      draftDebounceTimerRef.current = null;
+    }
+
+    void flushDraftAnswersToDatabase(reason);
+  };
+
+  flushDraftNowRef.current = flushDraftNow;
+
+  useEffect(() => {
+    const itemId = (experimentItemId || "").trim();
+    if (!itemId) {
+      return;
+    }
+
+    writeFollowUpDraftToStorage(itemId, answersBySource);
+  }, [answersBySource, experimentItemId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleBeforeUnload = () => {
+      const itemId = (experimentItemId || "").trim();
+      if (itemId) {
+        writeFollowUpDraftToStorage(itemId, answersBySourceRef.current);
+      }
+      flushDraftNowRef.current("leave");
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      flushDraftNowRef.current("leave");
+    };
+  }, [experimentItemId]);
 
   const handleNewQuestionDraftChange = (sourceText: string, value: string) => {
     setNewQuestionDraftBySource((previous) => ({
@@ -666,6 +993,20 @@ export default function FollowUpGenerationPage({
         [question]: answer,
       },
     }));
+
+    dirtyAnswerKeysRef.current.add(`${sourceText}||${question}`);
+    setDraftSyncStatus("Saving draft...");
+
+    if (dirtyAnswerKeysRef.current.size >= DRAFT_SYNC_THRESHOLD) {
+      flushDraftNow("blur");
+      return;
+    }
+
+    scheduleDraftSync();
+  };
+
+  const handleAnswerBlur = () => {
+    flushDraftNow("blur");
   };
 
   const toggleGeneratedPanel = (sourceText: string) => {
@@ -718,7 +1059,7 @@ export default function FollowUpGenerationPage({
     sourceText: string,
     questions: string[],
   ): Promise<Record<string, string>> => {
-    const currentIds = questionIdsBySource[sourceText] ?? {};
+    const currentIds = questionIdsBySourceRef.current[sourceText] ?? {};
     const hasMissingIds = questions.some((question) => !(currentIds[question] ?? "").trim());
     if (!hasMissingIds) {
       return currentIds;
@@ -757,20 +1098,22 @@ export default function FollowUpGenerationPage({
     }
 
     const answers = answersBySource[sourceText] ?? {};
-    const unansweredCount = questions.filter((question) => !(answers[question] ?? "").trim()).length;
+    const answeredQuestions = questions.filter((question) => (answers[question] ?? "").trim().length > 0);
+    const unansweredCount = questions.length - answeredQuestions.length;
 
-    if (unansweredCount > 0) {
+    if (answeredQuestions.length === 0) {
       setGroupSubmitStatus((previous) => ({
         ...previous,
-        [sourceText]: `Please answer ${String(unansweredCount)} more question(s) before submitting this group.`,
+        [sourceText]: "No answered questions in this group yet. Draft is saved automatically.",
       }));
       return;
     }
 
     try {
+      flushDraftNow("submit");
       const itemId = ensureExperimentItemId();
       const questionIds = await ensureQuestionIdsForSource(itemId, sourceText, questions);
-      const unresolvedCount = questions.filter((question) => !(questionIds[question] ?? "").trim()).length;
+      const unresolvedCount = answeredQuestions.filter((question) => !(questionIds[question] ?? "").trim()).length;
       if (unresolvedCount > 0) {
         setGroupSubmitStatus((previous) => ({
           ...previous,
@@ -781,7 +1124,7 @@ export default function FollowUpGenerationPage({
 
       await saveFollowUpAnswersForItem({
         experimentItemId: itemId,
-        answers: questions.map((question) => ({
+        answers: answeredQuestions.map((question) => ({
           questionId: questionIds[question],
           answerText: (answers[question] ?? "").trim(),
           answeredBy: "user",
@@ -789,9 +1132,20 @@ export default function FollowUpGenerationPage({
       });
 
       await reloadFollowUpRecords(itemId);
+
+      for (const question of answeredQuestions) {
+        dirtyAnswerKeysRef.current.delete(`${sourceText}||${question}`);
+      }
+
+      setSubmittedSources((previous) => {
+        const next = new Set(previous);
+        next.add(sourceText);
+        return next;
+      });
+
       setGroupSubmitStatus((previous) => ({
         ...previous,
-        [sourceText]: `Submitted ${String(questions.length)} Q&A item(s) for this causal.`,
+        [sourceText]: `Submitted ${String(answeredQuestions.length)} answered item(s). Skipped ${String(unansweredCount)} unanswered item(s).`,
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit this Q&A group.";
@@ -820,15 +1174,21 @@ export default function FollowUpGenerationPage({
       return !answer.trim();
     }).length;
 
-    if (unansweredCount > 0) {
-      setAllSubmitStatus(`Please answer ${String(unansweredCount)} remaining question(s) before submitting all.`);
+    const answeredPairs = qaPairs.filter(({ sourceText, question }) => {
+      const answer = answersBySource[sourceText]?.[question] ?? "";
+      return answer.trim().length > 0;
+    });
+
+    if (answeredPairs.length === 0) {
+      setAllSubmitStatus("No answered questions yet. Draft answers are being saved automatically.");
       return;
     }
 
     try {
+      flushDraftNow("submit");
       const itemId = ensureExperimentItemId();
       const sourceToQuestions = new Map<string, string[]>();
-      for (const pair of qaPairs) {
+      for (const pair of answeredPairs) {
         const current = sourceToQuestions.get(pair.sourceText) ?? [];
         current.push(pair.question);
         sourceToQuestions.set(pair.sourceText, current);
@@ -839,7 +1199,7 @@ export default function FollowUpGenerationPage({
         resolvedIdsBySource[sourceText] = await ensureQuestionIdsForSource(itemId, sourceText, questions);
       }
 
-      const answersPayload = qaPairs
+      const answersPayload = answeredPairs
       .map(({ sourceText, question }) => {
         const questionId = resolvedIdsBySource[sourceText]?.[question] ?? "";
         return {
@@ -850,7 +1210,7 @@ export default function FollowUpGenerationPage({
       })
       .filter((entry) => entry.questionId.trim().length > 0);
 
-      if (answersPayload.length !== qaPairs.length) {
+      if (answersPayload.length !== answeredPairs.length) {
         setAllSubmitStatus("Some questions are not mapped to database records yet. Please review and try again.");
         return;
       }
@@ -861,12 +1221,43 @@ export default function FollowUpGenerationPage({
       });
 
       await reloadFollowUpRecords(itemId);
-      setAllSubmitStatus(`Submitted all Question & Answer successfully (${String(qaPairs.length)} item(s)).`);
+
+      for (const pair of answeredPairs) {
+        dirtyAnswerKeysRef.current.delete(`${pair.sourceText}||${pair.question}`);
+      }
+
+      setSubmittedSources((previous) => {
+        const next = new Set(previous);
+        for (const pair of answeredPairs) {
+          next.add(pair.sourceText);
+        }
+        return next;
+      });
+
+      setAllSubmitStatus(`Submitted ${String(answeredPairs.length)} answered item(s). Skipped ${String(unansweredCount)} unanswered item(s).`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit all Q&A.";
       setAllSubmitStatus(message);
     }
   };
+
+  const answerCounts = useMemo(() => {
+    let answered = 0;
+    let unanswered = 0;
+
+    for (const result of generatedResults) {
+      const sourceAnswers = filterBasisAnswersBySource[result.source_text] ?? {};
+      for (const question of result.generated_questions) {
+        if ((sourceAnswers[question] ?? "").trim()) {
+          answered += 1;
+        } else {
+          unanswered += 1;
+        }
+      }
+    }
+
+    return { answered, unanswered };
+  }, [filterBasisAnswersBySource, generatedResults]);
 
   return (
     <section className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 backdrop-blur-sm md:p-6">
@@ -877,43 +1268,6 @@ export default function FollowUpGenerationPage({
           generate analytical questions for you to obtain more useful information and accuracy. (This part is optional)
         </p>
       </header>
-
-      <div>
-        <div>
-          <p className="mb-3 text-sm font-semibold text-neutral-200">Select implicit causal for question generation</p>
-          <div className="space-y-3">
-            {visibleCausalItems.map((causal, index) => {
-              const generated = generatedBySourceText.get(causal.source_text);
-
-              return (
-                <CausalCard
-                  key={causal.source_text}
-                  causal={causal}
-                  index={index}
-                  generatedQuestions={generated?.generated_questions ?? []}
-                  isPanelOpen={openedPanels.has(causal.source_text)}
-                  onTogglePanel={() => toggleGeneratedPanel(causal.source_text)}
-                  onGenerateForCausal={() => void handleGenerateForCausal(causal)}
-                  isGeneratingForCausal={generatingSources.has(causal.source_text)}
-                  answers={answersBySource[causal.source_text] ?? {}}
-                  onAnswerChange={(question, answer) => handleAnswerChange(causal.source_text, question, answer)}
-                  newQuestionDraft={newQuestionDraftBySource[causal.source_text] ?? ""}
-                  onNewQuestionDraftChange={(value) => handleNewQuestionDraftChange(causal.source_text, value)}
-                  onAddQuestionSet={() => handleAddQuestionSet(causal.source_text)}
-                  onSubmitGroup={() => void handleSubmitGroup(causal.source_text, generated?.generated_questions ?? [])}
-                  groupSubmitMessage={groupSubmitStatus[causal.source_text] ?? ""}
-                />
-              );
-            })}
-
-            {includeImplicit && visibleCausalItems.length === 0 ? (
-              <p className="rounded-lg border border-neutral-700 bg-neutral-950/80 p-3 text-sm text-neutral-300">
-                No implicit causal items (explicit_type = I) found for question generation.
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </div>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-3">
@@ -936,6 +1290,51 @@ export default function FollowUpGenerationPage({
           >
             {isFiltering ? "RUNNING FILTER..." : "Run filter"}
           </button>
+
+          <div className="inline-flex overflow-hidden rounded-lg border border-neutral-700">
+            <button
+              type="button"
+              onClick={() => handleFilterModeChange("all")}
+              className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+                answerFilterMode === "all"
+                  ? "bg-sky-500/25 text-sky-200"
+                  : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
+              }`}
+            >
+              All ({String(answerCounts.answered + answerCounts.unanswered)})
+            </button>
+            <button
+              type="button"
+              onClick={() => handleFilterModeChange("unanswered")}
+              className={`border-l border-neutral-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+                answerFilterMode === "unanswered"
+                  ? "bg-amber-500/25 text-amber-200"
+                  : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
+              }`}
+            >
+              Unanswered ({String(answerCounts.unanswered)})
+            </button>
+            <button
+              type="button"
+              onClick={() => handleFilterModeChange("answered")}
+              className={`border-l border-neutral-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+                answerFilterMode === "answered"
+                  ? "bg-emerald-500/25 text-emerald-200"
+                  : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
+              }`}
+            >
+              Answered ({String(answerCounts.answered)})
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={refreshFilterSnapshot}
+            className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-200 transition hover:bg-neutral-800"
+            title="Refresh answered/unanswered grouping from current edits"
+          >
+            Update filter view
+          </button>
         </div>
 
         <button
@@ -943,8 +1342,12 @@ export default function FollowUpGenerationPage({
           onClick={() => void handleSubmitAllQA()}
           className="rounded-lg border border-neutral-700 bg-neutral-950 px-5 py-2 text-sm font-bold tracking-wide text-neutral-100 transition hover:border-neutral-500"
         >
-          Submit all Question & Answer
+          Submit all answered Question & Answer
         </button>
+      </div>
+
+      <div className="mt-3 rounded-lg border border-amber-700/50 bg-amber-500/10 p-3 text-xs text-amber-100">
+        For better performance and reliability, submit in batches (for example one causal group at a time). You can continue drafting unanswered items and submit them later.
       </div>
 
       <p className="mt-2 text-xs text-neutral-400">
@@ -952,7 +1355,56 @@ export default function FollowUpGenerationPage({
       </p>
 
       {generationStatus ? <p className="mt-3 text-sm text-neutral-300">{generationStatus}</p> : null}
+      {draftSyncStatus ? <p className="mt-2 text-xs text-neutral-400">{draftSyncStatus}</p> : null}
       {allSubmitStatus ? <p className="mt-3 text-sm text-neutral-300">{allSubmitStatus}</p> : null}
+
+      <div>
+        <div>
+          <p className="mb-3 text-sm font-semibold text-neutral-200">Select implicit causal for question generation</p>
+          <div className="space-y-3">
+            {visibleCausalItems.map((causal, index) => {
+              const generated = generatedBySourceText.get(causal.source_text);
+              const sourceQuestions = generated?.generated_questions ?? [];
+              const sourceAnswers = answersBySource[causal.source_text] ?? {};
+              const sourceFilterAnswers = filterBasisAnswersBySource[causal.source_text] ?? {};
+              const sourceAnsweredCount = sourceQuestions.filter((question) => (sourceFilterAnswers[question] ?? "").trim().length > 0).length;
+              const sourceUnansweredCount = sourceQuestions.length - sourceAnsweredCount;
+
+              return (
+                <CausalCard
+                  key={causal.source_text}
+                  causal={causal}
+                  index={index}
+                  generatedQuestions={sourceQuestions}
+                  isPanelOpen={openedPanels.has(causal.source_text)}
+                  onTogglePanel={() => toggleGeneratedPanel(causal.source_text)}
+                  onGenerateForCausal={() => void handleGenerateForCausal(causal)}
+                  isGeneratingForCausal={generatingSources.has(causal.source_text)}
+                  answers={sourceAnswers}
+                  filterAnswers={sourceFilterAnswers}
+                  onAnswerChange={(question, answer) => handleAnswerChange(causal.source_text, question, answer)}
+                  onAnswerBlur={handleAnswerBlur}
+                  newQuestionDraft={newQuestionDraftBySource[causal.source_text] ?? ""}
+                  onNewQuestionDraftChange={(value) => handleNewQuestionDraftChange(causal.source_text, value)}
+                  onAddQuestionSet={() => handleAddQuestionSet(causal.source_text)}
+                  onSubmitGroup={() => void handleSubmitGroup(causal.source_text, sourceQuestions)}
+                  groupSubmitMessage={groupSubmitStatus[causal.source_text] ?? ""}
+                  answerFilterMode={answerFilterMode}
+                  totalAnsweredCount={sourceAnsweredCount}
+                  totalUnansweredCount={sourceUnansweredCount}
+                  isAddedToCausalStructure={submittedSources.has(causal.source_text)}
+                />
+              );
+            })}
+
+            {includeImplicit && visibleCausalItems.length === 0 ? (
+              <p className="rounded-lg border border-neutral-700 bg-neutral-950/80 p-3 text-sm text-neutral-300">
+                No implicit causal items (explicit_type = I) found for question generation.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
