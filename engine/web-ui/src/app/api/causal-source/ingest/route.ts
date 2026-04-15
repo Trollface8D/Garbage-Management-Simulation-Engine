@@ -45,6 +45,18 @@ function asErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function resolveGeminiApiKey(): string | null {
+  return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.API_KEY || null;
+}
+
+function buildGeminiApiKeyErrorMessage(): string {
+  return [
+    "Gemini API key is missing.",
+    "Set one of GEMINI_API_KEY, GOOGLE_API_KEY, or API_KEY in Engine/web-ui/.env.local",
+    "(or set it in your shell environment) and restart npm run dev.",
+  ].join(" ");
+}
+
 type PdfJsModule = {
   getDocument: (source: unknown) => {
     promise: Promise<{
@@ -242,9 +254,9 @@ async function runGeminiInlineDataPrompt(
   mimeType: string,
   prompt: string,
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const apiKey = resolveGeminiApiKey();
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY (or GOOGLE_API_KEY) is required for this file type.");
+    throw new Error(buildGeminiApiKeyErrorMessage());
   }
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
