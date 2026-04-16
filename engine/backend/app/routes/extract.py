@@ -256,8 +256,6 @@ async def transcribe_audio(
     audioFile: UploadFile = File(...),
     model: str | None = Form(default=None),
 ):
-@router.post("/follow-up")
-async def generate_follow_up_questions(request: Request):
     api_key = resolve_api_key()
     if not api_key:
         return JSONResponse(
@@ -324,6 +322,20 @@ async def generate_follow_up_questions(request: Request):
         "usedFallbackModel": used_fallback_model,
         "mimeType": mime_type,
         "fileName": audioFile.filename,
+    }
+
+
+@router.post("/follow-up")
+async def generate_follow_up_questions(request: Request):
+    api_key = resolve_api_key()
+    if not api_key:
+        return JSONResponse(
+            {
+                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+            },
+            status_code=500,
+        )
+
     try:
         payload = await request.json()
     except ValueError:
