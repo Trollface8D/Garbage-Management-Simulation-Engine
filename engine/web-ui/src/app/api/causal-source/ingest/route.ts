@@ -3,7 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { and, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { upsertCausalSourceItem, type CausalSourceItem } from "@/lib/db";
+import { getCausalSourceItem, saveTextChunks, upsertCausalSourceItem, type CausalSourceItem } from "@/lib/db";
 import drizzleDb from "@/lib/db-modules/drizzle";
 import {
   componentProjectLinks,
@@ -14,10 +14,129 @@ import {
 } from "@/lib/db-modules/schema";
 
 type SupportedSourceType = "text" | "audio";
+type SupportedUploadKind = "txt" | "pdf" | "audio";
 
 const GEMINI_MODEL = process.env.GEMINI_TRANSCRIBE_MODEL || "gemini-2.0-flash";
 
 export const runtime = "nodejs";
+
+function buildUnreadablePdfErrorMessage(fileName: string): string {
+  return [
+    `PDF parser could not extract readable text from '${fileName}'.`,
+    "Possible causes: scanned/image-only PDF, encrypted/password-protected PDF, corrupted PDF,",
+    "or non-Unicode embedded fonts (common in some pdfmake exports).",
+    "Please re-export as searchable PDF with embedded Unicode fonts, or upload .txt.",
+  ].join(" ");
+}
+
+function normalizeExtractedText(text: string): string {
+  return text
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function asErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+type PdfJsModule = {
+  getDocument: (source: unknown) => {
+    promise: Promise<{
+      numPages: number;
+      getPage: (pageNumber: number) => Promise<{
+        getTextContent: (options?: unknown) => Promise<{
+          items: Array<{ str?: string; hasEOL?: boolean }>;
+        }>;
+        cleanup?: () => void;
+      }>;
+      cleanup?: () => void;
+      destroy?: () => Promise<void>;
+    }>;
+    destroy?: () => Promise<void>;
+  };
+};
+
+type PdfParseModule = {
+  PDFParse: new (options: { data: Uint8Array }) => {
+    getText: () => Promise<{ text?: string }>;
+    destroy: () => Promise<void>;
+  };
+};
+
+let pdfJsModulePromise: Promise<PdfJsModule> | null = null;
+let pdfParseModulePromise: Promise<PdfParseModule> | null = null;
+
+async function loadPdfJsModule(): Promise<PdfJsModule> {
+  if (!pdfJsModulePromise) {
+    pdfJsModulePromise = import("pdfjs-dist/legacy/build/pdf.mjs") as Promise<PdfJsModule>;
+  }
+
+  return pdfJsModulePromise;
+}
+
+async function loadPdfParseModule(): Promise<PdfParseModule> {
+  if (!pdfParseModulePromise) {
+    pdfParseModulePromise = import("pdf-parse") as Promise<PdfParseModule>;
+  }
+
+  return pdfParseModulePromise;
+}
+
+async function extractPdfWithPdfJs(buffer: Buffer): Promise<string> {
+  const pdfjsModule = await loadPdfJsModule();
+  const loadingTask = pdfjsModule.getDocument({
+    data: new Uint8Array(buffer),
+    disableWorker: true,
+  });
+  const doc = await loadingTask.promise;
+
+  try {
+    const pages: string[] = [];
+
+    for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+      const page = await doc.getPage(pageNumber);
+      const textContent = await page.getTextContent({ disableNormalization: false });
+
+      const pageText = textContent.items
+        .map((item) => {
+          const text = typeof item.str === "string" ? item.str : "";
+          return item.hasEOL ? `${text}\n` : text;
+        })
+        .join(" ")
+        .trim();
+
+      if (pageText) {
+        pages.push(pageText);
+      }
+
+      page.cleanup?.();
+    }
+
+    return normalizeExtractedText(pages.join("\n\n"));
+  } finally {
+    doc.cleanup?.();
+    await doc.destroy?.().catch(() => undefined);
+    await loadingTask.destroy?.().catch(() => undefined);
+  }
+}
+
+async function extractPdfWithPdfParse(buffer: Buffer): Promise<string> {
+  const pdfParseModule = await loadPdfParseModule();
+  const parser = new pdfParseModule.PDFParse({ data: new Uint8Array(buffer) });
+
+  try {
+    const parsed = await parser.getText();
+    return normalizeExtractedText(parsed?.text || "");
+  } finally {
+    await parser.destroy().catch(() => undefined);
+  }
+}
 
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -29,6 +148,10 @@ function getUploadsDirectory(): string {
 
 function normalizeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]+/g, "_");
+}
+
+function getFileNameLower(file: File): string {
+  return file.name.toLowerCase();
 }
 
 function projectExists(projectId: string): boolean {
@@ -64,27 +187,32 @@ function componentExists(projectId: string, componentId: string): boolean {
   return Boolean(row);
 }
 
-function detectSourceType(file: File): SupportedSourceType {
-  const lowerName = file.name.toLowerCase();
-
-  if (file.type.startsWith("audio/") || /\.(mp3|wav|m4a|ogg|flac|aac|webm)$/i.test(lowerName)) {
-    return "audio";
-  }
-
-  return "text";
-}
-
-function isTextLikeFile(file: File): boolean {
-  const lowerName = file.name.toLowerCase();
-  return (
-    file.type.startsWith("text/") ||
-    /\.(txt|md|csv|json|log|tsv|yaml|yml)$/i.test(lowerName)
-  );
+function isAudioFile(file: File): boolean {
+  return file.type.startsWith("audio/") || /\.(mp3|wav|m4a|ogg|flac|aac|webm)$/i.test(getFileNameLower(file));
 }
 
 function isPdfFile(file: File): boolean {
-  const lowerName = file.name.toLowerCase();
-  return file.type === "application/pdf" || lowerName.endsWith(".pdf");
+  return file.type === "application/pdf" || getFileNameLower(file).endsWith(".pdf");
+}
+
+function isTxtFile(file: File): boolean {
+  return getFileNameLower(file).endsWith(".txt");
+}
+
+function detectUploadKind(file: File): SupportedUploadKind | null {
+  if (isAudioFile(file)) {
+    return "audio";
+  }
+
+  if (isPdfFile(file)) {
+    return "pdf";
+  }
+
+  if (isTxtFile(file)) {
+    return "txt";
+  }
+
+  return null;
 }
 
 function extractGeminiText(payload: unknown): string {
@@ -170,50 +298,51 @@ async function transcribeAudioWithGemini(buffer: Buffer, mimeType: string, fileN
   );
 }
 
-async function extractPdfWithGemini(buffer: Buffer, fileName: string): Promise<string> {
-  return runGeminiInlineDataPrompt(
-    buffer,
-    "application/pdf",
-    `Extract all readable text from this PDF document as plain text. Preserve section order and line breaks when possible. File: ${fileName}`,
-  );
+async function extractPdfWithLocalParser(buffer: Buffer, fileName: string): Promise<string> {
+  try {
+    const text = await extractPdfWithPdfJs(buffer);
+    if (!text) {
+      throw new Error("empty extracted text");
+    }
+
+    return text;
+  } catch (error) {
+    console.warn("[causal-source/ingest][pdf] local parser failed", {
+      fileName,
+      parserError: asErrorMessage(error),
+    });
+  }
+
+  try {
+    const fallbackText = await extractPdfWithPdfParse(buffer);
+    if (!fallbackText) {
+      throw new Error("empty extracted text");
+    }
+
+    return fallbackText;
+  } catch (fallbackError) {
+    console.warn("[causal-source/ingest][pdf] fallback parser failed", {
+      fileName,
+      parserError: asErrorMessage(fallbackError),
+    });
+    throw new Error(buildUnreadablePdfErrorMessage(fileName));
+  }
 }
 
-// async function extractPdfWithLocalParser(buffer: Buffer): Promise<string> {
-//   const { PDFParse } = await import("pdf-parse");
-//   const parser = new PDFParse({ data: buffer });
-
-//   try {
-//     const result = await parser.getText();
-//     return (result.text ?? "").trim();
-//   } finally {
-//     await parser.destroy().catch(() => undefined);
-//   }
-// }
-
-async function extractRawTextFromUploadedFile(file: File, buffer: Buffer, sourceType: SupportedSourceType): Promise<string> {
-  if (sourceType === "audio") {
+async function extractRawTextFromUploadedFile(file: File, buffer: Buffer, uploadKind: SupportedUploadKind): Promise<string> {
+  if (uploadKind === "audio") {
     return transcribeAudioWithGemini(buffer, file.type, file.name);
   }
 
-  // if (isPdfFile(file)) {
-  //   try {
-  //     const localText = await extractPdfWithLocalParser(buffer);
-  //     if (localText) {
-  //       return localText;
-  //     }
-  //   } catch (error) {
-  //     const reason = error instanceof Error ? error.message : "unknown local parser error";
-  //     console.warn(`[causal-source/ingest] Local PDF parser failed, falling back to Gemini: ${reason}`);
-  //   }
+  if (uploadKind === "pdf") {
+    return extractPdfWithLocalParser(buffer, file.name);
+  }
 
-  //   return extractPdfWithGemini(buffer, file.name);
-  // }
-
-  if (isTextLikeFile(file)) {
+  if (uploadKind === "txt") {
     return buffer.toString("utf8").trim();
   }
 
-  throw new Error("Unsupported file format. Please upload text, PDF, or audio file.");
+  throw new Error("Unsupported file format. Please upload only .txt, .pdf, or audio files.");
 }
 
 export async function POST(request: Request) {
@@ -244,7 +373,12 @@ export async function POST(request: Request) {
     return badRequest(`componentId '${componentId}' was not found in project '${projectId}' or is deleted.`);
   }
 
-  const sourceType = detectSourceType(file);
+  const uploadKind = detectUploadKind(file);
+  if (!uploadKind) {
+    return badRequest("Unsupported file format. Please upload only .txt, .pdf, or audio files.");
+  }
+
+  const sourceType: SupportedSourceType = uploadKind === "audio" ? "audio" : "text";
   const itemId = `upload-${randomUUID()}`;
   const now = Date.now();
   let storedPath = "";
@@ -262,12 +396,12 @@ export async function POST(request: Request) {
 
     await fs.writeFile(storedPath, buffer);
 
-    const rawText = (await extractRawTextFromUploadedFile(file, buffer, sourceType)).trim();
+    const rawText = (await extractRawTextFromUploadedFile(file, buffer, uploadKind)).trim();
     if (!rawText) {
       return badRequest("No readable text could be extracted from uploaded file.");
     }
 
-    const saved: CausalSourceItem = upsertCausalSourceItem({
+    let saved: CausalSourceItem = upsertCausalSourceItem({
       id: itemId,
       projectId,
       componentId,
@@ -282,6 +416,20 @@ export async function POST(request: Request) {
       transcriptText: sourceType === "audio" ? rawText : null,
     });
 
+    if (uploadKind === "txt") {
+      saveTextChunks({
+        experimentItemId: itemId,
+        projectId,
+        componentId,
+        chunks: [rawText],
+      });
+
+      const refreshed = getCausalSourceItem(itemId);
+      if (refreshed) {
+        saved = refreshed;
+      }
+    }
+
     return NextResponse.json({
       item: saved,
       rawTextLength: rawText.length,
@@ -295,6 +443,10 @@ export async function POST(request: Request) {
 
     if (/FOREIGN KEY constraint failed/i.test(message)) {
       return badRequest("Selected project/component is invalid. Please reopen this artifact from PM dashboard.");
+    }
+
+    if (/PDF parser could not extract readable text|PDF is unreadable/i.test(message)) {
+      return badRequest(message);
     }
 
     console.error("[causal-source/ingest]", message);

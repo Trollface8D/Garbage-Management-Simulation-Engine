@@ -4,3 +4,4 @@ python-dotenv>=1.0.0
 python-multipart>=0.0.9
 google-genai>=0.3.0
 pydantic>=2.5.0
+pypdf>=4.0.0
