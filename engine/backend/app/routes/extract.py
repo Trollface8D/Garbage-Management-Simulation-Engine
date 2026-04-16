@@ -67,6 +67,41 @@ def _resolve_audio_mime_type(audio_file: UploadFile) -> str:
     return "audio/mpeg"
 
 
+def _resolve_transcribe_model_name(model: str | None) -> str:
+    configured = model or os.getenv("GEMINI_TRANSCRIBE_MODEL") or DEFAULT_MODEL_NAME
+    normalized = configured.strip()
+    return normalized or DEFAULT_MODEL_NAME
+
+
+def _resolve_transcribe_fallback_model_name() -> str:
+    configured = os.getenv("GEMINI_TRANSCRIBE_FALLBACK_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
+    normalized = configured.strip()
+    return normalized or "gemini-2.5-flash"
+
+
+def _is_model_not_found_error(message: str) -> bool:
+    lowered = message.lower()
+    return "not_found" in lowered or "no longer available" in lowered or "model" in lowered and "not found" in lowered
+
+
+def _resolve_audio_mime_type(audio_file: UploadFile) -> str:
+    content_type = (audio_file.content_type or "").strip().lower()
+    if content_type.startswith("audio/"):
+        return content_type
+
+    filename = (audio_file.filename or "").strip().lower()
+    _, extension = os.path.splitext(filename)
+
+    if extension in AUDIO_MIME_MAP:
+        return AUDIO_MIME_MAP[extension]
+
+    guessed_mime, _ = mimetypes.guess_type(filename)
+    if guessed_mime and guessed_mime.startswith("audio/"):
+        return guessed_mime
+
+    return "audio/mpeg"
+
+
 def _resolve_uploaded_file_type(text_file: UploadFile) -> str:
     filename = (text_file.filename or "").strip().lower()
     if filename.endswith(".txt"):
