@@ -31,6 +31,7 @@ type SelectionRef = {
 type MapWorkspaceSnapshot = {
   graph: MapGraphPayload | null;
   jobId: string;
+  selectedModel: string;
   overviewAdditionalInfo: string;
   binAdditionalInfo: string;
   overviewFileNames: string[];
@@ -57,6 +58,15 @@ type ExplorerEntry = {
   label: string;
   payload: unknown;
 };
+
+const MAP_MODEL_FALLBACK_OPTIONS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+  "gemini-3-flash-preview",
+  "gemini-3.1-flash-lite-preview",
+  "gemini-3.1-pro-preview",
+];
 
 function createLocalId(prefix: string): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -495,6 +505,7 @@ export default function MapExtractionWorkspace({
   const [viewMode, setViewMode] = useState<ViewMode>("graph");
   const [selection, setSelection] = useState<GraphSelection>({ kind: "none" });
   const [jobId, setJobId] = useState<string>("");
+  const [selectedModel, setSelectedModel] = useState<string>("");
 
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractStatus, setExtractStatus] = useState("");
@@ -538,6 +549,15 @@ export default function MapExtractionWorkspace({
     [binFiles, binStoredFileNames],
   );
 
+  const modelOptions = useMemo(() => {
+    const envOptions = (process.env.NEXT_PUBLIC_MAP_EXTRACT_MODEL_OPTIONS || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    return dedupeNames([...envOptions, ...MAP_MODEL_FALLBACK_OPTIONS]);
+  }, []);
+
   useEffect(() => {
     const saved = window.localStorage.getItem(snapshotKey);
 
@@ -573,6 +593,10 @@ export default function MapExtractionWorkspace({
         setJobId(parsed.jobId);
       }
 
+      if (typeof parsed?.selectedModel === "string") {
+        setSelectedModel(parsed.selectedModel.trim());
+      }
+
       if (Array.isArray(parsed?.changeLog)) {
         setChangeLog(parsed.changeLog);
       }
@@ -593,6 +617,7 @@ export default function MapExtractionWorkspace({
     const snapshot: MapWorkspaceSnapshot = {
       graph: graphData,
       jobId,
+      selectedModel,
       overviewAdditionalInfo,
       binAdditionalInfo,
       overviewFileNames: overviewDisplayNames,
@@ -611,6 +636,7 @@ export default function MapExtractionWorkspace({
     editStatus,
     graphData,
     jobId,
+    selectedModel,
     overviewDisplayNames,
     selection,
     snapshotKey,
@@ -693,6 +719,7 @@ export default function MapExtractionWorkspace({
         binAdditionalInformation: binAdditionalInfo,
         overviewMapFiles: overviewFiles.map((entry) => entry.file),
         binLocationFiles: binFiles.map((entry) => entry.file),
+        model: selectedModel,
       }, {
         onProgress: (progress) => {
           const stage = progress.stage || "waiting";
@@ -795,6 +822,7 @@ export default function MapExtractionWorkspace({
       JSON.stringify({
         graph: graphData,
         jobId,
+        selectedModel,
         overviewAdditionalInfo,
         binAdditionalInfo,
         overviewFileNames: overviewDisplayNames,
@@ -811,6 +839,7 @@ export default function MapExtractionWorkspace({
     const snapshot: MapWorkspaceSnapshot = {
       graph: graphData,
       jobId,
+      selectedModel,
       overviewAdditionalInfo,
       binAdditionalInfo,
       overviewFileNames: overviewDisplayNames,
@@ -883,6 +912,7 @@ export default function MapExtractionWorkspace({
 
       setGraphData(snapshot.graph ?? null);
       setJobId(typeof snapshot.jobId === "string" ? snapshot.jobId : "");
+      setSelectedModel(typeof snapshot.selectedModel === "string" ? snapshot.selectedModel.trim() : "");
       setOverviewAdditionalInfo(typeof snapshot.overviewAdditionalInfo === "string" ? snapshot.overviewAdditionalInfo : "");
       setBinAdditionalInfo(typeof snapshot.binAdditionalInfo === "string" ? snapshot.binAdditionalInfo : "");
       setOverviewStoredFileNames(dedupeNames(Array.isArray(snapshot.overviewFileNames) ? snapshot.overviewFileNames : []));
@@ -959,6 +989,21 @@ export default function MapExtractionWorkspace({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-300">
+              <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-400">model</div>
+              <input
+                list="map-extract-model-options"
+                value={selectedModel}
+                onChange={(event) => setSelectedModel(event.target.value)}
+                placeholder="default from .env"
+                className="w-52 rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 outline-none transition focus:border-sky-500"
+              />
+              <datalist id="map-extract-model-options">
+                {modelOptions.map((modelName) => (
+                  <option key={modelName} value={modelName} />
+                ))}
+              </datalist>
+            </div>
             <span className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-300">
               component: {title}
             </span>

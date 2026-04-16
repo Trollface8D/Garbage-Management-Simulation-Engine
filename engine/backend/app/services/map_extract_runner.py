@@ -19,10 +19,17 @@ from .job_store import emit_job_event
 logger = logging.getLogger(__name__)
 
 
-def _resolve_stage_models(default_model: str) -> dict[str, str]:
-    # Global override for all map_extract stages.
-    all_override = (os.getenv("GEMINI_MAP_EXTRACT_MODEL") or "").strip()
+def _resolve_stage_models(default_model: str, *, use_env_overrides: bool) -> dict[str, str]:
+    if not use_env_overrides:
+        return {
+            "extractmap_symbol": default_model,
+            "extractmap_text": default_model,
+            "tabular_extraction": default_model,
+            "edge_extraction": default_model,
+        }
 
+    # Legacy env overrides: used only when caller did not explicitly pick a model.
+    all_override = (os.getenv("GEMINI_MAP_EXTRACT_MODEL") or "").strip()
     resolved_default = all_override or default_model
     return {
         "extractmap_symbol": (os.getenv("GEMINI_MAP_EXTRACT_MODEL_SYMBOL") or "").strip() or resolved_default,
@@ -57,6 +64,28 @@ def _load_map_extract_config() -> dict[str, Any]:
     for key in ("extractmap_symbol", "extractmap_text", "tabular_extraction", "edge_extraction"):
         if key not in payload or not isinstance(payload[key], dict):
             raise ValueError(f"map_extarct.json missing task definition: {key}")
+
+    required_runtime = (
+        "extractmap_text_nodes_json_schema",
+        "extractmap_symbol_output_hint",
+        "tabular_extraction_output_hint",
+        "tabular_extraction_no_support_hint",
+        "extractmap_text_support_joint_prompt",
+        "extractmap_text_support_fallback_prompt",
+        "extractmap_text_support_delta_prompt",
+        "extractmap_text_normalize_prompt",
+        "extractmap_text_normalize_context",
+        "extractmap_text_support_delta_context",
+        "edge_extraction_json_schema",
+        "edge_extraction_csv_fallback_hint",
+    )
+    runtime = payload.get("runtime_prompts")
+    if not isinstance(runtime, dict):
+        raise ValueError("map_extarct.json missing runtime_prompts object")
+    for key in required_runtime:
+        value = runtime.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"map_extarct.json runtime_prompts missing/empty key: {key}")
     return payload
 
 
@@ -506,6 +535,7 @@ def run_map_extract_worker(
     job: JobRecord,
     api_key: str,
     model_name: str,
+    use_env_model_overrides: bool,
     component_id: str,
     overview_files: list[dict[str, Any]],
     support_files: list[dict[str, Any]],
@@ -514,7 +544,7 @@ def run_map_extract_worker(
 ) -> None:
     try:
         run_started = time.perf_counter()
-        stage_models = _resolve_stage_models(model_name)
+        stage_models = _resolve_stage_models(model_name, use_env_overrides=use_env_model_overrides)
         gateways: dict[str, GeminiGateway] = {}
 
         def stage_gateway(stage_key: str) -> GeminiGateway:

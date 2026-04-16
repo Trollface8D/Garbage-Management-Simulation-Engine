@@ -95,6 +95,9 @@ export async function extractMapGraph(
   formData.set("componentId", input.componentId);
   formData.set("overviewAdditionalInformation", input.overviewAdditionalInformation);
   formData.set("binAdditionalInformation", input.binAdditionalInformation);
+  if (input.model && input.model.trim()) {
+    formData.set("model", input.model.trim());
+  }
 
   for (const file of input.overviewMapFiles) {
     formData.append("overviewMapFiles", file);

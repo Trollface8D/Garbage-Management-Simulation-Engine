@@ -67,11 +67,13 @@ async def create_map_extract_job(
     componentId: str = Form(default=""),
     overviewAdditionalInformation: str = Form(default=""),
     binAdditionalInformation: str = Form(default=""),
-    model: str = Form(default=DEFAULT_MODEL_NAME),
+    model: str = Form(default=""),
     overviewMapFiles: list[UploadFile] = File(default_factory=list),
     binLocationFiles: list[UploadFile] = File(default_factory=list),
 ):
-    resolved_model = model.strip() or DEFAULT_MODEL_NAME
+    requested_model = model.strip()
+    resolved_model = requested_model or DEFAULT_MODEL_NAME
+    use_env_model_overrides = not bool(requested_model)
     overview_descriptors = [
         {
             "name": file.filename or "",
@@ -90,11 +92,12 @@ async def create_map_extract_job(
     ]
 
     logger.info(
-        "[map_extract] request received componentId=%s overviewFiles=%s supportFiles=%s model=%s",
+        "[map_extract] request received componentId=%s overviewFiles=%s supportFiles=%s model=%s modelSource=%s",
         componentId,
         len(overviewMapFiles),
         len(binLocationFiles),
         resolved_model,
+        "request" if requested_model else "env-default",
     )
     logger.info(
         "[map_extract] request files componentId=%s overview=%s support=%s",
@@ -209,9 +212,11 @@ async def create_map_extract_job(
         len(support_payloads),
     )
     logger.info(
-        "[map_extract] job config jobId=%s model=%s overviewTextLen=%s supportTextLen=%s",
+        "[map_extract] job config jobId=%s model=%s modelSource=%s useEnvOverrides=%s overviewTextLen=%s supportTextLen=%s",
         job_id,
         resolved_model,
+        "request" if requested_model else "env-default",
+        use_env_model_overrides,
         len(overviewAdditionalInformation),
         len(binAdditionalInformation),
     )
@@ -222,6 +227,7 @@ async def create_map_extract_job(
             "job": job,
             "api_key": api_key,
             "model_name": resolved_model,
+            "use_env_model_overrides": use_env_model_overrides,
             "component_id": component_id,
             "overview_files": overview_payloads,
             "support_files": support_payloads,

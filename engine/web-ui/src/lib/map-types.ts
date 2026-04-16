@@ -36,6 +36,7 @@ export type MapExtractionRequest = {
   binAdditionalInformation: string;
   overviewMapFiles: File[];
   binLocationFiles: File[];
+  model?: string;
 };
 
 export type MapExtractionResult = {
