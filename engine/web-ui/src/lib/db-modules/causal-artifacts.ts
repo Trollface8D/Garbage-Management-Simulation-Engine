@@ -41,6 +41,7 @@ export type FollowUpExportQuestion = {
   answer_text?: string;
   answered_by?: string;
   answered_at?: string;
+  derived_causal?: ExtractionClassRecord[];
 };
 
 export type FollowUpExportRecord = {
@@ -81,6 +82,7 @@ export type FollowUpQuestionRecord = {
   answerText?: string;
   answeredBy?: string;
   answeredAt?: string;
+  derivedCausal?: ExtractionClassRecord[];
 };
 
 export type FollowUpRecord = {
@@ -118,6 +120,7 @@ export type SaveFollowUpAnswersInput = {
     questionId: string;
     answerText: string;
     answeredBy?: string;
+    derivedExtraction?: ExtractionClassRecord[];
   }>;
 };
 
@@ -137,6 +140,61 @@ function parseChunkIndex(chunkLabel: string): number | null {
   }
 
   return chunkNumber - 1;
+}
+
+function normalizeDerivedExtraction(raw: unknown): ExtractionClassRecord[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const normalized: ExtractionClassRecord[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const row = item as Record<string, unknown>;
+    const extractedRaw = Array.isArray(row.extracted) ? row.extracted : [];
+    const extracted: ExtractedTriple[] = [];
+
+    for (const relation of extractedRaw) {
+      if (!relation || typeof relation !== "object") {
+        continue;
+      }
+      const relationRow = relation as Record<string, unknown>;
+      extracted.push({
+        head: typeof relationRow.head === "string" ? relationRow.head : "",
+        relationship: typeof relationRow.relationship === "string" ? relationRow.relationship : "",
+        tail: typeof relationRow.tail === "string" ? relationRow.tail : "",
+        detail: typeof relationRow.detail === "string" ? relationRow.detail : "",
+      });
+    }
+
+    normalized.push({
+      pattern_type: typeof row.pattern_type === "string" ? row.pattern_type : "",
+      sentence_type: typeof row.sentence_type === "string" ? row.sentence_type : "",
+      marked_type: typeof row.marked_type === "string" ? row.marked_type : "",
+      explicit_type: typeof row.explicit_type === "string" ? row.explicit_type : "",
+      marker: typeof row.marker === "string" ? row.marker : "",
+      source_text: typeof row.source_text === "string" ? row.source_text : "",
+      extracted,
+    });
+  }
+
+  return normalized;
+}
+
+function parseDerivedExtractionJson(raw: string | null): ExtractionClassRecord[] | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return normalizeDerivedExtraction(parsed);
+  } catch {
+    return undefined;
+  }
 }
 
 export function saveCausalArtifacts(input: SaveCausalArtifactsInput): SaveCausalArtifactsResult {
@@ -274,6 +332,7 @@ export function saveCausalArtifacts(input: SaveCausalArtifactsInput): SaveCausal
           .run();
 
         if (question.answer_text && question.answer_text.trim()) {
+          const derivedExtraction = normalizeDerivedExtraction(question.derived_causal);
           tx.insert(followUpAnswers)
             .values({
               id: randomUUID(),
@@ -281,6 +340,8 @@ export function saveCausalArtifacts(input: SaveCausalArtifactsInput): SaveCausal
               answerText: question.answer_text,
               answeredBy: question.answered_by || "user",
               answeredAt: question.answered_at || now,
+              derivedCausalJson: derivedExtraction.length > 0 ? JSON.stringify(derivedExtraction) : null,
+              derivedCausalUpdatedAt: derivedExtraction.length > 0 ? now : null,
             })
             .run();
         }
@@ -427,17 +488,27 @@ export function getCausalArtifactsForItem(experimentItemId: string): CausalArtif
         answerText: followUpAnswers.answerText,
         answeredBy: followUpAnswers.answeredBy,
         answeredAt: followUpAnswers.answeredAt,
+        derivedCausalJson: followUpAnswers.derivedCausalJson,
       })
       .from(followUpAnswers)
       .where(inArray(followUpAnswers.questionId, questionIds))
       .all();
 
-  const answerByQuestionId = new Map<string, { answerText: string; answeredBy: string; answeredAt: string }>();
+  const answerByQuestionId = new Map<
+    string,
+    {
+      answerText: string;
+      answeredBy: string;
+      answeredAt: string;
+      derivedCausal?: ExtractionClassRecord[];
+    }
+  >();
   for (const answer of answerRows) {
     answerByQuestionId.set(answer.questionId, {
       answerText: answer.answerText,
       answeredBy: answer.answeredBy,
       answeredAt: answer.answeredAt,
+      derivedCausal: parseDerivedExtractionJson(answer.derivedCausalJson),
     });
   }
 
@@ -453,6 +524,7 @@ export function getCausalArtifactsForItem(experimentItemId: string): CausalArtif
       answer_text: answer?.answerText,
       answered_by: answer?.answeredBy,
       answered_at: answer?.answeredAt,
+      derived_causal: answer?.derivedCausal,
     });
     questionsByFollowUpId.set(question.followUpId, current);
   }
@@ -513,17 +585,27 @@ export function listFollowUpRecordsForExperimentItem(experimentItemId: string): 
         answerText: followUpAnswers.answerText,
         answeredBy: followUpAnswers.answeredBy,
         answeredAt: followUpAnswers.answeredAt,
+        derivedCausalJson: followUpAnswers.derivedCausalJson,
       })
       .from(followUpAnswers)
       .where(inArray(followUpAnswers.questionId, questionIds))
       .all();
 
-  const answerByQuestionId = new Map<string, { answerText: string; answeredBy: string; answeredAt: string }>();
+  const answerByQuestionId = new Map<
+    string,
+    {
+      answerText: string;
+      answeredBy: string;
+      answeredAt: string;
+      derivedCausal?: ExtractionClassRecord[];
+    }
+  >();
   for (const answer of answerRows) {
     answerByQuestionId.set(answer.questionId, {
       answerText: answer.answerText,
       answeredBy: answer.answeredBy,
       answeredAt: answer.answeredAt,
+      derivedCausal: parseDerivedExtractionJson(answer.derivedCausalJson),
     });
   }
 
@@ -540,6 +622,7 @@ export function listFollowUpRecordsForExperimentItem(experimentItemId: string): 
       answerText: answer?.answerText,
       answeredBy: answer?.answeredBy,
       answeredAt: answer?.answeredAt,
+      derivedCausal: answer?.derivedCausal,
     });
     questionsByFollowUpId.set(question.followUpId, current);
   }
@@ -702,6 +785,10 @@ export function saveFollowUpAnswers(input: SaveFollowUpAnswersInput): SaveFollow
     for (const entry of answers) {
       const questionId = (entry.questionId || "").trim();
       const answerText = (entry.answerText || "").trim();
+      const hasDerivedExtraction = Object.prototype.hasOwnProperty.call(entry, "derivedExtraction");
+      const normalizedDerivedExtraction = hasDerivedExtraction
+        ? normalizeDerivedExtraction(entry.derivedExtraction)
+        : undefined;
 
       if (!questionId || !allowedQuestionIds.has(questionId)) {
         continue;
@@ -729,25 +816,53 @@ export function saveFollowUpAnswers(input: SaveFollowUpAnswersInput): SaveFollow
       }
 
       if (existing) {
+        const updatePayload: {
+          answerText: string;
+          answeredBy: string;
+          answeredAt: string;
+          derivedCausalJson?: string;
+          derivedCausalUpdatedAt?: string;
+        } = {
+          answerText,
+          answeredBy,
+          answeredAt: now,
+        };
+
+        if (hasDerivedExtraction) {
+          updatePayload.derivedCausalJson = JSON.stringify(normalizedDerivedExtraction ?? []);
+          updatePayload.derivedCausalUpdatedAt = now;
+        }
+
         tx
           .update(followUpAnswers)
-          .set({
-            answerText,
-            answeredBy,
-            answeredAt: now,
-          })
+          .set(updatePayload)
           .where(eq(followUpAnswers.id, existing.id))
           .run();
       } else {
+        const insertPayload: {
+          id: string;
+          questionId: string;
+          answerText: string;
+          answeredBy: string;
+          answeredAt: string;
+          derivedCausalJson?: string;
+          derivedCausalUpdatedAt?: string;
+        } = {
+          id: randomUUID(),
+          questionId,
+          answerText,
+          answeredBy,
+          answeredAt: now,
+        };
+
+        if (hasDerivedExtraction) {
+          insertPayload.derivedCausalJson = JSON.stringify(normalizedDerivedExtraction ?? []);
+          insertPayload.derivedCausalUpdatedAt = now;
+        }
+
         tx
           .insert(followUpAnswers)
-          .values({
-            id: randomUUID(),
-            questionId,
-            answerText,
-            answeredBy,
-            answeredAt: now,
-          })
+          .values(insertPayload)
           .run();
       }
 

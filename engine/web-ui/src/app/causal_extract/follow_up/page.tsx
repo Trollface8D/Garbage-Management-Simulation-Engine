@@ -81,7 +81,11 @@ function CausalFollowUpPageContent() {
           return;
         }
 
-        const flattenedItems: CausalItem[] = artifacts.raw_extraction.flatMap((payload) =>
+        const sourceChunkPayloads = artifacts.raw_extraction.filter((payload) =>
+          /^chunk\s+\d+$/i.test((payload.chunk_label || "").trim()),
+        );
+
+        const flattenedItems: CausalItem[] = sourceChunkPayloads.flatMap((payload) =>
           payload.classes.map((item) => ({
             chunk_label: payload.chunk_label,
             pattern_type: item.pattern_type,
@@ -108,8 +112,13 @@ function CausalFollowUpPageContent() {
           return;
         }
 
+        const skippedFollowUpDerived = artifacts.raw_extraction.length - sourceChunkPayloads.length;
         setArtifactLoadStatus(
-          `Loaded ${String(flattenedItems.length)} extracted causal${flattenedItems.length === 1 ? "" : "s"} from ${itemFileName}.`,
+          `Loaded ${String(flattenedItems.length)} extracted causal${flattenedItems.length === 1 ? "" : "s"} from ${itemFileName}.${
+            skippedFollowUpDerived > 0
+              ? ` Skipped ${String(skippedFollowUpDerived)} follow-up-derived chunk${skippedFollowUpDerived === 1 ? "" : "s"}.`
+              : ""
+          }`,
         );
       } catch {
         if (!cancelled) {

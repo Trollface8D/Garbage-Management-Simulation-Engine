@@ -32,6 +32,8 @@ export interface GeneratedQuestionsData {
   generated_questions: string[];
 }
 
+type DerivedExtractionBySourceQuestion = Record<string, Record<string, CausalItem[]>>;
+
 type FollowUpGenerationPageProps = {
   initialCausalItems?: CausalItem[];
   includeImplicit?: boolean;
@@ -220,6 +222,53 @@ function toQuestionIdMap(records: FollowUpRecord[]): Record<string, Record<strin
   return questionIds;
 }
 
+function toDerivedExtractionMap(records: FollowUpRecord[]): DerivedExtractionBySourceQuestion {
+  const derived: DerivedExtractionBySourceQuestion = {};
+
+  for (const record of records) {
+    const sourceText = (record.sourceText || "").trim();
+    if (!sourceText) {
+      continue;
+    }
+
+    for (const question of record.questions ?? []) {
+      const questionText = (question.questionText || "").trim();
+      if (!questionText) {
+        continue;
+      }
+
+      const derivedRows = Array.isArray(question.derivedCausal)
+        ? question.derivedCausal.map((row) => ({
+            pattern_type: row.pattern_type,
+            sentence_type: row.sentence_type,
+            marked_type: row.marked_type,
+            explicit_type: row.explicit_type,
+            marker: row.marker || null,
+            source_text: row.source_text,
+            extracted: (row.extracted ?? []).map((relation) => ({
+              head: relation.head,
+              relationship: relation.relationship,
+              tail: relation.tail,
+              detail: relation.detail,
+            })),
+          }))
+        : [];
+
+      if (derivedRows.length === 0) {
+        continue;
+      }
+
+      if (!derived[sourceText]) {
+        derived[sourceText] = {};
+      }
+
+      derived[sourceText][questionText] = derivedRows;
+    }
+  }
+
+  return derived;
+}
+
 function GoogleGIcon() {
   return (
     <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 18 18">
@@ -260,6 +309,7 @@ function CausalCard({
   onAddQuestionSet,
   onSubmitGroup,
   groupSubmitMessage,
+  derivedExtractionByQuestion,
   answerFilterMode,
   totalAnsweredCount,
   totalUnansweredCount,
@@ -281,6 +331,7 @@ function CausalCard({
   onAddQuestionSet: () => void;
   onSubmitGroup: () => void;
   groupSubmitMessage: string;
+  derivedExtractionByQuestion: Record<string, CausalItem[]>;
   answerFilterMode: AnswerFilterMode;
   totalAnsweredCount: number;
   totalUnansweredCount: number;
@@ -450,6 +501,38 @@ function CausalCard({
                       className="mt-2 h-10 w-full resize-y rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
                       placeholder="Type answer for this question"
                     />
+
+                    {(derivedExtractionByQuestion[question] ?? []).length > 0 ? (
+                      <div className="mt-2 rounded-md border border-emerald-700/60 bg-emerald-500/10 p-2">
+                        <div className="mb-2 inline-flex rounded-full border border-emerald-700 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                          follow-up derived
+                        </div>
+                        <div className="space-y-2">
+                          {(derivedExtractionByQuestion[question] ?? []).map((derivedItem, derivedIndex) => (
+                            <div
+                              key={`${question}-derived-${String(derivedIndex)}`}
+                              className="rounded-md border border-neutral-700 bg-neutral-900/70 p-2"
+                            >
+                              <p className="text-[11px] text-neutral-300">marker: {derivedItem.marker || "-"}</p>
+                              {(derivedItem.extracted ?? []).length === 0 ? (
+                                <p className="mt-1 text-xs text-neutral-400">No extracted relation returned.</p>
+                              ) : (
+                                <div className="mt-1 space-y-1">
+                                  {derivedItem.extracted.map((relation, relationIndex) => (
+                                    <p
+                                      key={`${question}-derived-${String(derivedIndex)}-relation-${String(relationIndex)}`}
+                                      className="text-xs text-neutral-200"
+                                    >
+                                      {relation.head} | {relation.relationship} | {relation.tail}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 )) : (
                   <p className="text-sm text-neutral-400">
@@ -501,6 +584,40 @@ async function requestGeneratedQuestions(causalItems: CausalItem[]): Promise<Gen
   }
 
   return Array.isArray(payload?.records) ? payload.records : [];
+}
+
+async function submitFollowUpAnswersWithReextract(input: {
+  experimentItemId: string;
+  answers: Array<{
+    questionId: string;
+    questionText: string;
+    sourceText: string;
+    answerText: string;
+    answeredBy?: string;
+  }>;
+}): Promise<{ savedAnswers: number; extractedFromFollowUp: number }> {
+  const response = await fetch("/api/causal-extract/follow-up-submit", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { savedAnswers?: number; extractedFromFollowUp?: number; error?: string; detail?: string }
+    | null;
+
+  if (!response.ok) {
+    const detail = payload?.detail ? ` ${payload.detail}` : "";
+    throw new Error(payload?.error ? `${payload.error}${detail}` : `Follow-up submit failed (${String(response.status)}).`);
+  }
+
+  return {
+    savedAnswers: typeof payload?.savedAnswers === "number" ? payload.savedAnswers : 0,
+    extractedFromFollowUp:
+      typeof payload?.extractedFromFollowUp === "number" ? payload.extractedFromFollowUp : 0,
+  };
 }
 
 function toCausalRef(causal: CausalItem):
@@ -589,6 +706,9 @@ export default function FollowUpGenerationPage({
   const [filterBasisAnswersBySource, setFilterBasisAnswersBySource] = useState<Record<string, Record<string, string>>>(() =>
     toAnswersMap(initialFollowUpRecords),
   );
+  const [derivedExtractionBySourceQuestion, setDerivedExtractionBySourceQuestion] = useState<DerivedExtractionBySourceQuestion>(
+    () => toDerivedExtractionMap(initialFollowUpRecords),
+  );
 
   const answersBySourceRef = useRef<Record<string, Record<string, string>>>(answersBySource);
   const questionIdsBySourceRef = useRef<Record<string, Record<string, string>>>(questionIdsBySource);
@@ -611,6 +731,7 @@ export default function FollowUpGenerationPage({
     setQuestionIdsBySource(toQuestionIdMap(initialFollowUpRecords));
     setAnswersBySource(mergedAnswers);
     setFilterBasisAnswersBySource(mergedAnswers);
+    setDerivedExtractionBySourceQuestion(toDerivedExtractionMap(initialFollowUpRecords));
     setOpenedPanels(new Set(hydratedResults.map((result) => result.source_text)));
     setNewQuestionDraftBySource({});
     setGroupSubmitStatus({});
@@ -672,6 +793,7 @@ export default function FollowUpGenerationPage({
     const mergedAnswers = mergeAnswersByPriority(serverAnswers, localDraft?.answersBySource ?? {});
     setAnswersBySource(mergedAnswers);
     setFilterBasisAnswersBySource(mergedAnswers);
+    setDerivedExtractionBySourceQuestion(toDerivedExtractionMap(records));
     return records;
   };
 
@@ -1122,10 +1244,12 @@ export default function FollowUpGenerationPage({
         return;
       }
 
-      await saveFollowUpAnswersForItem({
+      const submitResult = await submitFollowUpAnswersWithReextract({
         experimentItemId: itemId,
         answers: answeredQuestions.map((question) => ({
           questionId: questionIds[question],
+          questionText: question,
+          sourceText,
           answerText: (answers[question] ?? "").trim(),
           answeredBy: "user",
         })),
@@ -1145,7 +1269,7 @@ export default function FollowUpGenerationPage({
 
       setGroupSubmitStatus((previous) => ({
         ...previous,
-        [sourceText]: `Submitted ${String(answeredQuestions.length)} answered item(s). Skipped ${String(unansweredCount)} unanswered item(s).`,
+        [sourceText]: `Submitted ${String(answeredQuestions.length)} answered item(s), re-extracted ${String(submitResult.extractedFromFollowUp)} follow-up Q&A pair(s). Skipped ${String(unansweredCount)} unanswered item(s).`,
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit this Q&A group.";
@@ -1204,6 +1328,8 @@ export default function FollowUpGenerationPage({
         const questionId = resolvedIdsBySource[sourceText]?.[question] ?? "";
         return {
           questionId,
+          questionText: question,
+          sourceText,
           answerText: (answersBySource[sourceText]?.[question] ?? "").trim(),
           answeredBy: "user",
         };
@@ -1215,7 +1341,7 @@ export default function FollowUpGenerationPage({
         return;
       }
 
-      await saveFollowUpAnswersForItem({
+      const submitResult = await submitFollowUpAnswersWithReextract({
         experimentItemId: itemId,
         answers: answersPayload,
       });
@@ -1234,7 +1360,9 @@ export default function FollowUpGenerationPage({
         return next;
       });
 
-      setAllSubmitStatus(`Submitted ${String(answeredPairs.length)} answered item(s). Skipped ${String(unansweredCount)} unanswered item(s).`);
+      setAllSubmitStatus(
+        `Submitted ${String(answeredPairs.length)} answered item(s), re-extracted ${String(submitResult.extractedFromFollowUp)} follow-up Q&A pair(s). Skipped ${String(unansweredCount)} unanswered item(s).`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit all Q&A.";
       setAllSubmitStatus(message);
@@ -1389,10 +1517,14 @@ export default function FollowUpGenerationPage({
                   onAddQuestionSet={() => handleAddQuestionSet(causal.source_text)}
                   onSubmitGroup={() => void handleSubmitGroup(causal.source_text, sourceQuestions)}
                   groupSubmitMessage={groupSubmitStatus[causal.source_text] ?? ""}
+                  derivedExtractionByQuestion={derivedExtractionBySourceQuestion[causal.source_text] ?? {}}
                   answerFilterMode={answerFilterMode}
                   totalAnsweredCount={sourceAnsweredCount}
                   totalUnansweredCount={sourceUnansweredCount}
-                  isAddedToCausalStructure={submittedSources.has(causal.source_text)}
+                  isAddedToCausalStructure={
+                    submittedSources.has(causal.source_text) ||
+                    Object.keys(derivedExtractionBySourceQuestion[causal.source_text] ?? {}).length > 0
+                  }
                 />
               );
             })}

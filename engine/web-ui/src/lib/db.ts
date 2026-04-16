@@ -63,6 +63,7 @@ export {
 
 export type {
   CausalArtifactsPayload,
+  ExtractionClassRecord,
   ExtractionPayloadRecord,
   FollowUpRecord,
   FollowUpExportRecord,
