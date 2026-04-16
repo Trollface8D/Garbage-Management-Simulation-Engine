@@ -5,9 +5,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "../components/back-to-home";
 import {
-    findComponentById as findSeedComponentById,
-    findProjectById as findSeedProjectById,
-    getProjectIdForComponent,
     type SimulationComponent,
     type SimulationProject,
 } from "@/lib/simulation-components";
@@ -202,14 +199,13 @@ function CausalExtractHomeContent() {
     }, []);
 
     const selectedComponent = useMemo(
-        () => components.find((component) => component.id === componentId) ?? findSeedComponentById(componentId),
+        () => components.find((component) => component.id === componentId),
         [componentId, components],
     );
     const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Causal Experiment";
     const selectedProjectId =
         queryProjectId ??
         (selectedComponent && selectedComponent.category !== "PolicyTesting" ? selectedComponent.projectId : undefined) ??
-        getProjectIdForComponent(componentId) ??
         projects[0]?.id ??
         "";
     const [activeFeature, setActiveFeature] = useState<FeatureTab>(
@@ -227,7 +223,6 @@ function CausalExtractHomeContent() {
     const selectedProjectName = useMemo(
         () =>
             projects.find((project) => project.id === selectedProjectId)?.name ??
-            findSeedProjectById(selectedProjectId)?.name ??
             "Unselected project",
         [projects, selectedProjectId],
     );

@@ -3,9 +3,6 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import {
-  findComponentById,
-  findProjectById,
-  getProjectIdForComponent,
   type SimulationProject,
 } from "@/lib/simulation-components";
 import BackToHome from "../../components/back-to-home";
@@ -15,15 +12,13 @@ import { loadCausalArtifactsForItem, loadFollowUpRecordsForItem, loadProjects, t
 function CausalFollowUpPageContent() {
   const searchParams = useSearchParams();
 
-  const componentId = searchParams.get("componentId");
   const queryProjectId = searchParams.get("projectId");
   const queryTitle = searchParams.get("title");
   const itemId = searchParams.get("itemId") ?? "";
   const itemFileName = searchParams.get("fileName") ?? "selected file";
 
-  const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
-  const selectedProjectId = queryProjectId ?? getProjectIdForComponent(componentId);
-  const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Unselected component";
+  const selectedProjectId = queryProjectId ?? "";
+  const selectedTitle = queryTitle ?? "Unselected component";
   const [projects, setProjects] = useState<SimulationProject[]>([]);
   const [includeImplicit, setIncludeImplicit] = useState<boolean>(true);
   const [causalItems, setCausalItems] = useState<CausalItem[]>([]);
@@ -40,7 +35,7 @@ function CausalFollowUpPageContent() {
   }, []);
 
   const selectedProjectName = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
+    () => projects.find((project) => project.id === selectedProjectId)?.name ?? "Unselected project",
     [projects, selectedProjectId],
   );
 

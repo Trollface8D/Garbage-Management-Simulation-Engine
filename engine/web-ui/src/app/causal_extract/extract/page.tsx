@@ -3,9 +3,6 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import {
-  findComponentById,
-  findProjectById,
-  getProjectIdForComponent,
   type SimulationProject,
 } from "@/lib/simulation-components";
 import BackToHome from "../../components/back-to-home";
@@ -71,17 +68,6 @@ type DisplayExtractionPayload = ExtractionPayload & {
   sourceText?: string;
 };
 
-const SINGLE_CHUNK_SOURCE_TEXT =
-  "คนเก็บขยะ ใช้รุนแรง ชิบหาย ไอ้เหี้ย มึงใช้มือ พวกเหี้ย นี่ใช้ตีน ตี แตก แหกเนี่ย... พังหมด";
-
-const FALLBACK_CHUNKS: ChunkOption[] = [
-  {
-    id: "fallback-chunk-1",
-    label: "chunk 1",
-    text: SINGLE_CHUNK_SOURCE_TEXT,
-  },
-];
-
 function buildSingleChunkPayload(selectedChunk: ChunkOption, classes: ExtractionClass[]): ExtractionPayload {
   return {
     chunk_label: selectedChunk.label,
@@ -92,15 +78,13 @@ function buildSingleChunkPayload(selectedChunk: ChunkOption, classes: Extraction
 function CausalExtractPageContent() {
   const searchParams = useSearchParams();
 
-  const componentId = searchParams.get("componentId");
   const queryProjectId = searchParams.get("projectId");
   const queryTitle = searchParams.get("title");
   const itemId = searchParams.get("itemId") ?? "";
   const itemFileName = searchParams.get("fileName") ?? "causal-source.txt";
 
-  const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
-  const selectedProjectId = queryProjectId ?? getProjectIdForComponent(componentId);
-  const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Unselected component";
+  const selectedProjectId = queryProjectId ?? "";
+  const selectedTitle = queryTitle ?? "Unselected component";
   const [projects, setProjects] = useState<SimulationProject[]>([]);
 
   useEffect(() => {
@@ -112,7 +96,7 @@ function CausalExtractPageContent() {
   }, []);
 
   const selectedProjectName = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
+    () => projects.find((project) => project.id === selectedProjectId)?.name ?? "Unselected project",
     [projects, selectedProjectId],
   );
 
@@ -163,9 +147,9 @@ function CausalExtractPageContent() {
 
     const hydrateChunks = async () => {
       if (!itemId) {
-        setChunkOptions(FALLBACK_CHUNKS);
-        setSelectedChunkId(FALLBACK_CHUNKS[0]?.id ?? "");
-        setChunkLoadStatus("No file selected. Showing fallback chunk list.");
+        setChunkOptions([]);
+        setSelectedChunkId("");
+        setChunkLoadStatus("No file selected.");
         setIsExtracted(false);
         setExtractionData(null);
         setViewAllMode(false);
