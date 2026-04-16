@@ -203,6 +203,8 @@ export const followUpAnswers = sqliteTable("follow_up_answers", {
   answerText: text("answer_text").notNull(),
   answeredBy: text("answered_by").notNull().default("user"),
   answeredAt: text("answered_at").notNull(),
+  derivedCausalJson: text("derived_causal_json"),
+  derivedCausalUpdatedAt: text("derived_causal_updated_at"),
 });
 
 export const submissionBatches = sqliteTable(

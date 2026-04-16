@@ -14,7 +14,6 @@ import {
   loadProjects,
   loadTextChunkRecordsForItem,
   loadCausalArtifactsForItem,
-  loadTextChunksForItem,
   saveCausalArtifactsForItem,
   type FollowUpExportRecord,
 } from "@/lib/pm-storage";
@@ -57,6 +56,19 @@ type ChunkExtractResult = {
   ok: boolean;
   classes: ExtractionClass[];
   error?: string;
+};
+
+type DisplayChunkOption = ChunkOption & {
+  sourceKind: "chunk" | "follow_up";
+  questionText?: string;
+  sourceText?: string;
+};
+
+type DisplayExtractionPayload = ExtractionPayload & {
+  id: string;
+  sourceKind: "chunk" | "follow_up";
+  questionText?: string;
+  sourceText?: string;
 };
 
 const SINGLE_CHUNK_SOURCE_TEXT =
@@ -109,7 +121,7 @@ function CausalExtractPageContent() {
   const [selectedChunkId, setSelectedChunkId] = useState<string>("");
   const [isExtracted, setIsExtracted] = useState<boolean>(false);
   const [viewAllMode, setViewAllMode] = useState<boolean>(false);
-  const [extractionData, setExtractionData] = useState<ExtractionPayload | null>(null);
+  const [extractionData, setExtractionData] = useState<DisplayExtractionPayload | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [isExtractingAll, setIsExtractingAll] = useState<boolean>(false);
   const [chunkExtractionMap, setChunkExtractionMap] = useState<Record<string, ExtractionPayload>>({});
@@ -221,7 +233,14 @@ function CausalExtractPageContent() {
         setChunkLoadStatus(
           `Loaded ${String(nextChunkOptions.length)} chunk${nextChunkOptions.length === 1 ? "" : "s"} from ${itemFileName || "selected file"} (${String(Object.keys(hydratedMap).length)} already extracted).`,
         );
-        const firstChunkPayload = hydratedMap[nextChunkOptions[0].id] ?? null;
+        const firstChunkPayload = hydratedMap[nextChunkOptions[0].id]
+          ? {
+              id: nextChunkOptions[0].id,
+              chunk_label: hydratedMap[nextChunkOptions[0].id].chunk_label,
+              classes: hydratedMap[nextChunkOptions[0].id].classes,
+              sourceKind: "chunk" as const,
+            }
+          : null;
         setIsExtracted(Boolean(firstChunkPayload));
         setExtractionData(firstChunkPayload);
         setViewAllMode(false);
@@ -247,8 +266,114 @@ function CausalExtractPageContent() {
     };
   }, [itemFileName, itemId]);
 
-  const viewAllPayloads = chunkOptions.map(
-    (chunk) => chunkExtractionMap[chunk.id] ?? buildSingleChunkPayload(chunk, []),
+  const followUpChunkOptions = useMemo<DisplayChunkOption[]>(() => {
+    const options: DisplayChunkOption[] = [];
+    let index = 1;
+
+    for (const followUpItem of followUpRecords) {
+      for (const question of followUpItem.questions ?? []) {
+        const derivedRows = Array.isArray(question.derived_causal) ? question.derived_causal : [];
+        if (derivedRows.length === 0) {
+          continue;
+        }
+
+        const questionText = (question.question_text || "").trim();
+        options.push({
+          id: `follow-up-${String(index)}`,
+          label: `follow-up chunk ${String(index)}`,
+          text: questionText || followUpItem.source_text,
+          sourceKind: "follow_up",
+          questionText,
+          sourceText: followUpItem.source_text,
+        });
+        index += 1;
+      }
+    }
+
+    return options;
+  }, [followUpRecords]);
+
+  const displayChunkOptions = useMemo<DisplayChunkOption[]>(() => {
+    const baseOptions: DisplayChunkOption[] = chunkOptions.map((chunk) => ({
+      ...chunk,
+      sourceKind: "chunk",
+    }));
+    return [...baseOptions, ...followUpChunkOptions];
+  }, [chunkOptions, followUpChunkOptions]);
+
+  const followUpPayloadMap = useMemo<Record<string, DisplayExtractionPayload>>(() => {
+    const payloadMap: Record<string, DisplayExtractionPayload> = {};
+    let index = 1;
+
+    for (const followUpItem of followUpRecords) {
+      for (const question of followUpItem.questions ?? []) {
+        const derivedRows = Array.isArray(question.derived_causal)
+          ? question.derived_causal.map((row) => ({
+              pattern_type: row.pattern_type,
+              sentence_type: row.sentence_type,
+              marked_type: row.marked_type,
+              explicit_type: row.explicit_type,
+              marker: row.marker,
+              source_text: row.source_text,
+              extracted: (row.extracted ?? []).map((relation) => ({
+                head: relation.head,
+                relationship: relation.relationship,
+                tail: relation.tail,
+                detail: relation.detail ?? "",
+              })),
+            }))
+          : [];
+
+        if (derivedRows.length === 0) {
+          continue;
+        }
+
+        const id = `follow-up-${String(index)}`;
+        payloadMap[id] = {
+          id,
+          chunk_label: `follow-up chunk ${String(index)}`,
+          classes: derivedRows,
+          sourceKind: "follow_up",
+          questionText: question.question_text,
+          sourceText: followUpItem.source_text,
+        };
+        index += 1;
+      }
+    }
+
+    return payloadMap;
+  }, [followUpRecords]);
+
+  const displayPayloadMap = useMemo<Record<string, DisplayExtractionPayload>>(() => {
+    const payloadMap: Record<string, DisplayExtractionPayload> = {};
+
+    for (const chunk of chunkOptions) {
+      const payload = chunkExtractionMap[chunk.id] ?? buildSingleChunkPayload(chunk, []);
+      payloadMap[chunk.id] = {
+        id: chunk.id,
+        chunk_label: payload.chunk_label,
+        classes: payload.classes,
+        sourceKind: "chunk",
+      };
+    }
+
+    for (const [key, payload] of Object.entries(followUpPayloadMap)) {
+      payloadMap[key] = payload;
+    }
+
+    return payloadMap;
+  }, [chunkExtractionMap, chunkOptions, followUpPayloadMap]);
+
+  const viewAllPayloads = displayChunkOptions.map(
+    (chunk) =>
+      displayPayloadMap[chunk.id] ?? {
+        id: chunk.id,
+        chunk_label: chunk.label,
+        classes: [],
+        sourceKind: chunk.sourceKind,
+        questionText: chunk.questionText,
+        sourceText: chunk.sourceText,
+      },
   );
 
   const handleSelectSingleChunk = (chunkId: string) => {
@@ -256,7 +381,7 @@ function CausalExtractPageContent() {
     setViewAllMode(false);
     setExtractStatus("");
 
-    const existingPayload = chunkExtractionMap[chunkId] ?? null;
+    const existingPayload = displayPayloadMap[chunkId] ?? null;
     if (existingPayload) {
       setIsExtracted(true);
       setExtractionData(existingPayload);
@@ -351,6 +476,12 @@ function CausalExtractPageContent() {
 
       const classes = result.classes;
       const chunkPayload = buildSingleChunkPayload(selectedChunkData, classes);
+      const nextSinglePayload: DisplayExtractionPayload = {
+        id: selectedChunkData.id,
+        chunk_label: chunkPayload.chunk_label,
+        classes: chunkPayload.classes,
+        sourceKind: "chunk",
+      };
 
       setChunkExtractionMap((prev) => {
         const next = {
@@ -360,7 +491,7 @@ function CausalExtractPageContent() {
         persistArtifacts(next);
         return next;
       });
-      setExtractionData(chunkPayload);
+      setExtractionData(nextSinglePayload);
       setIsExtracted(true);
       setExtractStatus(
         `Extracted ${String(classes.length)} class${classes.length === 1 ? "" : "es"} from ${selectedChunkData.label}.`,
@@ -380,18 +511,38 @@ function CausalExtractPageContent() {
     }
 
     setIsExtractingAll(true);
-    setExtractStatus(`Extracting 0/${String(chunkOptions.length)} chunks...`);
 
     let successCount = 0;
     let failedCount = 0;
     const failedLabels: string[] = [];
 
     const nextMap: Record<string, ExtractionPayload> = { ...chunkExtractionMap };
+    const chunksToExtract = chunkOptions.filter((chunk) => !nextMap[chunk.id]);
+    const skippedCount = chunkOptions.length - chunksToExtract.length;
 
     try {
-      for (let index = 0; index < chunkOptions.length; index += 1) {
-        const chunk = chunkOptions[index];
-        setExtractStatus(`Extracting ${String(index + 1)}/${String(chunkOptions.length)}: ${chunk.label}`);
+      if (chunksToExtract.length === 0) {
+        setViewAllMode(true);
+        setSelectedChunkId("view-all");
+        setExtractionData(null);
+        setIsExtracted(false);
+        setExtractStatus("All chunks are already extracted. Nothing to process.");
+        return;
+      }
+
+      setExtractStatus(
+        `Extracting 0/${String(chunksToExtract.length)} chunk${chunksToExtract.length === 1 ? "" : "s"}${
+          skippedCount > 0 ? ` (${String(skippedCount)} already extracted)` : ""
+        }...`,
+      );
+
+      for (let index = 0; index < chunksToExtract.length; index += 1) {
+        const chunk = chunksToExtract[index];
+        setExtractStatus(
+          `Extracting ${String(index + 1)}/${String(chunksToExtract.length)}: ${chunk.label}${
+            skippedCount > 0 ? ` (${String(skippedCount)} already extracted)` : ""
+          }`,
+        );
 
         const result = await requestChunkExtraction(chunk);
         if (!result.ok) {
@@ -417,10 +568,16 @@ function CausalExtractPageContent() {
       setIsExtracted(false);
 
       if (failedCount === 0) {
-        setExtractStatus(`Extracted all ${String(successCount)} chunks successfully.`);
+        setExtractStatus(
+          `Extracted ${String(successCount)} chunk${successCount === 1 ? "" : "s"} successfully${
+            skippedCount > 0 ? `, skipped ${String(skippedCount)} already extracted.` : "."
+          }`,
+        );
       } else {
         setExtractStatus(
-          `Extracted ${String(successCount)} chunk${successCount === 1 ? "" : "s"}, failed ${String(failedCount)} (${failedLabels.join(", ")}).`,
+          `Extracted ${String(successCount)} chunk${successCount === 1 ? "" : "s"}, failed ${String(failedCount)} (${failedLabels.join(", ")})${
+            skippedCount > 0 ? `, skipped ${String(skippedCount)} already extracted.` : "."
+          }`,
         );
       }
     } finally {
@@ -479,9 +636,10 @@ function CausalExtractPageContent() {
             <p className="mt-1 text-xs text-emerald-300">{extractStatus}</p>
 
             <div className="mt-4 space-y-2">
-              {chunkOptions.map((chunk) => {
+              {displayChunkOptions.map((chunk) => {
                 const isActive = !viewAllMode && selectedChunkId === chunk.id;
-                const isChunkExtracted = Boolean(chunkExtractionMap[chunk.id]);
+                const payload = displayPayloadMap[chunk.id];
+                const isChunkExtracted = Boolean(payload && payload.classes.length > 0);
 
                 return (
                   <button
@@ -497,9 +655,16 @@ function CausalExtractPageContent() {
                     <span>
                       <span className="block font-medium">{chunk.label}</span>
                       {isChunkExtracted && (
-                        <span className="mt-1 inline-flex rounded-full border border-emerald-700 bg-emerald-900/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
-                          extracted
-                        </span>
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <span className="inline-flex rounded-full border border-emerald-700 bg-emerald-900/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                            extracted
+                          </span>
+                          {chunk.sourceKind === "follow_up" ? (
+                            <span className="inline-flex rounded-full border border-sky-700 bg-sky-900/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
+                              follow_up
+                            </span>
+                          ) : null}
+                        </div>
                       )}
                       <span className="mt-1 block text-xs text-neutral-400">
                         {chunk.text.length > 60 ? `${chunk.text.slice(0, 60)}...` : chunk.text}
@@ -508,7 +673,7 @@ function CausalExtractPageContent() {
                   </button>
                 );
               })}
-              {chunkOptions.length === 0 && (
+              {displayChunkOptions.length === 0 && (
                 <p className="rounded-md border border-dashed border-neutral-700 px-3 py-2 text-xs text-neutral-400">
                   No chunks available for this file.
                 </p>
@@ -549,6 +714,14 @@ function CausalExtractPageContent() {
                     <div className="mb-3 inline-flex rounded-full border border-neutral-700 bg-neutral-800 px-3 py-1 text-xs text-neutral-300">
                       {payload.chunk_label}
                     </div>
+                    {payload.sourceKind === "follow_up" ? (
+                      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-sky-200">
+                        <span className="inline-flex rounded-full border border-sky-700 bg-sky-900/30 px-2 py-0.5 font-semibold uppercase tracking-wide">
+                          follow_up
+                        </span>
+                        {payload.questionText ? <span>Q: {payload.questionText}</span> : null}
+                      </div>
+                    ) : null}
                     <div className="space-y-4">
                       {payload.classes.map((item, index) => (
                         <div
@@ -558,6 +731,11 @@ function CausalExtractPageContent() {
                           <div className="mb-3 inline-flex rounded-full border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-300">
                             class {String(index + 1)}
                           </div>
+                          {payload.sourceKind === "follow_up" ? (
+                            <div className="mb-3 inline-flex rounded-full border border-sky-700 bg-sky-900/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-sky-200">
+                              follow_up
+                            </div>
+                          ) : null}
 
                           <dl className="grid gap-3 md:grid-cols-2">
                             <div>
@@ -648,6 +826,11 @@ function CausalExtractPageContent() {
                   <span className="rounded-full border border-neutral-700 bg-neutral-800 px-3 py-1 text-xs text-neutral-300">
                     {`Extracted from ${extractionData.chunk_label}`}
                   </span>
+                  {extractionData.sourceKind === "follow_up" ? (
+                    <span className="rounded-full border border-sky-700 bg-sky-900/30 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-sky-200">
+                      follow_up
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="space-y-4">
@@ -659,6 +842,11 @@ function CausalExtractPageContent() {
                       <div className="mb-3 inline-flex rounded-full border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-300">
                         class {String(index + 1)}
                       </div>
+                      {extractionData.sourceKind === "follow_up" ? (
+                        <div className="mb-3 inline-flex rounded-full border border-sky-700 bg-sky-900/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-sky-200">
+                          follow_up
+                        </div>
+                      ) : null}
 
                       <dl className="grid gap-3 md:grid-cols-2">
                         <div>
@@ -731,6 +919,7 @@ function CausalExtractPageContent() {
                 Select chunks to see aggregated extraction output.
               </div>
             )}
+
           </div>
         </section>
       </main>

@@ -121,6 +121,7 @@ export type FollowUpExportQuestion = {
   answer_text?: string;
   answered_by?: string;
   answered_at?: string;
+  derived_causal?: ExtractionClassRecord[];
 };
 
 export type FollowUpExportRecord = {
@@ -161,6 +162,7 @@ export type FollowUpQuestionRecord = {
   answerText?: string;
   answeredBy?: string;
   answeredAt?: string;
+  derivedCausal?: ExtractionClassRecord[];
 };
 
 export type FollowUpRecord = {
@@ -198,6 +200,7 @@ export type SaveFollowUpAnswersInput = {
     questionId: string;
     answerText: string;
     answeredBy?: string;
+    derivedExtraction?: ExtractionClassRecord[];
   }>;
 };
 
