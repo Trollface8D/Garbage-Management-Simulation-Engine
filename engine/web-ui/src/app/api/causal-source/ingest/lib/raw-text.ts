@@ -1,5 +1,5 @@
 import { UNSUPPORTED_FILE_ERROR_MESSAGE } from "./file-kind";
-import { transcribeAudioWithGemini } from "./gemini";
+import { transcribeAudioViaBackend } from "./backend-transcribe";
 import { extractPdfWithLocalParser } from "./pdf";
 import type { SupportedUploadKind } from "./types";
 
@@ -9,7 +9,7 @@ export async function extractRawTextFromUploadedFile(
     uploadKind: SupportedUploadKind,
 ): Promise<string> {
     if (uploadKind === "audio") {
-        return transcribeAudioWithGemini(buffer, file.type, file.name);
+        return transcribeAudioViaBackend(buffer, file.type, file.name);
     }
 
     if (uploadKind === "pdf") {
