@@ -50,7 +50,7 @@ DEFAULT_CAUSAL_DB_PATH = ROOT_DIR / "engine" / "web-ui" / "local.db"
 DEFAULT_OUTPUT_ROOT = ROOT_DIR / "Engine" / "output" / "pipeline_runs"
 DEFAULT_MEDIA_DIR = ROOT_DIR / "Engine" / "media"
 DEFAULT_EXAMPLE_TEXT_INPUT = DEFAULT_MEDIA_DIR / "transcript.txt"
-DEFAULT_MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+DEFAULT_MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 
 AUDIO_MIME_MAP: dict[str, str] = {
     ".mp3": "audio/mpeg",

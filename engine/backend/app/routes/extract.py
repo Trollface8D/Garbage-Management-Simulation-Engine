@@ -1,15 +1,18 @@
 import json
 import logging
+import mimetypes
+import os
 from io import BytesIO
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
+from google.genai.types import Part
 
 from ...infra.gemini_client import GeminiGateway
 from ...infra.io_utils import read_text, resolve_api_key
-from ...infra.paths import BACKEND_DIR, DEFAULT_MODEL_NAME
+from ...infra.paths import BACKEND_DIR, AUDIO_MIME_MAP, DEFAULT_MODEL_NAME
 from ..services.causal_store import (
     CausalStoreConstraintError,
     CausalStoreError,
@@ -27,6 +30,41 @@ from ..services.structure_extractor import (
 router = APIRouter(tags=["extract"])
 FOLLOW_UP_PROMPT_PATH = BACKEND_DIR / "prompt" / "follow_up.txt"
 logger = logging.getLogger(__name__)
+
+
+def _resolve_transcribe_model_name(model: str | None) -> str:
+    configured = model or os.getenv("GEMINI_TRANSCRIBE_MODEL") or DEFAULT_MODEL_NAME
+    normalized = configured.strip()
+    return normalized or DEFAULT_MODEL_NAME
+
+
+def _resolve_transcribe_fallback_model_name() -> str:
+    configured = os.getenv("GEMINI_TRANSCRIBE_FALLBACK_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
+    normalized = configured.strip()
+    return normalized or "gemini-2.5-flash"
+
+
+def _is_model_not_found_error(message: str) -> bool:
+    lowered = message.lower()
+    return "not_found" in lowered or "no longer available" in lowered or "model" in lowered and "not found" in lowered
+
+
+def _resolve_audio_mime_type(audio_file: UploadFile) -> str:
+    content_type = (audio_file.content_type or "").strip().lower()
+    if content_type.startswith("audio/"):
+        return content_type
+
+    filename = (audio_file.filename or "").strip().lower()
+    _, extension = os.path.splitext(filename)
+
+    if extension in AUDIO_MIME_MAP:
+        return AUDIO_MIME_MAP[extension]
+
+    guessed_mime, _ = mimetypes.guess_type(filename)
+    if guessed_mime and guessed_mime.startswith("audio/"):
+        return guessed_mime
+
+    return "audio/mpeg"
 
 
 def _resolve_uploaded_file_type(text_file: UploadFile) -> str:
@@ -280,4 +318,78 @@ async def generate_follow_up_questions(request: Request):
     return {
         "model": model_name,
         "records": _normalize_follow_up_records(parsed_payload),
+    }
+
+
+@router.post("/transcribe/audio")
+async def transcribe_audio(
+    audioFile: UploadFile = File(...),
+    model: str | None = Form(default=None),
+):
+    api_key = resolve_api_key()
+    if not api_key:
+        return JSONResponse(
+            {
+                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+            },
+            status_code=500,
+        )
+
+    file_bytes = await audioFile.read()
+    if not file_bytes:
+        return JSONResponse({"error": "Uploaded audio file is empty."}, status_code=400)
+
+    mime_type = _resolve_audio_mime_type(audioFile)
+    model_name = _resolve_transcribe_model_name(model)
+
+    gateway = GeminiGateway(api_key=api_key, model_name=model_name)
+    prompt = (
+        "Transcribe this Thai/English interview audio into plain text. "
+        "Keep wording faithful and do not summarize."
+    )
+
+    used_fallback_model = False
+    try:
+        response_text = gateway.generate_text(
+            prompt,
+            parts=[Part.from_bytes(data=file_bytes, mime_type=mime_type)],
+            response_json=False,
+        )
+    except Exception as exc:
+        error_message = str(exc)
+        fallback_model_name = _resolve_transcribe_fallback_model_name()
+
+        if model_name != fallback_model_name and _is_model_not_found_error(error_message):
+            try:
+                fallback_gateway = GeminiGateway(api_key=api_key, model_name=fallback_model_name)
+                response_text = fallback_gateway.generate_text(
+                    prompt,
+                    parts=[Part.from_bytes(data=file_bytes, mime_type=mime_type)],
+                    response_json=False,
+                )
+                model_name = fallback_model_name
+                used_fallback_model = True
+            except Exception as fallback_exc:
+                return JSONResponse(
+                    {
+                        "error": (
+                            "Audio transcription failed with requested model "
+                            f"'{model_name}' and fallback '{fallback_model_name}': {str(fallback_exc)}"
+                        )
+                    },
+                    status_code=502,
+                )
+        else:
+            return JSONResponse({"error": f"Audio transcription failed: {error_message}"}, status_code=502)
+
+    transcription = response_text.strip()
+    if not transcription:
+        return JSONResponse({"error": "Empty transcription result."}, status_code=502)
+
+    return {
+        "text": transcription,
+        "model": model_name,
+        "usedFallbackModel": used_fallback_model,
+        "mimeType": mime_type,
+        "fileName": audioFile.filename,
     }
