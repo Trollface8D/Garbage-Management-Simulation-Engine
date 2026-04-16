@@ -4,10 +4,6 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import BackToHome from "../../components/back-to-home";
 import {
-    findComponentById,
-    findProjectById,
-    getProjectIdForComponent,
-    getSeedBlocksForComponent,
     type SimulationProject,
 } from "@/lib/simulation-components";
 import { loadCausalSourceItem, loadProjects, loadTextChunksForItem, saveTextChunksForItem } from "@/lib/pm-storage";
@@ -18,9 +14,6 @@ type TextBlock = {
 };
 
 type ToolMode = "edit" | "split";
-
-const DEFAULT_EDITOR_TEXT =
-    "Select a Causal component from the dashboard to load its base text. You can then split by click, merge selected blocks, or rechunk the whole document.";
 
 function createBlock(text: string): TextBlock {
     const id =
@@ -37,7 +30,7 @@ function createBlock(text: string): TextBlock {
 function buildBlocksFromTexts(texts: string[]): TextBlock[] {
     const cleaned = texts.map((text) => text.trim()).filter(Boolean);
     if (cleaned.length === 0) {
-        return [createBlock(DEFAULT_EDITOR_TEXT)];
+        return [createBlock("")];
     }
     return cleaned.map((text) => createBlock(text));
 }
@@ -109,10 +102,9 @@ function CausalExtractChunkingContent() {
     const initialSourceType = searchParams.get("sourceType") ?? "";
     const initialFileName = searchParams.get("fileName") ?? "";
 
-    const selectedComponent = useMemo(() => findComponentById(componentId), [componentId]);
-    const selectedProjectId = queryProjectId ?? getProjectIdForComponent(componentId);
+    const selectedProjectId = queryProjectId ?? "";
 
-    const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Unselected component";
+    const selectedTitle = queryTitle ?? "Unselected component";
 
     const [blocks, setBlocks] = useState<TextBlock[]>(() => buildBlocksFromTexts([]));
     const [activeIndex, setActiveIndex] = useState<number>(0);
@@ -126,7 +118,7 @@ function CausalExtractChunkingContent() {
     const isCutMode = toolMode === "split";
 
     const selectedProjectName = useMemo(
-        () => projects.find((project) => project.id === selectedProjectId)?.name ?? findProjectById(selectedProjectId)?.name ?? "Unselected project",
+        () => projects.find((project) => project.id === selectedProjectId)?.name ?? "Unselected project",
         [projects, selectedProjectId],
     );
     const hasOriginalAttachment = Boolean(
@@ -145,16 +137,13 @@ function CausalExtractChunkingContent() {
     }, []);
 
     useEffect(() => {
-        const seedTexts = getSeedBlocksForComponent(componentId);
-        const initialTexts = seedTexts.length > 0 ? seedTexts : [DEFAULT_EDITOR_TEXT];
-
-        setBlocks(buildBlocksFromTexts(initialTexts));
+        setBlocks(buildBlocksFromTexts([]));
         setActiveIndex(0);
         setSelectedForJoin([]);
         setToolMode("edit");
 
         if (!componentId) {
-            setLoadStatus("No component was selected from the dashboard. Showing default editor text.");
+            setLoadStatus("No component was selected from the dashboard.");
             return;
         }
 
@@ -191,7 +180,7 @@ function CausalExtractChunkingContent() {
             return;
         }
 
-        setLoadStatus("Loaded seed text based on the selected dashboard component.");
+        setLoadStatus("No stored source item selected. Upload or open a saved source file first.");
     }, [componentId, initialItemId, initialItemStatus]);
 
     const handleEdit = (index: number, nextText: string) => {
