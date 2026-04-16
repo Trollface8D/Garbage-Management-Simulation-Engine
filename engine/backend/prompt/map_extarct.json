@@ -1,0 +1,54 @@
+/*
+extracted data from PowerPoint Report
+- trash buffer detail: 
+https://gemini.google.com/share/09c3a182e9e4
+- Manpower and equipment
+https://gemini.google.com/share/2a777fabbd2d
+generated graph edges (needed to specify as exhaustive extraction): https://gemini.google.com/share/a7778998c298
+linking trash bin type: https://gemini.google.com/share/8d8b849daa2d
+
+original;
+{
+    "extractmap_symbol": {
+        "prompt": "from this map can you extract all notation that represent the symbol on the map out put as instructed markdown",
+        "input": "map image"
+    },
+    "extractmap_text": {
+        "prompt": "also put extracted data in Json format with label of node type ex. building, indoor buffer, outdoor buffer etc. and other information available and finally give me data sheet off the extracted data from this map can you extract all symbol that attach near the buffer label and add it as detail to this incomplete Json file",
+        "input": "table showing trait and. data collected for each garbage buffer, symbol context",
+        "note": "for accurate extraction it need to add only one picture as output at a time"
+     },
+     "tabular_extraction": {
+        "prompt": "extract data from this table and put it in Json/csv format format",
+        "input": "table image"
+     },
+     "edge_extraction": {
+        "prompt": "from the map image can you exhaustively connect all possible traversal path, create list of edges for traversal graph with approximate cost from visible distance using node detail from json file as reference Export this detail for node connection as csv",
+        "input": "extracted node data, map images"
+     }
+}
+*/
+
+{
+    "extractmap_symbol": {
+        "task_description": "Extract map legend and notations.",
+        "input_dependencies": ["map_image"],
+        "prompt": "Analyze the provided map image and extract all map symbols along with their corresponding text notations. Output the results as a Markdown table with two columns: 'Symbol Description' and 'Notation'."
+    },
+    "extractmap_text": {
+        "task_description": "Extract node metadata and update existing JSON.",
+        "input_dependencies": ["map_image", "incomplete_json", "buffer_trait_table"],
+        "note": "Process only one image at a time to ensure high extraction accuracy.",
+        "prompt": "Analyze the provided map image and extract all text and symbols located near the 'buffer' labels. Cross-reference this with the provided buffer trait table. Update the provided incomplete JSON file with this new data. Categorize each item with a node type label (e.g., 'building', 'indoor_buffer', 'outdoor_buffer'). Output the final, completed data strictly in JSON format."
+    },
+    "tabular_extraction": {
+        "task_description": "Convert visual tables into structured data.",
+        "input_dependencies": ["table_image"],
+        "prompt": "Extract all data from the provided table image. Output the extracted data in CSV format, ensuring all column headers and row alignments perfectly match the visual table."
+    },
+    "edge_extraction": {
+        "task_description": "Build a traversal graph with estimated edge costs.",
+        "input_dependencies": ["map_image", "extracted_node_json"],
+        "prompt": "Using the provided map image and the reference node data from the JSON file, identify all possible traversal paths between nodes. Estimate the traversal cost (distance) based on visual scale. Create a comprehensive list of edges for a traversal graph. Export this data as a CSV file containing exactly three columns: 'Source Node', 'Target Node', and 'Approximate Cost'."
+    }
+}
