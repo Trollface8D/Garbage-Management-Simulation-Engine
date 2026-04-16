@@ -69,7 +69,8 @@ type PMGetResource =
   | "text-chunks"
   | "text-chunk-records"
   | "chunk-extractions"
-  | "causal-artifacts";
+  | "causal-artifacts"
+  | "follow-up-records";
 
 
 type PMAction =
@@ -86,7 +87,9 @@ type PMAction =
   | "upsert-causal-source-item"
   | "delete-causal-source-item"
   | "save-text-chunks"
-  | "save-causal-artifacts";
+  | "save-causal-artifacts"
+  | "save-follow-up-questions"
+  | "save-follow-up-answers";
 
 export type ExtractedTriple = {
   head: string;
@@ -118,6 +121,7 @@ export type FollowUpExportQuestion = {
   answer_text?: string;
   answered_by?: string;
   answered_at?: string;
+  derived_causal?: ExtractionClassRecord[];
 };
 
 export type FollowUpExportRecord = {
@@ -147,6 +151,61 @@ export type SaveCausalArtifactsResult = {
   savedClasses: number;
   savedCausal: number;
   savedFollowUps: number;
+};
+
+export type FollowUpQuestionRecord = {
+  questionId: string;
+  questionText: string;
+  generatedBy: string;
+  generatedAt: string;
+  isFilteredIn: boolean;
+  answerText?: string;
+  answeredBy?: string;
+  answeredAt?: string;
+  derivedCausal?: ExtractionClassRecord[];
+};
+
+export type FollowUpRecord = {
+  followUpId: string;
+  sourceText: string;
+  sentenceType: string;
+  causalId: string;
+  questions: FollowUpQuestionRecord[];
+};
+
+export type SaveFollowUpQuestionsInput = {
+  experimentItemId: string;
+  records: Array<{
+    sourceText: string;
+    sentenceType?: string;
+    generatedQuestions: string[];
+    causalRef?: {
+      head: string;
+      relationship: string;
+      tail: string;
+      detail: string;
+    };
+    generatedBy?: string;
+  }>;
+};
+
+export type SaveFollowUpQuestionsResult = {
+  savedFollowUps: number;
+  savedQuestions: number;
+};
+
+export type SaveFollowUpAnswersInput = {
+  experimentItemId: string;
+  answers: Array<{
+    questionId: string;
+    answerText: string;
+    answeredBy?: string;
+    derivedExtraction?: ExtractionClassRecord[];
+  }>;
+};
+
+export type SaveFollowUpAnswersResult = {
+  savedAnswers: number;
 };
 
 export type SaveTextChunksInput = {
@@ -571,6 +630,37 @@ export async function loadCausalArtifactsForItem(itemId: string): Promise<Causal
 
 export async function saveCausalArtifactsForItem(input: SaveCausalArtifactsInput): Promise<SaveCausalArtifactsResult> {
   const result = await pmPost<SaveCausalArtifactsResult>("save-causal-artifacts", input);
+  notifyPMStorageChanged();
+  return result;
+}
+
+export async function loadFollowUpRecordsForItem(itemId: string): Promise<FollowUpRecord[]> {
+  await ensureLegacyMigration();
+
+  const url = new URL(PM_API_PATH, window.location.origin);
+  url.searchParams.set("resource", "follow-up-records");
+  url.searchParams.set("itemId", itemId);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`PM GET failed (${String(response.status)}): follow-up-records`);
+  }
+
+  return (await response.json()) as FollowUpRecord[];
+}
+
+export async function saveFollowUpQuestionsForItem(input: SaveFollowUpQuestionsInput): Promise<SaveFollowUpQuestionsResult> {
+  const result = await pmPost<SaveFollowUpQuestionsResult>("save-follow-up-questions", input);
+  notifyPMStorageChanged();
+  return result;
+}
+
+export async function saveFollowUpAnswersForItem(input: SaveFollowUpAnswersInput): Promise<SaveFollowUpAnswersResult> {
+  const result = await pmPost<SaveFollowUpAnswersResult>("save-follow-up-answers", input);
   notifyPMStorageChanged();
   return result;
 }

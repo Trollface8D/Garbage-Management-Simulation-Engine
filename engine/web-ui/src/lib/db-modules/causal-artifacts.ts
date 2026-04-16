@@ -41,6 +41,7 @@ export type FollowUpExportQuestion = {
   answer_text?: string;
   answered_by?: string;
   answered_at?: string;
+  derived_causal?: ExtractionClassRecord[];
 };
 
 export type FollowUpExportRecord = {
@@ -72,6 +73,61 @@ export type SaveCausalArtifactsResult = {
   savedFollowUps: number;
 };
 
+export type FollowUpQuestionRecord = {
+  questionId: string;
+  questionText: string;
+  generatedBy: string;
+  generatedAt: string;
+  isFilteredIn: boolean;
+  answerText?: string;
+  answeredBy?: string;
+  answeredAt?: string;
+  derivedCausal?: ExtractionClassRecord[];
+};
+
+export type FollowUpRecord = {
+  followUpId: string;
+  sourceText: string;
+  sentenceType: string;
+  causalId: string;
+  questions: FollowUpQuestionRecord[];
+};
+
+export type SaveFollowUpQuestionsInput = {
+  experimentItemId: string;
+  records: Array<{
+    sourceText: string;
+    sentenceType?: string;
+    generatedQuestions: string[];
+    causalRef?: {
+      head: string;
+      relationship: string;
+      tail: string;
+      detail: string;
+    };
+    generatedBy?: string;
+  }>;
+};
+
+export type SaveFollowUpQuestionsResult = {
+  savedFollowUps: number;
+  savedQuestions: number;
+};
+
+export type SaveFollowUpAnswersInput = {
+  experimentItemId: string;
+  answers: Array<{
+    questionId: string;
+    answerText: string;
+    answeredBy?: string;
+    derivedExtraction?: ExtractionClassRecord[];
+  }>;
+};
+
+export type SaveFollowUpAnswersResult = {
+  savedAnswers: number;
+};
+
 function parseChunkIndex(chunkLabel: string): number | null {
   const match = /chunk\s+(\d+)/i.exec(chunkLabel);
   if (!match) {
@@ -84,6 +140,61 @@ function parseChunkIndex(chunkLabel: string): number | null {
   }
 
   return chunkNumber - 1;
+}
+
+function normalizeDerivedExtraction(raw: unknown): ExtractionClassRecord[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const normalized: ExtractionClassRecord[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const row = item as Record<string, unknown>;
+    const extractedRaw = Array.isArray(row.extracted) ? row.extracted : [];
+    const extracted: ExtractedTriple[] = [];
+
+    for (const relation of extractedRaw) {
+      if (!relation || typeof relation !== "object") {
+        continue;
+      }
+      const relationRow = relation as Record<string, unknown>;
+      extracted.push({
+        head: typeof relationRow.head === "string" ? relationRow.head : "",
+        relationship: typeof relationRow.relationship === "string" ? relationRow.relationship : "",
+        tail: typeof relationRow.tail === "string" ? relationRow.tail : "",
+        detail: typeof relationRow.detail === "string" ? relationRow.detail : "",
+      });
+    }
+
+    normalized.push({
+      pattern_type: typeof row.pattern_type === "string" ? row.pattern_type : "",
+      sentence_type: typeof row.sentence_type === "string" ? row.sentence_type : "",
+      marked_type: typeof row.marked_type === "string" ? row.marked_type : "",
+      explicit_type: typeof row.explicit_type === "string" ? row.explicit_type : "",
+      marker: typeof row.marker === "string" ? row.marker : "",
+      source_text: typeof row.source_text === "string" ? row.source_text : "",
+      extracted,
+    });
+  }
+
+  return normalized;
+}
+
+function parseDerivedExtractionJson(raw: string | null): ExtractionClassRecord[] | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return normalizeDerivedExtraction(parsed);
+  } catch {
+    return undefined;
+  }
 }
 
 export function saveCausalArtifacts(input: SaveCausalArtifactsInput): SaveCausalArtifactsResult {
@@ -221,6 +332,7 @@ export function saveCausalArtifacts(input: SaveCausalArtifactsInput): SaveCausal
           .run();
 
         if (question.answer_text && question.answer_text.trim()) {
+          const derivedExtraction = normalizeDerivedExtraction(question.derived_causal);
           tx.insert(followUpAnswers)
             .values({
               id: randomUUID(),
@@ -228,6 +340,8 @@ export function saveCausalArtifacts(input: SaveCausalArtifactsInput): SaveCausal
               answerText: question.answer_text,
               answeredBy: question.answered_by || "user",
               answeredAt: question.answered_at || now,
+              derivedCausalJson: derivedExtraction.length > 0 ? JSON.stringify(derivedExtraction) : null,
+              derivedCausalUpdatedAt: derivedExtraction.length > 0 ? now : null,
             })
             .run();
         }
@@ -374,17 +488,27 @@ export function getCausalArtifactsForItem(experimentItemId: string): CausalArtif
         answerText: followUpAnswers.answerText,
         answeredBy: followUpAnswers.answeredBy,
         answeredAt: followUpAnswers.answeredAt,
+        derivedCausalJson: followUpAnswers.derivedCausalJson,
       })
       .from(followUpAnswers)
       .where(inArray(followUpAnswers.questionId, questionIds))
       .all();
 
-  const answerByQuestionId = new Map<string, { answerText: string; answeredBy: string; answeredAt: string }>();
+  const answerByQuestionId = new Map<
+    string,
+    {
+      answerText: string;
+      answeredBy: string;
+      answeredAt: string;
+      derivedCausal?: ExtractionClassRecord[];
+    }
+  >();
   for (const answer of answerRows) {
     answerByQuestionId.set(answer.questionId, {
       answerText: answer.answerText,
       answeredBy: answer.answeredBy,
       answeredAt: answer.answeredAt,
+      derivedCausal: parseDerivedExtractionJson(answer.derivedCausalJson),
     });
   }
 
@@ -400,6 +524,7 @@ export function getCausalArtifactsForItem(experimentItemId: string): CausalArtif
       answer_text: answer?.answerText,
       answered_by: answer?.answeredBy,
       answered_at: answer?.answeredAt,
+      derived_causal: answer?.derivedCausal,
     });
     questionsByFollowUpId.set(question.followUpId, current);
   }
@@ -415,4 +540,341 @@ export function getCausalArtifactsForItem(experimentItemId: string): CausalArtif
     raw_extraction: rawExtraction,
     follow_up: followUp,
   };
+}
+
+export function listFollowUpRecordsForExperimentItem(experimentItemId: string): FollowUpRecord[] {
+  const trimmed = experimentItemId.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const followUpRows = drizzleDb
+    .select({
+      id: followUps.id,
+      sourceText: followUps.sourceText,
+      sentenceType: followUps.sentenceType,
+      causalId: followUps.causalId,
+    })
+    .from(followUps)
+    .where(eq(followUps.causalProjectDocumentId, trimmed))
+    .all();
+
+  const followUpIds = followUpRows.map((row) => row.id);
+  const questionRows = followUpIds.length === 0
+    ? []
+    : drizzleDb
+      .select({
+        id: followUpQuestions.id,
+        followUpId: followUpQuestions.followUpId,
+        questionText: followUpQuestions.questionText,
+        generatedBy: followUpQuestions.generatedBy,
+        generatedAt: followUpQuestions.generatedAt,
+        isFilteredIn: followUpQuestions.isFilteredIn,
+      })
+      .from(followUpQuestions)
+      .where(inArray(followUpQuestions.followUpId, followUpIds))
+      .orderBy(asc(followUpQuestions.generatedAt))
+      .all();
+
+  const questionIds = questionRows.map((row) => row.id);
+  const answerRows = questionIds.length === 0
+    ? []
+    : drizzleDb
+      .select({
+        questionId: followUpAnswers.questionId,
+        answerText: followUpAnswers.answerText,
+        answeredBy: followUpAnswers.answeredBy,
+        answeredAt: followUpAnswers.answeredAt,
+        derivedCausalJson: followUpAnswers.derivedCausalJson,
+      })
+      .from(followUpAnswers)
+      .where(inArray(followUpAnswers.questionId, questionIds))
+      .all();
+
+  const answerByQuestionId = new Map<
+    string,
+    {
+      answerText: string;
+      answeredBy: string;
+      answeredAt: string;
+      derivedCausal?: ExtractionClassRecord[];
+    }
+  >();
+  for (const answer of answerRows) {
+    answerByQuestionId.set(answer.questionId, {
+      answerText: answer.answerText,
+      answeredBy: answer.answeredBy,
+      answeredAt: answer.answeredAt,
+      derivedCausal: parseDerivedExtractionJson(answer.derivedCausalJson),
+    });
+  }
+
+  const questionsByFollowUpId = new Map<string, FollowUpQuestionRecord[]>();
+  for (const question of questionRows) {
+    const answer = answerByQuestionId.get(question.id);
+    const current = questionsByFollowUpId.get(question.followUpId) ?? [];
+    current.push({
+      questionId: question.id,
+      questionText: question.questionText,
+      generatedBy: question.generatedBy,
+      generatedAt: question.generatedAt,
+      isFilteredIn: question.isFilteredIn,
+      answerText: answer?.answerText,
+      answeredBy: answer?.answeredBy,
+      answeredAt: answer?.answeredAt,
+      derivedCausal: answer?.derivedCausal,
+    });
+    questionsByFollowUpId.set(question.followUpId, current);
+  }
+
+  return followUpRows.map((row) => ({
+    followUpId: row.id,
+    sourceText: row.sourceText,
+    sentenceType: row.sentenceType ?? "",
+    causalId: row.causalId,
+    questions: questionsByFollowUpId.get(row.id) ?? [],
+  }));
+}
+
+export function saveFollowUpQuestions(input: SaveFollowUpQuestionsInput): SaveFollowUpQuestionsResult {
+  const experimentItemId = input.experimentItemId.trim();
+  if (!experimentItemId) {
+    throw new Error("experimentItemId is required.");
+  }
+
+  const records = input.records ?? [];
+
+  return drizzleDb.transaction((tx) => {
+    const document = tx
+      .select({ id: causalProjectDocuments.id })
+      .from(causalProjectDocuments)
+      .where(eq(causalProjectDocuments.id, experimentItemId))
+      .get();
+
+    if (!document) {
+      throw new Error("Causal project document not found.");
+    }
+
+    const causalRows = tx
+      .select({
+        id: causal.id,
+        head: causal.head,
+        relationship: causal.relationship,
+        tail: causal.tail,
+        detail: causal.detail,
+      })
+      .from(causal)
+      .where(eq(causal.causalProjectDocumentId, experimentItemId))
+      .all();
+
+    const causalByKey = new Map<string, string>();
+    for (const row of causalRows) {
+      const key = [row.head || "", row.relationship || "", row.tail || "", row.detail || ""].join("||");
+      causalByKey.set(key, row.id);
+    }
+    const fallbackCausalId = causalRows[0]?.id;
+
+    let savedFollowUps = 0;
+    let savedQuestions = 0;
+
+    for (const record of records) {
+      const sourceText = (record.sourceText || "").trim();
+      if (!sourceText) {
+        continue;
+      }
+
+      tx
+        .delete(followUps)
+        .where(and(eq(followUps.causalProjectDocumentId, experimentItemId), eq(followUps.sourceText, sourceText)))
+        .run();
+
+      const questionTexts = Array.from(
+        new Set(
+          (record.generatedQuestions ?? [])
+            .map((question) => (question || "").trim())
+            .filter((question) => question.length > 0),
+        ),
+      );
+
+      if (questionTexts.length === 0) {
+        continue;
+      }
+
+      const reference = record.causalRef;
+      const referenceKey = reference
+        ? [reference.head || "", reference.relationship || "", reference.tail || "", reference.detail || ""].join("||")
+        : "";
+      const causalId = (referenceKey && causalByKey.get(referenceKey)) || fallbackCausalId;
+
+      if (!causalId) {
+        continue;
+      }
+
+      const now = new Date().toISOString();
+      const followUpId = randomUUID();
+      tx
+        .insert(followUps)
+        .values({
+          id: followUpId,
+          causalProjectDocumentId: experimentItemId,
+          causalId,
+          sourceText,
+          sentenceType: (record.sentenceType || "").trim() || null,
+          createdAt: now,
+        })
+        .run();
+      savedFollowUps += 1;
+
+      const generatedBy = (record.generatedBy || "").trim() || "system";
+
+      for (const questionText of questionTexts) {
+        tx
+          .insert(followUpQuestions)
+          .values({
+            id: randomUUID(),
+            followUpId,
+            questionText,
+            generatedBy,
+            generatedAt: now,
+            isFilteredIn: true,
+          })
+          .run();
+        savedQuestions += 1;
+      }
+    }
+
+    tx
+      .update(causalProjectDocuments)
+      .set({ updatedAt: new Date().toISOString() })
+      .where(eq(causalProjectDocuments.id, experimentItemId))
+      .run();
+
+    return { savedFollowUps, savedQuestions };
+  });
+}
+
+export function saveFollowUpAnswers(input: SaveFollowUpAnswersInput): SaveFollowUpAnswersResult {
+  const experimentItemId = input.experimentItemId.trim();
+  if (!experimentItemId) {
+    throw new Error("experimentItemId is required.");
+  }
+
+  const answers = input.answers ?? [];
+
+  return drizzleDb.transaction((tx) => {
+    const document = tx
+      .select({ id: causalProjectDocuments.id })
+      .from(causalProjectDocuments)
+      .where(eq(causalProjectDocuments.id, experimentItemId))
+      .get();
+
+    if (!document) {
+      throw new Error("Causal project document not found.");
+    }
+
+    const questionRows = tx
+      .select({ questionId: followUpQuestions.id })
+      .from(followUpQuestions)
+      .innerJoin(followUps, eq(followUpQuestions.followUpId, followUps.id))
+      .where(eq(followUps.causalProjectDocumentId, experimentItemId))
+      .all();
+    const allowedQuestionIds = new Set(questionRows.map((row) => row.questionId));
+
+    let savedAnswers = 0;
+
+    for (const entry of answers) {
+      const questionId = (entry.questionId || "").trim();
+      const answerText = (entry.answerText || "").trim();
+      const hasDerivedExtraction = Object.prototype.hasOwnProperty.call(entry, "derivedExtraction");
+      const normalizedDerivedExtraction = hasDerivedExtraction
+        ? normalizeDerivedExtraction(entry.derivedExtraction)
+        : undefined;
+
+      if (!questionId || !allowedQuestionIds.has(questionId)) {
+        continue;
+      }
+
+      const now = new Date().toISOString();
+      const answeredBy = (entry.answeredBy || "").trim() || "user";
+
+      const existing = tx
+        .select({ id: followUpAnswers.id })
+        .from(followUpAnswers)
+        .where(eq(followUpAnswers.questionId, questionId))
+        .limit(1)
+        .get();
+
+      if (!answerText) {
+        if (existing) {
+          tx
+            .delete(followUpAnswers)
+            .where(eq(followUpAnswers.id, existing.id))
+            .run();
+          savedAnswers += 1;
+        }
+        continue;
+      }
+
+      if (existing) {
+        const updatePayload: {
+          answerText: string;
+          answeredBy: string;
+          answeredAt: string;
+          derivedCausalJson?: string;
+          derivedCausalUpdatedAt?: string;
+        } = {
+          answerText,
+          answeredBy,
+          answeredAt: now,
+        };
+
+        if (hasDerivedExtraction) {
+          updatePayload.derivedCausalJson = JSON.stringify(normalizedDerivedExtraction ?? []);
+          updatePayload.derivedCausalUpdatedAt = now;
+        }
+
+        tx
+          .update(followUpAnswers)
+          .set(updatePayload)
+          .where(eq(followUpAnswers.id, existing.id))
+          .run();
+      } else {
+        const insertPayload: {
+          id: string;
+          questionId: string;
+          answerText: string;
+          answeredBy: string;
+          answeredAt: string;
+          derivedCausalJson?: string;
+          derivedCausalUpdatedAt?: string;
+        } = {
+          id: randomUUID(),
+          questionId,
+          answerText,
+          answeredBy,
+          answeredAt: now,
+        };
+
+        if (hasDerivedExtraction) {
+          insertPayload.derivedCausalJson = JSON.stringify(normalizedDerivedExtraction ?? []);
+          insertPayload.derivedCausalUpdatedAt = now;
+        }
+
+        tx
+          .insert(followUpAnswers)
+          .values(insertPayload)
+          .run();
+      }
+
+      savedAnswers += 1;
+    }
+
+    tx
+      .update(causalProjectDocuments)
+      .set({ updatedAt: new Date().toISOString() })
+      .where(eq(causalProjectDocuments.id, experimentItemId))
+      .run();
+
+    return { savedAnswers };
+  });
 }
