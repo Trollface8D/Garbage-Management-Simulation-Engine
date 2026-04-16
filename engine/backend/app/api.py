@@ -8,6 +8,7 @@ from .routes import (
     jobs_create_router,
     jobs_query_router,
     jobs_stream_router,
+    map_extract_router,
 )
 
 
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs_query_router)
     app.include_router(jobs_stream_router)
     app.include_router(jobs_artifacts_router)
+    app.include_router(map_extract_router)
     app.include_router(compat_router)
     return app
 

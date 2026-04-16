@@ -30,6 +30,20 @@ original;
 */
 
 {
+    "runtime_prompts": {
+        "extractmap_text_nodes_json_schema": "Use this JSON schema exactly:\n{\n  \"nodes\": [\n    {\"id\": \"string\", \"label\": \"string\", \"type\": \"string\", \"x\": 0.0, \"y\": 0.0, \"metadata\": {}}\n  ]\n}",
+        "extractmap_text_support_joint_prompt": "Extract all bin/buffer node metadata by jointly analyzing the map image and support artifact image. Be exhaustive and preserve IDs exactly as they appear (e.g., L.1, TR.12).",
+        "extractmap_text_support_fallback_prompt": "Extract all bin/buffer node metadata from the provided support artifact image. Be exhaustive and preserve IDs exactly as they appear (e.g., L.1, TR.12).",
+        "extractmap_text_support_delta_prompt": "Extract any additional bin metadata missed previously from the support artifact image.",
+        "extractmap_text_normalize_prompt": "Normalize the provided extracted content into JSON nodes.",
+        "extractmap_text_normalize_context": "Produce JSON only with shape {\"nodes\": [...]} where each node includes id/label/type/metadata when available. Keep IDs exactly as seen in source text (e.g., L.1, TR.12).",
+        "extractmap_text_support_delta_context": "Return concise text only. Focus on IDs and attributes not already extracted.",
+        "tabular_extraction_output_hint": "Return CSV plain text only, with a header row.",
+        "tabular_extraction_no_support_hint": "No support table image was uploaded; extract any visible tabular metadata from the map image.",
+        "extractmap_symbol_output_hint": "Return a concise markdown table of symbols and notation. Process only the provided single map image.",
+        "edge_extraction_json_schema": "Use this JSON schema exactly:\n{\n  \"edges\": [\n    {\"id\": \"string\", \"source\": \"string\", \"target\": \"string\", \"approximate_cost\": 0.0, \"label\": \"string\"}\n  ]\n}",
+        "edge_extraction_csv_fallback_hint": "If JSON cannot be produced, return CSV with header: Source Node,Target Node,Approximate Cost"
+    },
     "extractmap_symbol": {
         "task_description": "Extract map legend and notations.",
         "input_dependencies": ["map_image"],
