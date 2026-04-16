@@ -5,9 +5,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "../components/back-to-home";
 import {
-    findComponentById as findSeedComponentById,
-    findProjectById as findSeedProjectById,
-    getProjectIdForComponent,
     type SimulationComponent,
     type SimulationProject,
 } from "@/lib/simulation-components";
@@ -202,20 +199,18 @@ function CausalExtractHomeContent() {
     }, []);
 
     const selectedComponent = useMemo(
-        () => components.find((component) => component.id === componentId) ?? findSeedComponentById(componentId),
+        () => components.find((component) => component.id === componentId),
         [componentId, components],
     );
     const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Causal Experiment";
     const selectedProjectId =
         queryProjectId ??
         (selectedComponent && selectedComponent.category !== "PolicyTesting" ? selectedComponent.projectId : undefined) ??
-        getProjectIdForComponent(componentId) ??
         projects[0]?.id ??
         "";
     const [activeFeature, setActiveFeature] = useState<FeatureTab>(
         isFeatureTab(featureFromQuery) ? featureFromQuery : "chunking",
     );
-    const [includeImplicit, setIncludeImplicit] = useState<boolean>(true);
     const [inputText, setInputText] = useState<string>("");
     const [uploadedFiles, setUploadedFiles] = useState<UploadedLocalFile[]>([]);
     const [experimentItems, setExperimentItems] = useState<ExperimentItem[]>([]);
@@ -228,7 +223,6 @@ function CausalExtractHomeContent() {
     const selectedProjectName = useMemo(
         () =>
             projects.find((project) => project.id === selectedProjectId)?.name ??
-            findSeedProjectById(selectedProjectId)?.name ??
             "Unselected project",
         [projects, selectedProjectId],
     );
@@ -241,13 +235,9 @@ function CausalExtractHomeContent() {
                 return false;
             }
 
-            if (activeFeature === "follow_up" && !includeImplicit && item.tags.includes("implicit")) {
-                return false;
-            }
-
             return true;
         });
-    }, [activeFeature, experimentItems, includeImplicit]);
+    }, [activeFeature, experimentItems]);
 
     const hydrateItemsFromDb = useCallback(async (projectId: string, targetComponentId: string) => {
         if (!projectId || !targetComponentId) {
@@ -890,20 +880,6 @@ function CausalExtractHomeContent() {
                                     );
                                 })}
                             </div>
-
-                            {activeFeature === "follow_up" && (
-                                <label className="inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-200">
-                                    <span>Toggle implicit causal</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIncludeImplicit((prev) => !prev)}
-                                        className={`rounded px-3 py-1 text-xs font-bold ${includeImplicit ? "bg-emerald-500/25 text-emerald-200" : "bg-neutral-700 text-neutral-200"
-                                            }`}
-                                    >
-                                        {includeImplicit ? "ON" : "OFF"}
-                                    </button>
-                                </label>
-                            )}
                         </div>
 
                         <div className="space-y-3">

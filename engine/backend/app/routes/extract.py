@@ -1,3 +1,5 @@
+import json
+import logging
 from io import BytesIO
 from typing import Any
 from uuid import uuid4
@@ -5,8 +7,9 @@ from uuid import uuid4
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from ...infra.io_utils import resolve_api_key
-from ...infra.paths import DEFAULT_MODEL_NAME
+from ...infra.gemini_client import GeminiGateway
+from ...infra.io_utils import read_text, resolve_api_key
+from ...infra.paths import BACKEND_DIR, DEFAULT_MODEL_NAME
 from ..services.causal_store import (
     CausalStoreConstraintError,
     CausalStoreError,
@@ -22,6 +25,8 @@ from ..services.structure_extractor import (
 
 
 router = APIRouter(tags=["extract"])
+FOLLOW_UP_PROMPT_PATH = BACKEND_DIR / "prompt" / "follow_up.txt"
+logger = logging.getLogger(__name__)
 
 
 def _resolve_uploaded_file_type(text_file: UploadFile) -> str:
@@ -65,6 +70,42 @@ async def _resolve_raw_text_from_request(request: Request) -> tuple[str | None, 
         return (raw or None, {})
 
     return (None, {})
+
+
+def _normalize_follow_up_records(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, list):
+        return []
+
+    records: list[dict[str, Any]] = []
+    for entry in payload:
+        if not isinstance(entry, dict):
+            continue
+
+        source_text = str(entry.get("source_text") or "").strip()
+        sentence_type = str(entry.get("sentence_type") or "").strip()
+        raw_questions = entry.get("generated_questions")
+        if not isinstance(raw_questions, list):
+            raw_questions = []
+
+        generated_questions: list[str] = []
+        for question in raw_questions:
+            if isinstance(question, str):
+                normalized = question.strip()
+                if normalized:
+                    generated_questions.append(normalized)
+
+        if not source_text:
+            continue
+
+        records.append(
+            {
+                "source_text": source_text,
+                "sentence_type": sentence_type,
+                "generated_questions": generated_questions,
+            }
+        )
+
+    return records
 
 
 @router.post("/extract")
@@ -169,4 +210,74 @@ async def extract_structure(
         "insertedExtractionClasses": persist_result.inserted_extraction_classes,
         "insertedCausalRows": persist_result.inserted_causal_rows,
         "records": [record.model_dump() for record in records],
+    }
+
+
+@router.post("/follow-up")
+async def generate_follow_up_questions(request: Request):
+    api_key = resolve_api_key()
+    if not api_key:
+        return JSONResponse(
+            {
+                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+            },
+            status_code=500,
+        )
+
+    try:
+        payload = await request.json()
+    except ValueError:
+        return JSONResponse({"error": "Invalid JSON payload."}, status_code=400)
+
+    if not isinstance(payload, dict):
+        return JSONResponse({"error": "JSON payload must be an object."}, status_code=400)
+
+    causal_items = payload.get("causalItems")
+    if not isinstance(causal_items, list) or not causal_items:
+        return JSONResponse({"error": "causalItems is required."}, status_code=400)
+
+    model_name = str(payload.get("model") or "").strip() or DEFAULT_MODEL_NAME
+
+    try:
+        prompt_template = read_text(FOLLOW_UP_PROMPT_PATH).strip()
+    except OSError:
+        logger.exception("Failed to load follow-up prompt template")
+        return JSONResponse({"error": "Failed to initialize follow-up generation."}, status_code=500)
+
+    prompt = f"{prompt_template}\n\nInput JSON:\n{json.dumps(causal_items, ensure_ascii=False)}"
+
+    gateway = GeminiGateway(api_key=api_key, model_name=model_name)
+    try:
+        raw_text = gateway.generate_text(prompt, response_json=True).strip()
+    except Exception as exc:  # pragma: no cover - provider side errors are dynamic
+        message = str(exc)
+        lowered = message.lower()
+        if any(token in lowered for token in ("429", "rate limit", "resource exhausted", "quota")):
+            return JSONResponse({"error": "Gemini API rate limit exceeded"}, status_code=429)
+        if any(token in lowered for token in ("503", "unavailable", "high demand", "temporarily")):
+            logger.exception("Follow-up generation request to Gemini is temporarily unavailable")
+            return JSONResponse(
+                {"error": "Follow-up service is temporarily busy. Please retry shortly."},
+                status_code=503,
+            )
+        logger.exception("Follow-up generation request to Gemini failed")
+        return JSONResponse({"error": "Follow-up generation failed."}, status_code=502)
+
+    if not raw_text:
+        return JSONResponse({"error": "Gemini returned empty payload."}, status_code=502)
+
+    try:
+        parsed_payload = GeminiGateway.parse_json_relaxed(raw_text)
+    except ValueError:
+        logger.exception("Failed to parse Gemini follow-up JSON output")
+        return JSONResponse(
+            {
+                "error": "Follow-up generation returned an invalid response.",
+            },
+            status_code=502,
+        )
+
+    return {
+        "model": model_name,
+        "records": _normalize_follow_up_records(parsed_payload),
     }
