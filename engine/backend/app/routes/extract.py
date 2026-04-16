@@ -393,3 +393,72 @@ async def transcribe_audio(
         "mimeType": mime_type,
         "fileName": audioFile.filename,
     }
+
+@router.post("/follow-up")
+async def generate_follow_up_questions(request: Request):
+    api_key = resolve_api_key()
+    if not api_key:
+        return JSONResponse(
+            {
+                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+            },
+            status_code=500,
+        )
+
+    try:
+        payload = await request.json()
+    except ValueError:
+        return JSONResponse({"error": "Invalid JSON payload."}, status_code=400)
+
+    if not isinstance(payload, dict):
+        return JSONResponse({"error": "JSON payload must be an object."}, status_code=400)
+
+    causal_items = payload.get("causalItems")
+    if not isinstance(causal_items, list) or not causal_items:
+        return JSONResponse({"error": "causalItems is required."}, status_code=400)
+
+    model_name = str(payload.get("model") or "").strip() or DEFAULT_MODEL_NAME
+
+    try:
+        prompt_template = read_text(FOLLOW_UP_PROMPT_PATH).strip()
+    except OSError:
+        logger.exception("Failed to load follow-up prompt template")
+        return JSONResponse({"error": "Failed to initialize follow-up generation."}, status_code=500)
+
+    prompt = f"{prompt_template}\n\nInput JSON:\n{json.dumps(causal_items, ensure_ascii=False)}"
+
+    gateway = GeminiGateway(api_key=api_key, model_name=model_name)
+    try:
+        raw_text = gateway.generate_text(prompt, response_json=True).strip()
+    except Exception as exc:  # pragma: no cover - provider side errors are dynamic
+        message = str(exc)
+        lowered = message.lower()
+        if any(token in lowered for token in ("429", "rate limit", "resource exhausted", "quota")):
+            return JSONResponse({"error": "Gemini API rate limit exceeded"}, status_code=429)
+        if any(token in lowered for token in ("503", "unavailable", "high demand", "temporarily")):
+            logger.exception("Follow-up generation request to Gemini is temporarily unavailable")
+            return JSONResponse(
+                {"error": "Follow-up service is temporarily busy. Please retry shortly."},
+                status_code=503,
+            )
+        logger.exception("Follow-up generation request to Gemini failed")
+        return JSONResponse({"error": "Follow-up generation failed."}, status_code=502)
+
+    if not raw_text:
+        return JSONResponse({"error": "Gemini returned empty payload."}, status_code=502)
+
+    try:
+        parsed_payload = GeminiGateway.parse_json_relaxed(raw_text)
+    except ValueError:
+        logger.exception("Failed to parse Gemini follow-up JSON output")
+        return JSONResponse(
+            {
+                "error": "Follow-up generation returned an invalid response.",
+            },
+            status_code=502,
+        )
+
+    return {
+        "model": model_name,
+        "records": _normalize_follow_up_records(parsed_payload),
+    }
