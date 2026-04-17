@@ -12,7 +12,7 @@ Features:
 
 1. Python environment for the project is ready (`.venv` recommended).
 2. Pipeline dependencies are installed (from `Engine/requirement.txt`).
-3. API key is available for Gemini (`API_KEY` or `GOOGLE_API_KEY`) in the repository root `.env`.
+3. API key is available for Gemini (`GEMINI_API_KEY`, `API_KEY`, or `GOOGLE_API_KEY`) in `Engine/web-ui/.env.local`.
 
 Optional:
 - Set `NEXT_PUBLIC_ENGINE_API_BASE` to change API base URL (default: `http://127.0.0.1:8000`).

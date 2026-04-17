@@ -43,6 +43,18 @@ type UploadedLocalFile = {
     fileType: string;
 };
 
+type UploadProcessLogLevel = "info" | "success" | "error";
+type UploadProcessFileKind = "txt" | "pdf" | "audio" | "unknown";
+
+type UploadProcessLogEntry = {
+    id: string;
+    timestamp: string;
+    fileName: string;
+    fileKind: UploadProcessFileKind;
+    level: UploadProcessLogLevel;
+    message: string;
+};
+
 type ChunkingImportPayload = {
     export_type: "chunking";
     version: "1.0";
@@ -171,6 +183,55 @@ function downloadJsonFile(fileName: string, payload: unknown): void {
     URL.revokeObjectURL(href);
 }
 
+function detectUploadProcessFileKind(file: File): UploadProcessFileKind {
+    const lowerName = file.name.toLowerCase();
+
+    if (file.type.startsWith("audio/") || /\.(mp3|wav|m4a|ogg|flac|aac|webm)$/i.test(lowerName)) {
+        return "audio";
+    }
+
+    if (file.type === "application/pdf" || lowerName.endsWith(".pdf")) {
+        return "pdf";
+    }
+
+    if (lowerName.endsWith(".txt")) {
+        return "txt";
+    }
+
+    return "unknown";
+}
+
+function normalizeLogPreview(text: string, maxLength = 140): string {
+    const compact = text.replace(/\s+/g, " ").trim();
+    if (compact.length <= maxLength) {
+        return compact;
+    }
+    return `${compact.slice(0, Math.max(1, maxLength - 3))}...`;
+}
+
+function getUploadKindLabel(kind: UploadProcessFileKind): string {
+    if (kind === "audio") {
+        return "audio";
+    }
+    if (kind === "pdf") {
+        return "pdf";
+    }
+    if (kind === "txt") {
+        return "txt";
+    }
+    return "file";
+}
+
+function getUploadLogLevelClass(level: UploadProcessLogLevel): string {
+    if (level === "success") {
+        return "text-emerald-300";
+    }
+    if (level === "error") {
+        return "text-red-300";
+    }
+    return "text-neutral-300";
+}
+
 function CausalExtractHomeContent() {
     const router = useRouter();
     const pathname = usePathname();
@@ -216,6 +277,7 @@ function CausalExtractHomeContent() {
     const [experimentItems, setExperimentItems] = useState<ExperimentItem[]>([]);
     const [chunkCountsByItemId, setChunkCountsByItemId] = useState<Record<string, number>>({});
     const [uploadStatus, setUploadStatus] = useState<string>("");
+    const [uploadProcessLog, setUploadProcessLog] = useState<UploadProcessLogEntry[]>([]);
     const [isHydratingItems, setIsHydratingItems] = useState<boolean>(false);
     const filePickerRef = useRef<HTMLInputElement | null>(null);
     const importPickerRef = useRef<HTMLInputElement | null>(null);
@@ -611,14 +673,74 @@ function CausalExtractHomeContent() {
         const nextItems: ExperimentItem[] = [];
         const errors: string[] = [];
 
+        const pushUploadLog = (
+            fileName: string,
+            fileKind: UploadProcessFileKind,
+            level: UploadProcessLogLevel,
+            message: string,
+        ) => {
+            const timestamp = new Date().toLocaleTimeString([], { hour12: false });
+            setUploadProcessLog((prev) => [
+                {
+                    id: createLocalId("upload-log"),
+                    timestamp,
+                    fileName,
+                    fileKind,
+                    level,
+                    message,
+                },
+                ...prev,
+            ].slice(0, 120));
+        };
+
+        pushUploadLog(
+            "batch",
+            "unknown",
+            "info",
+            `Started processing ${String(picked.length)} selected file(s).`,
+        );
+
         for (const file of picked) {
+            const fileKind = detectUploadProcessFileKind(file);
+
             try {
+                pushUploadLog(file.name, fileKind, "info", `Queued ${getUploadKindLabel(fileKind)} for upload.`);
+
+                if (fileKind === "audio") {
+                    pushUploadLog(file.name, fileKind, "info", "Uploading and transcribing audio on backend...");
+                } else if (fileKind === "pdf") {
+                    pushUploadLog(file.name, fileKind, "info", "Uploading and extracting text from PDF...");
+                } else if (fileKind === "txt") {
+                    pushUploadLog(file.name, fileKind, "info", "Uploading text file and indexing content...");
+                } else {
+                    pushUploadLog(file.name, fileKind, "info", "Uploading file and attempting text extraction...");
+                }
+
                 const saved = await uploadCausalSourceFile({
                     projectId: selectedProjectId,
                     componentId: componentId ?? "",
                     label: "file upload",
                     file,
                 });
+
+                const preview = normalizeLogPreview(saved.textContent || "");
+                const textLen = saved.textContent?.length ?? 0;
+
+                if (saved.sourceType === "audio") {
+                    pushUploadLog(
+                        file.name,
+                        fileKind,
+                        "success",
+                        `Transcription complete (${String(textLen)} chars).${preview ? ` Preview: ${preview}` : ""}`,
+                    );
+                } else {
+                    pushUploadLog(
+                        file.name,
+                        fileKind,
+                        "success",
+                        `Text ready (${String(textLen)} chars).${preview ? ` Preview: ${preview}` : ""}`,
+                    );
+                }
 
                 nextUploads.push({
                     id: saved.id,
@@ -637,6 +759,7 @@ function CausalExtractHomeContent() {
             } catch (error) {
                 const message = error instanceof Error ? error.message : "Unknown upload error.";
                 errors.push(`${file.name}: ${message}`);
+                pushUploadLog(file.name, fileKind, "error", message);
             }
         }
 
@@ -646,10 +769,22 @@ function CausalExtractHomeContent() {
         }
 
         if (errors.length > 0) {
+            pushUploadLog(
+                "batch",
+                "unknown",
+                "error",
+                `Finished with ${String(errors.length)} error(s). Uploaded ${String(nextUploads.length)} file(s).`,
+            );
             setUploadStatus(`Uploaded ${String(nextUploads.length)} file(s). Skipped ${String(errors.length)}: ${errors.join(" | ")}`);
             return;
         }
 
+        pushUploadLog(
+            "batch",
+            "unknown",
+            "success",
+            `Completed successfully. Uploaded ${String(nextUploads.length)} file(s).`,
+        );
         setUploadStatus(`Uploaded ${String(nextUploads.length)} file(s) successfully.`);
     };
 
@@ -827,6 +962,42 @@ function CausalExtractHomeContent() {
                                     : "No files selected yet"}
                             </p>
                             <p className="mt-1 text-xs text-neutral-500">{uploadStatus}</p>
+
+                            <div className="mt-3 rounded-lg border border-neutral-700 bg-neutral-950/70 p-2">
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-300">
+                                        Process log
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setUploadProcessLog([])}
+                                        className="rounded border border-neutral-700 px-2 py-1 text-[10px] font-semibold text-neutral-300 transition hover:border-neutral-500"
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                                <div className="mt-2 max-h-44 space-y-1 overflow-y-auto pr-1">
+                                    {uploadProcessLog.length === 0 ? (
+                                        <p className="text-[11px] text-neutral-500">
+                                            Waiting for uploads. Logs for txt, pdf, and audio processing will appear here.
+                                        </p>
+                                    ) : (
+                                        uploadProcessLog.map((entry) => (
+                                            <article
+                                                key={entry.id}
+                                                className="rounded border border-neutral-800 bg-neutral-900/80 px-2 py-1"
+                                            >
+                                                <p className="text-[10px] text-neutral-500">
+                                                    [{entry.timestamp}] {entry.fileName}
+                                                </p>
+                                                <p className={`text-[11px] ${getUploadLogLevelClass(entry.level)}`}>
+                                                    {entry.message}
+                                                </p>
+                                            </article>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
                         {uploadedFiles.length > 0 && (
