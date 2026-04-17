@@ -21,6 +21,20 @@ export type MapGraphMeta = {
   coordinateSystem?: "pixel" | "normalized";
   width?: number;
   height?: number;
+  tokenUsage?: {
+    promptTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    callCount?: number;
+  };
+  costEstimate?: {
+    currency?: string;
+    estimatedCost?: number | null;
+    inputRatePer1M?: number;
+    outputRatePer1M?: number;
+    source?: string;
+    note?: string;
+  };
   [key: string]: unknown;
 };
 

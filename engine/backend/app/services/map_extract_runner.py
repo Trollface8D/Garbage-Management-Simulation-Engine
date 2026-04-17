@@ -67,7 +67,10 @@ def _load_map_extract_config() -> dict[str, Any]:
 
     required_runtime = (
         "extractmap_text_nodes_json_schema",
+        "extractmap_text_dedup_policy",
+        "extractmap_text_exclusion_policy",
         "extractmap_symbol_output_hint",
+        "compact_output_policy",
         "tabular_extraction_output_hint",
         "tabular_extraction_no_support_hint",
         "extractmap_text_support_joint_prompt",
@@ -77,6 +80,7 @@ def _load_map_extract_config() -> dict[str, Any]:
         "extractmap_text_normalize_context",
         "extractmap_text_support_delta_context",
         "edge_extraction_json_schema",
+        "edge_extraction_dedup_policy",
         "edge_extraction_csv_fallback_hint",
     )
     runtime = payload.get("runtime_prompts")
@@ -148,6 +152,110 @@ def _normalize_node(item: Any, index: int) -> dict[str, Any]:
         "type": None,
         "metadata": {"raw": item},
     }
+
+
+def _canonical_text(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    raw = re.sub(r"\s+", " ", raw)
+    raw = re.sub(r"[^a-z0-9._\- ]", "", raw)
+    return raw
+
+
+def _semantic_node_key(node: dict[str, Any]) -> str:
+    node_id = _canonical_text(node.get("id"))
+    label = _canonical_text(node.get("label"))
+    node_type = _canonical_text(node.get("type"))
+
+    if node_id and not node_id.startswith("n"):
+        return f"id:{node_id}"
+
+    x = node.get("x")
+    y = node.get("y")
+    x_bucket = "na"
+    y_bucket = "na"
+    try:
+        x_bucket = str(int(float(x) * 40))
+        y_bucket = str(int(float(y) * 40))
+    except (TypeError, ValueError):
+        pass
+
+    return f"sem:{label}|{node_type}|{x_bucket}|{y_bucket}"
+
+
+def _semantic_node_signature(node: dict[str, Any]) -> str:
+    label = _canonical_text(node.get("label"))
+    node_type = _canonical_text(node.get("type"))
+    x = node.get("x")
+    y = node.get("y")
+    x_bucket = "na"
+    y_bucket = "na"
+    try:
+        x_bucket = str(int(float(x) * 40))
+        y_bucket = str(int(float(y) * 40))
+    except (TypeError, ValueError):
+        pass
+    return f"{label}|{node_type}|{x_bucket}|{y_bucket}"
+
+
+def _is_canceled_node(node: dict[str, Any]) -> bool:
+    cancel_terms = {
+        "canceled",
+        "cancelled",
+        "inactive",
+        "decommissioned",
+        "removed",
+        "closed",
+        "retired",
+        "obsolete",
+    }
+
+    def collect_texts(value: Any, sink: list[str]) -> None:
+        if value is None:
+            return
+        if isinstance(value, str):
+            sink.append(value)
+            return
+        if isinstance(value, (int, float, bool)):
+            sink.append(str(value))
+            return
+        if isinstance(value, list):
+            for item in value[:20]:
+                collect_texts(item, sink)
+            return
+        if isinstance(value, dict):
+            for key, item in list(value.items())[:40]:
+                sink.append(str(key))
+                collect_texts(item, sink)
+
+    texts: list[str] = []
+    collect_texts(node.get("id"), texts)
+    collect_texts(node.get("label"), texts)
+    collect_texts(node.get("type"), texts)
+    collect_texts(node.get("metadata"), texts)
+
+    normalized = " ".join(_canonical_text(text) for text in texts)
+    if not normalized:
+        return False
+    return any(term in normalized for term in cancel_terms)
+
+
+def _filter_active_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [node for node in nodes if not _is_canceled_node(node)]
+
+
+def _filter_edges_by_nodes(edges: list[dict[str, Any]], nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    active_ids = {str(node.get("id") or "").strip() for node in nodes}
+    active_ids.discard("")
+    filtered: list[dict[str, Any]] = []
+    for edge in edges:
+        source = str(edge.get("source") or "").strip()
+        target = str(edge.get("target") or "").strip()
+        if not source or not target:
+            continue
+        if source not in active_ids or target not in active_ids:
+            continue
+        filtered.append(edge)
+    return filtered
 
 
 def _normalize_edge(item: Any, index: int) -> dict[str, Any] | None:
@@ -389,14 +497,24 @@ def _extract_edges(payload: Any, known_node_ids: set[str] | None = None) -> list
 
 def _merge_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     merged: dict[str, dict[str, Any]] = {}
+    key_by_id: dict[str, str] = {}
+    key_by_semantic: dict[str, str] = {}
     for node in nodes:
+        if _is_canceled_node(node):
+            continue
+
         node_id = str(node.get("id") or "").strip()
         if not node_id:
             continue
 
-        existing = merged.get(node_id)
+        semantic_key = _semantic_node_key(node)
+        semantic_signature = _semantic_node_signature(node)
+        existing_key = key_by_id.get(node_id) or key_by_semantic.get(semantic_signature) or semantic_key
+        existing = merged.get(existing_key)
         if not existing:
-            merged[node_id] = node
+            merged[existing_key] = node
+            key_by_id[node_id] = existing_key
+            key_by_semantic[semantic_signature] = existing_key
             continue
 
         # Keep first stable coordinates/label but merge metadata.
@@ -412,7 +530,45 @@ def _merge_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         elif next_meta is not None:
             existing["metadata"] = next_meta
 
+        key_by_id[node_id] = existing_key
+        key_by_semantic[semantic_signature] = existing_key
+
     return list(merged.values())
+
+
+def _default_token_rates_for_model(model_name: str) -> tuple[float, float]:
+    model = model_name.lower()
+    if "pro" in model:
+        return 3.50, 10.00
+    if "flash-lite" in model or "lite" in model:
+        return 0.10, 0.40
+    return 0.30, 1.20
+
+
+def _estimate_cost_usd(
+    *,
+    model_name: str,
+    prompt_tokens: int,
+    output_tokens: int,
+) -> dict[str, Any]:
+    env_input_rate = float(os.getenv("MAP_EXTRACT_INPUT_USD_PER_1M_TOKENS", "0") or "0")
+    env_output_rate = float(os.getenv("MAP_EXTRACT_OUTPUT_USD_PER_1M_TOKENS", "0") or "0")
+
+    if env_input_rate > 0 or env_output_rate > 0:
+        input_rate = env_input_rate
+        output_rate = env_output_rate
+        source = "env"
+    else:
+        input_rate, output_rate = _default_token_rates_for_model(model_name)
+        source = "model-default"
+
+    estimated = ((prompt_tokens / 1_000_000.0) * input_rate) + ((output_tokens / 1_000_000.0) * output_rate)
+    return {
+        "estimated": round(estimated, 6),
+        "input_rate": input_rate,
+        "output_rate": output_rate,
+        "source": source,
+    }
 
 
 def _merge_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -465,12 +621,26 @@ def _run_stage_json(
     base_prompt: str,
     extra_context: str,
     parts: list[Part] | None,
+    usage_totals: dict[str, int],
 ) -> Any:
+    prompt_payload = f"{base_prompt}\n\n{extra_context}"
+    before_calls = int(usage_totals.get("call_count", 0))
     raw = gateway.generate_text(
-        f"{base_prompt}\n\n{extra_context}",
+        prompt_payload,
         parts=parts,
         response_json=True,
+        usage_collector=usage_totals,
     ).strip()
+
+    # Defensive fallback: ensure cumulative counters advance even if SDK usage metadata is unavailable.
+    if int(usage_totals.get("call_count", 0)) <= before_calls:
+        prompt_est = max(1, len(prompt_payload) // 4)
+        output_est = max(0, len(raw) // 4)
+        usage_totals["prompt_tokens"] = int(usage_totals.get("prompt_tokens", 0)) + prompt_est
+        usage_totals["output_tokens"] = int(usage_totals.get("output_tokens", 0)) + output_est
+        usage_totals["total_tokens"] = int(usage_totals.get("total_tokens", 0)) + prompt_est + output_est
+        usage_totals["call_count"] = before_calls + 1
+
     if not raw:
         return {}
     return GeminiGateway.parse_json_relaxed(raw)
@@ -482,12 +652,27 @@ def _run_stage_text(
     base_prompt: str,
     extra_context: str,
     parts: list[Part] | None,
+    usage_totals: dict[str, int],
 ) -> str:
-    return gateway.generate_text(
-        f"{base_prompt}\n\n{extra_context}",
+    prompt_payload = f"{base_prompt}\n\n{extra_context}"
+    before_calls = int(usage_totals.get("call_count", 0))
+    raw = gateway.generate_text(
+        prompt_payload,
         parts=parts,
         response_json=False,
+        usage_collector=usage_totals,
     ).strip()
+
+    # Defensive fallback: ensure cumulative counters advance even if SDK usage metadata is unavailable.
+    if int(usage_totals.get("call_count", 0)) <= before_calls:
+        prompt_est = max(1, len(prompt_payload) // 4)
+        output_est = max(0, len(raw) // 4)
+        usage_totals["prompt_tokens"] = int(usage_totals.get("prompt_tokens", 0)) + prompt_est
+        usage_totals["output_tokens"] = int(usage_totals.get("output_tokens", 0)) + output_est
+        usage_totals["total_tokens"] = int(usage_totals.get("total_tokens", 0)) + prompt_est + output_est
+        usage_totals["call_count"] = before_calls + 1
+
+    return raw
 
 
 def _to_graph(
@@ -500,6 +685,8 @@ def _to_graph(
     edges: list[dict[str, Any]],
     symbol_markdown: str,
     tabular_csv: str,
+    token_usage: dict[str, int],
+    estimated_cost: dict[str, Any],
 ) -> dict[str, Any]:
     existing_ids = {node["id"] for node in nodes}
     for edge in edges:
@@ -522,6 +709,20 @@ def _to_graph(
                 "overviewMapFileCount": overview_count,
                 "supportFileCount": support_count,
                 "edgeCount": len(edges),
+                "tokenUsage": {
+                    "promptTokens": int(token_usage.get("prompt_tokens", 0)),
+                    "outputTokens": int(token_usage.get("output_tokens", 0)),
+                    "totalTokens": int(token_usage.get("total_tokens", 0)),
+                    "callCount": int(token_usage.get("call_count", 0)),
+                },
+                "costEstimate": {
+                    "currency": "USD",
+                    "estimatedCost": estimated_cost.get("estimated"),
+                    "inputRatePer1M": estimated_cost.get("input_rate"),
+                    "outputRatePer1M": estimated_cost.get("output_rate"),
+                    "source": estimated_cost.get("source"),
+                    "note": "Rough estimate from configured rates (env) or model-family defaults.",
+                },
                 "extractmapSymbol": symbol_markdown[:4000],
                 "tabularExtractionCsv": tabular_csv[:4000],
                 "note": "Generated from map_extarct.json staged extraction.",
@@ -544,6 +745,12 @@ def run_map_extract_worker(
 ) -> None:
     try:
         run_started = time.perf_counter()
+        usage_totals: dict[str, int] = {
+            "prompt_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "call_count": 0,
+        }
         stage_models = _resolve_stage_models(model_name, use_env_overrides=use_env_model_overrides)
         gateways: dict[str, GeminiGateway] = {}
 
@@ -575,6 +782,9 @@ def run_map_extract_worker(
         config = _load_map_extract_config()
         trait_table_raw = read_text(DEFAULT_MAP_BUFFER_TRAIT_TABLE)
         node_schema_text = _config_text(config, "extractmap_text_nodes_json_schema")
+        dedup_policy_text = _config_text(config, "extractmap_text_dedup_policy")
+        exclusion_policy_text = _config_text(config, "extractmap_text_exclusion_policy")
+        compact_output_policy = _config_text(config, "compact_output_policy")
         symbol_output_hint = _config_text(config, "extractmap_symbol_output_hint")
         tabular_output_hint = _config_text(config, "tabular_extraction_output_hint")
         tabular_no_support_hint = _config_text(config, "tabular_extraction_no_support_hint")
@@ -585,6 +795,7 @@ def run_map_extract_worker(
         normalize_context = _config_text(config, "extractmap_text_normalize_context")
         support_delta_context = _config_text(config, "extractmap_text_support_delta_context")
         edge_schema_text = _config_text(config, "edge_extraction_json_schema")
+        edge_dedup_policy = _config_text(config, "edge_extraction_dedup_policy")
         edge_csv_fallback_hint = _config_text(config, "edge_extraction_csv_fallback_hint")
 
         emit_job_event(
@@ -630,9 +841,11 @@ def run_map_extract_worker(
                 base_prompt=str(config["extractmap_symbol"].get("prompt") or ""),
                 extra_context=(
                     f"{symbol_output_hint}\n"
+                    f"{compact_output_policy}\n"
                     f"source_map={map_name}"
                 ),
                 parts=[map_part],
+                usage_totals=usage_totals,
             )
             if chunk:
                 symbol_chunks.append(f"## {map_name}\n{chunk}")
@@ -660,6 +873,9 @@ def run_map_extract_worker(
                         base_prompt=str(config["extractmap_text"].get("prompt") or ""),
                         extra_context=(
                             f"{node_schema_text}\n\n"
+                            f"{dedup_policy_text}\n"
+                            f"{exclusion_policy_text}\n"
+                            f"{compact_output_policy}\n"
                             f"incomplete_json={{\"nodes\": []}}\n"
                             f"buffer_trait_table={trait_table_raw}\n"
                             f"overviewAdditionalInformation={overview_additional_information}\n"
@@ -669,6 +885,7 @@ def run_map_extract_worker(
                             f"source_bin_data={support_name}"
                         ),
                         parts=[map_part, support_part],
+                        usage_totals=usage_totals,
                     )
                     all_nodes.extend(_extract_nodes(nodes_payload))
                     node_payload_types.append(type(nodes_payload).__name__)
@@ -679,6 +896,9 @@ def run_map_extract_worker(
                     base_prompt=str(config["extractmap_text"].get("prompt") or ""),
                     extra_context=(
                         f"{node_schema_text}\n\n"
+                        f"{dedup_policy_text}\n"
+                        f"{exclusion_policy_text}\n"
+                        f"{compact_output_policy}\n"
                         f"incomplete_json={{\"nodes\": []}}\n"
                         f"buffer_trait_table={trait_table_raw}\n"
                         f"overviewAdditionalInformation={overview_additional_information}\n"
@@ -687,11 +907,12 @@ def run_map_extract_worker(
                         f"source_map={map_name}"
                     ),
                     parts=[map_part],
+                    usage_totals=usage_totals,
                 )
                 all_nodes.extend(_extract_nodes(nodes_payload))
                 node_payload_types.append(type(nodes_payload).__name__)
 
-        nodes = _merge_nodes(all_nodes)
+        nodes = _merge_nodes(_filter_active_nodes(all_nodes))
 
         if not nodes:
             nodes = [_normalize_node({"id": "N1", "label": "Map Root", "type": "Map"}, 0)]
@@ -721,10 +942,12 @@ def run_map_extract_worker(
                     base_prompt=str(config["tabular_extraction"].get("prompt") or ""),
                     extra_context=(
                         f"{tabular_output_hint}\n"
+                        f"{compact_output_policy}\n"
                         "Process only the provided single artifact.\n"
                         f"source_artifact={support_name}"
                     ),
                     parts=[support_part],
+                    usage_totals=usage_totals,
                 )
                 if csv_text:
                     csv_chunks.append(f"# {support_name}\n{csv_text}")
@@ -735,10 +958,12 @@ def run_map_extract_worker(
                 base_prompt=str(config["tabular_extraction"].get("prompt") or ""),
                 extra_context=(
                     f"{tabular_output_hint}\n"
+                    f"{compact_output_policy}\n"
                     f"{tabular_no_support_hint}\n"
                     f"source_map={first_map_name}"
                 ),
                 parts=[first_map_part],
+                usage_totals=usage_totals,
             )
             if csv_text:
                 csv_chunks.append(f"# {first_map_name}\n{csv_text}")
@@ -755,6 +980,9 @@ def run_map_extract_worker(
                     base_prompt=support_joint_prompt,
                     extra_context=(
                         f"{node_schema_text}\n\n"
+                        f"{dedup_policy_text}\n"
+                        f"{exclusion_policy_text}\n"
+                        f"{compact_output_policy}\n"
                         f"reference_map={reference_map_name}\n"
                         f"support_artifact={support_name}\n"
                         "Use support artifact for detailed bin data and map for placement/context.\n"
@@ -763,6 +991,7 @@ def run_map_extract_worker(
                         f"tabular_extraction_csv={tabular_csv[:5000]}"
                     ),
                     parts=[reference_map_part, support_part],
+                    usage_totals=usage_totals,
                 )
 
                 extracted_from_support = _extract_nodes(support_nodes_payload)
@@ -773,12 +1002,16 @@ def run_map_extract_worker(
                         stage_gateway("extractmap_text"),
                         base_prompt=support_fallback_prompt,
                         extra_context=(
+                            f"{exclusion_policy_text}\n"
+                            f"{dedup_policy_text}\n"
+                            f"{compact_output_policy}\n"
                             f"support_artifact={support_name}\n"
                             f"tabular_extraction_csv={tabular_csv[:5000]}\n"
                             f"extractmap_symbol_markdown={symbol_markdown[:3000]}\n"
                             f"existing_nodes={json.dumps({'nodes': nodes}, ensure_ascii=False)[:5000]}"
                         ),
                         parts=[support_part],
+                        usage_totals=usage_totals,
                     )
 
                     normalized_payload = _run_stage_json(
@@ -786,9 +1019,13 @@ def run_map_extract_worker(
                         base_prompt=normalize_prompt,
                         extra_context=(
                             f"{normalize_context}\n"
+                            f"{exclusion_policy_text}\n"
+                            f"{dedup_policy_text}\n"
+                            f"{compact_output_policy}\n"
                             f"source_text={support_nodes_text[:7000]}"
                         ),
                         parts=None,
+                        usage_totals=usage_totals,
                     )
                     extracted_from_support = _extract_nodes(normalized_payload)
 
@@ -809,7 +1046,7 @@ def run_map_extract_worker(
 
                 # Keep merged context updated so later support files can enrich missing fields.
                 if extracted_from_support:
-                    nodes = _merge_nodes([*nodes, *extracted_from_support])
+                    nodes = _merge_nodes(_filter_active_nodes([*nodes, *extracted_from_support]))
 
                 # Backward-compatible text extraction path retained for noisy artifacts.
                 support_nodes_text = _run_stage_text(
@@ -817,10 +1054,12 @@ def run_map_extract_worker(
                     base_prompt=support_delta_prompt,
                     extra_context=(
                         f"{support_delta_context}\n"
+                        f"{compact_output_policy}\n"
                         f"support_artifact={support_name}\n"
                         f"existing_nodes={json.dumps({'nodes': nodes}, ensure_ascii=False)[:6000]}"
                     ),
                     parts=[support_part],
+                    usage_totals=usage_totals,
                 )
 
                 if support_nodes_text.strip():
@@ -829,17 +1068,21 @@ def run_map_extract_worker(
                         base_prompt=normalize_prompt,
                         extra_context=(
                             f"{normalize_context}\n"
+                            f"{exclusion_policy_text}\n"
+                            f"{dedup_policy_text}\n"
+                            f"{compact_output_policy}\n"
                             f"source_text={support_nodes_text[:7000]}"
                         ),
                         parts=None,
+                        usage_totals=usage_totals,
                     )
                     text_nodes = _extract_nodes(normalized_payload)
                     if text_nodes:
                         support_enriched_nodes.extend(text_nodes)
-                        nodes = _merge_nodes([*nodes, *text_nodes])
+                        nodes = _merge_nodes(_filter_active_nodes([*nodes, *text_nodes]))
 
         if support_enriched_nodes:
-            nodes = _merge_nodes([*nodes, *support_enriched_nodes])
+            nodes = _merge_nodes(_filter_active_nodes([*nodes, *support_enriched_nodes]))
             logger.info(
                 "[map_extract][worker] support node enrichment jobId=%s supportNodeCount=%s mergedNodeCount=%s",
                 job.job_id,
@@ -866,12 +1109,15 @@ def run_map_extract_worker(
                 base_prompt=str(config["edge_extraction"].get("prompt") or ""),
                 extra_context=(
                     f"{edge_schema_text}\n\n"
+                    f"{edge_dedup_policy}\n"
+                    f"{compact_output_policy}\n"
                     f"{edge_csv_fallback_hint}\n"
                     f"source_map={map_name}\n"
                     f"extracted_node_json={json.dumps({'nodes': nodes}, ensure_ascii=False)}\n"
                     f"tabular_extraction_csv={tabular_csv[:3000]}"
                 ),
                 parts=[map_part],
+                usage_totals=usage_totals,
             )
 
             try:
@@ -883,6 +1129,7 @@ def run_map_extract_worker(
             edge_payload_types.append(type(edges_payload).__name__)
 
         edges = _merge_edges(all_edges)
+        edges = _filter_edges_by_nodes(edges, nodes)
 
         _stage_end(
             job.job_id,
@@ -902,6 +1149,12 @@ def run_map_extract_worker(
         )
         finalize_started = _stage_begin(job.job_id, "finalize_graph")
 
+        cost_estimate = _estimate_cost_usd(
+            model_name=model_name,
+            prompt_tokens=int(usage_totals.get("prompt_tokens", 0)),
+            output_tokens=int(usage_totals.get("output_tokens", 0)),
+        )
+
         result = _to_graph(
             job=job,
             component_id=component_id,
@@ -911,6 +1164,8 @@ def run_map_extract_worker(
             edges=edges,
             symbol_markdown=symbol_markdown,
             tabular_csv=tabular_csv,
+            token_usage=usage_totals,
+            estimated_cost=cost_estimate,
         )
         _stage_end(
             job.job_id,
@@ -922,11 +1177,17 @@ def run_map_extract_worker(
         emit_job_event(job, "result", result)
         emit_job_event(job, "done", {"status": "completed"})
         logger.info(
-            "[map_extract][worker] completed jobId=%s vertexCount=%s edgeCount=%s totalElapsedMs=%s",
+            "[map_extract][worker] completed jobId=%s vertexCount=%s edgeCount=%s totalElapsedMs=%s usage=%s",
             job.job_id,
             len(result["graph"]["vertices"]),
             len(result["graph"]["edges"]),
             int((time.perf_counter() - run_started) * 1000),
+            {
+                "promptTokens": int(usage_totals.get("prompt_tokens", 0)),
+                "outputTokens": int(usage_totals.get("output_tokens", 0)),
+                "totalTokens": int(usage_totals.get("total_tokens", 0)),
+                "callCount": int(usage_totals.get("call_count", 0)),
+            },
         )
     except Exception as exc:  # pragma: no cover - defensive worker safety
         logger.exception("[map_extract][worker] failed jobId=%s", job.job_id)

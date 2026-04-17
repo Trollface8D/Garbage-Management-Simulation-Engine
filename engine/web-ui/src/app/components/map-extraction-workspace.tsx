@@ -558,6 +558,22 @@ export default function MapExtractionWorkspace({
     return dedupeNames([...envOptions, ...MAP_MODEL_FALLBACK_OPTIONS]);
   }, []);
 
+  const usageStats = useMemo(() => {
+    const meta = graphData?.metadata;
+    const tokenUsage = meta?.tokenUsage;
+    const costEstimate = meta?.costEstimate;
+    return {
+      promptTokens: Number(tokenUsage?.promptTokens || 0),
+      outputTokens: Number(tokenUsage?.outputTokens || 0),
+      totalTokens: Number(tokenUsage?.totalTokens || 0),
+      callCount: Number(tokenUsage?.callCount || 0),
+      estimatedCost:
+        typeof costEstimate?.estimatedCost === "number" ? costEstimate.estimatedCost : null,
+      currency: String(costEstimate?.currency || "USD"),
+      costSource: String(costEstimate?.source || "unknown"),
+    };
+  }, [graphData]);
+
   useEffect(() => {
     const saved = window.localStorage.getItem(snapshotKey);
 
@@ -1290,14 +1306,24 @@ export default function MapExtractionWorkspace({
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="text-xs text-neutral-400">{extractStatus}</div>
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  disabled={history.length === 0}
-                  className="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  undo last edit
-                </button>
+                <div className="ml-auto flex items-end gap-3">
+                  <div className="text-right text-[11px] text-neutral-400">
+                    <div>
+                      tokens: in {usageStats.promptTokens.toLocaleString()} / out {usageStats.outputTokens.toLocaleString()} / total {usageStats.totalTokens.toLocaleString()}
+                    </div>
+                    <div>
+                      model calls: {usageStats.callCount.toLocaleString()} | est. cost: {usageStats.estimatedCost == null ? "n/a" : `${usageStats.currency} ${usageStats.estimatedCost.toFixed(6)}`} ({usageStats.costSource})
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={history.length === 0}
+                    className="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    undo last edit
+                  </button>
+                </div>
               </div>
             </div>
 
