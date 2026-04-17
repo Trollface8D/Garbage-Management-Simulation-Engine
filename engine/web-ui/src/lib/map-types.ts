@@ -21,6 +21,20 @@ export type MapGraphMeta = {
   coordinateSystem?: "pixel" | "normalized";
   width?: number;
   height?: number;
+  tokenUsage?: {
+    promptTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    callCount?: number;
+  };
+  costEstimate?: {
+    currency?: string;
+    estimatedCost?: number | null;
+    inputRatePer1M?: number;
+    outputRatePer1M?: number;
+    source?: string;
+    note?: string;
+  };
   [key: string]: unknown;
 };
 
@@ -36,11 +50,36 @@ export type MapExtractionRequest = {
   binAdditionalInformation: string;
   overviewMapFiles: File[];
   binLocationFiles: File[];
+  model?: string;
 };
 
 export type MapExtractionResult = {
   jobId: string;
   graph: MapGraphPayload;
+};
+
+export type MapExtractionJobStart = {
+  jobId: string;
+  status?: string;
+  statusUrl?: string;
+  resultUrl?: string;
+};
+
+export type MapExtractionJobStatus = {
+  jobId: string;
+  status: "queued" | "running" | "completed" | "failed" | string;
+  currentStage?: string | null;
+  stageMessage?: string;
+  error?: string | null;
+};
+
+export type MapExtractionProgress = {
+  jobId: string;
+  attempt: number;
+  elapsedMs: number;
+  status: string;
+  stage?: string | null;
+  message?: string;
 };
 
 export type MapEditRequest = {

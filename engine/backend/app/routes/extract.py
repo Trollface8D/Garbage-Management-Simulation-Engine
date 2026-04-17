@@ -2,8 +2,7 @@ import mimetypes
 import os
 import json
 import logging
-import mimetypes
-import os
+import time
 from io import BytesIO
 from typing import Any
 from uuid import uuid4
@@ -530,30 +529,95 @@ async def generate_follow_up_questions(request: Request):
 
     model_name = str(payload.get("model") or "").strip() or DEFAULT_MODEL_NAME
 
+    fallback_models_raw = (os.getenv("GEMINI_FOLLOW_UP_FALLBACK_MODELS") or "").strip()
+    fallback_models = [m.strip() for m in fallback_models_raw.split(",") if m.strip()]
+
+    candidate_models: list[str] = []
+    for candidate in [model_name, *fallback_models]:
+        if candidate and candidate not in candidate_models:
+            candidate_models.append(candidate)
+
+    max_retries_per_model = max(1, int(os.getenv("GEMINI_FOLLOW_UP_MAX_RETRIES_PER_MODEL", "2")))
+    initial_backoff_seconds = max(0.1, float(os.getenv("GEMINI_FOLLOW_UP_RETRY_BACKOFF_SECONDS", "0.8")))
+
     try:
         prompt_template = read_text(FOLLOW_UP_PROMPT_PATH).strip()
-    except OSError:
-        logger.exception("Failed to load follow-up prompt template")
-        return JSONResponse({"error": "Failed to initialize follow-up generation."}, status_code=500)
+    except OSError as exc:
+        return JSONResponse({"error": f"Failed to load follow-up prompt: {exc}"}, status_code=500)
 
     prompt = f"{prompt_template}\n\nInput JSON:\n{json.dumps(causal_items, ensure_ascii=False)}"
 
-    gateway = GeminiGateway(api_key=api_key, model_name=model_name)
-    try:
-        raw_text = gateway.generate_text(prompt, response_json=True).strip()
-    except Exception as exc:  # pragma: no cover - provider side errors are dynamic
-        message = str(exc)
-        lowered = message.lower()
-        if any(token in lowered for token in ("429", "rate limit", "resource exhausted", "quota")):
-            return JSONResponse({"error": "Gemini API rate limit exceeded"}, status_code=429)
-        if any(token in lowered for token in ("503", "unavailable", "high demand", "temporarily")):
-            logger.exception("Follow-up generation request to Gemini is temporarily unavailable")
+    raw_text = ""
+    selected_model = model_name
+    last_error: Exception | None = None
+    exhausted_retryable = False
+
+    for candidate_model in candidate_models:
+        gateway = GeminiGateway(api_key=api_key, model_name=candidate_model)
+        for attempt in range(1, max_retries_per_model + 1):
+            try:
+                raw_text = gateway.generate_text(prompt, response_json=True).strip()
+                selected_model = candidate_model
+                last_error = None
+                break
+            except Exception as exc:  # pragma: no cover - provider side errors are dynamic
+                last_error = exc
+                message = str(exc)
+                lowered = message.lower()
+                is_retryable = GeminiGateway._is_retryable_transient_error(exc) or any(
+                    token in lowered for token in ("429", "rate limit", "resource exhausted", "quota")
+                )
+
+                if is_retryable:
+                    exhausted_retryable = True
+                    if attempt < max_retries_per_model:
+                        backoff = initial_backoff_seconds * (2 ** (attempt - 1))
+                        logger.warning(
+                            "Follow-up generation retrying model=%s attempt=%s/%s backoff=%.2fs error=%s",
+                            candidate_model,
+                            attempt,
+                            max_retries_per_model,
+                            backoff,
+                            message,
+                        )
+                        time.sleep(backoff)
+                        continue
+
+                    logger.warning(
+                        "Follow-up generation exhausted retries for model=%s error=%s",
+                        candidate_model,
+                        message,
+                    )
+                    break
+
+                logger.exception("Follow-up generation request to Gemini failed model=%s", candidate_model)
+                return JSONResponse({"error": "Follow-up generation failed."}, status_code=502)
+
+        if raw_text:
+            break
+
+    if not raw_text:
+        if exhausted_retryable:
             return JSONResponse(
-                {"error": "Follow-up service is temporarily busy. Please retry shortly."},
+                {
+                    "error": "Follow-up service is temporarily busy. Please retry shortly.",
+                    "detail": str(last_error) if last_error else "Transient Gemini error",
+                    "modelsTried": candidate_models,
+                },
                 status_code=503,
             )
-        logger.exception("Follow-up generation request to Gemini failed")
-        return JSONResponse({"error": "Follow-up generation failed."}, status_code=502)
+
+        if last_error is not None:
+            return JSONResponse(
+                {
+                    "error": "Follow-up generation failed.",
+                    "detail": str(last_error),
+                    "modelsTried": candidate_models,
+                },
+                status_code=502,
+            )
+
+        return JSONResponse({"error": "Gemini returned empty payload."}, status_code=502)
 
     if not raw_text:
         return JSONResponse({"error": "Gemini returned empty payload."}, status_code=502)
@@ -570,6 +634,6 @@ async def generate_follow_up_questions(request: Request):
         )
 
     return {
-        "model": model_name,
+        "model": selected_model,
         "records": _normalize_follow_up_records(parsed_payload),
     }

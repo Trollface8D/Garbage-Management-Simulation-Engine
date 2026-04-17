@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "@/app/components/back-to-home";
 import { editMapGraph, extractMapGraph } from "@/lib/map-api-client";
@@ -32,6 +31,7 @@ type SelectionRef = {
 type MapWorkspaceSnapshot = {
   graph: MapGraphPayload | null;
   jobId: string;
+  selectedModel: string;
   overviewAdditionalInfo: string;
   binAdditionalInfo: string;
   overviewFileNames: string[];
@@ -41,6 +41,16 @@ type MapWorkspaceSnapshot = {
   selection: SelectionRef;
 };
 
+type MapArtifactBundle = {
+  artifactType: "map_extract_workspace";
+  artifactVersion: 1;
+  exportedAt: string;
+  componentId: string;
+  title: string;
+  projectName: string;
+  snapshot: MapWorkspaceSnapshot;
+};
+
 type ViewMode = "graph" | "code";
 
 type ExplorerEntry = {
@@ -48,6 +58,15 @@ type ExplorerEntry = {
   label: string;
   payload: unknown;
 };
+
+const MAP_MODEL_FALLBACK_OPTIONS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+  "gemini-3-flash-preview",
+  "gemini-3.1-flash-lite-preview",
+  "gemini-3.1-pro-preview",
+];
 
 function createLocalId(prefix: string): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -163,6 +182,26 @@ function SaveIcon({ className }: { className?: string }) {
   );
 }
 
+function ExportIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 3v12" />
+      <path d="M8 11l4 4 4-4" />
+      <path d="M4 21h16" />
+    </svg>
+  );
+}
+
+function ImportIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 21V9" />
+      <path d="M8 13l4-4 4 4" />
+      <path d="M4 3h16" />
+    </svg>
+  );
+}
+
 function TrashIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -209,15 +248,43 @@ function GraphCanvas({
     };
   };
 
+  const [failedImageSrc, setFailedImageSrc] = useState<string | null>(null);
+  const imageLoadFailed = !!mapImageSrc && failedImageSrc === mapImageSrc;
+
+  const metadataSummary = (vertex: MapVertex): string => {
+    const meta = vertex.metadata;
+    if (!meta || typeof meta !== "object") {
+      return vertex.type || "node";
+    }
+
+    const record = meta as Record<string, unknown>;
+    const candidates = [
+      record.type,
+      record.category,
+      record.zone,
+      record.location,
+      record.floor,
+      record.building,
+    ]
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter(Boolean);
+
+    if (candidates.length > 0) {
+      return candidates.slice(0, 2).join(" | ");
+    }
+
+    return vertex.type || "node";
+  };
+
   return (
     <div className="relative h-135 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900">
-      {mapImageSrc ? (
-        <Image
+      {mapImageSrc && !imageLoadFailed ? (
+        <img
           src={mapImageSrc}
           alt="Uploaded overview map"
-          fill
-          unoptimized
-          className="object-contain"
+          className="absolute inset-0 z-0 h-full w-full object-contain"
+          onLoad={() => setFailedImageSrc((prev) => (prev === mapImageSrc ? null : prev))}
+          onError={() => setFailedImageSrc(mapImageSrc)}
         />
       ) : (
         <div className="flex h-full items-center justify-center text-sm text-neutral-500">
@@ -226,7 +293,7 @@ function GraphCanvas({
       )}
 
       <svg
-        className="pointer-events-none absolute inset-0 h-full w-full"
+        className="absolute inset-0 z-10 h-full w-full"
         viewBox={`0 0 ${String(viewportWidth)} ${String(viewportHeight)}`}
         preserveAspectRatio="xMidYMid meet"
       >
@@ -296,6 +363,16 @@ function GraphCanvas({
               >
                 {vertex.label}
               </text>
+              <text
+                x={point.x}
+                y={point.y + 34}
+                textAnchor="middle"
+                fill="#f5f5f5"
+                fontSize="11"
+                className="pointer-events-none"
+              >
+                {metadataSummary(vertex)}
+              </text>
             </g>
           );
         })}
@@ -328,7 +405,7 @@ function CodeExplorer({
   }));
 
   return (
-    <div className="h-135 overflow-auto rounded-xl border border-neutral-700 bg-neutral-900/80 p-3">
+    <div className="h-135 min-w-0 overflow-auto rounded-xl border border-neutral-700 bg-neutral-900/80 p-3">
       <div className="space-y-2">
         <div className="rounded-md border border-neutral-700 bg-neutral-950/70">
           <button
@@ -371,7 +448,7 @@ function CodeExplorer({
                   key={entry.id}
                   type="button"
                   onClick={() => onPick({ kind: "edge", data: entry.payload as MapEdge })}
-                  className="mb-1 w-full rounded px-2 py-1 text-left text-xs text-neutral-300 transition hover:bg-neutral-800 hover:text-neutral-100"
+                  className="mb-1 w-full truncate rounded px-2 py-1 text-left text-xs text-neutral-300 transition hover:bg-neutral-800 hover:text-neutral-100"
                 >
                   {entry.label}
                 </button>
@@ -391,7 +468,7 @@ function CodeExplorer({
           </button>
           {metadataOpen ? (
             <div className="border-t border-neutral-700 p-2">
-              <pre className="overflow-auto rounded bg-neutral-900 p-2 text-xs text-neutral-300">
+              <pre className="overflow-auto whitespace-pre-wrap wrap-break-word rounded bg-neutral-900 p-2 text-xs text-neutral-300">
                 {JSON.stringify(graph.metadata || {}, null, 2)}
               </pre>
             </div>
@@ -410,6 +487,7 @@ export default function MapExtractionWorkspace({
 }: MapExtractionWorkspaceProps) {
   const overviewInputRef = useRef<HTMLInputElement | null>(null);
   const binInputRef = useRef<HTMLInputElement | null>(null);
+  const artifactImportInputRef = useRef<HTMLInputElement | null>(null);
   const snapshotKey = useMemo(() => `map-workspace:${componentId}`, [componentId]);
 
   const [overviewFiles, setOverviewFiles] = useState<LocalUploadFile[]>([]);
@@ -427,6 +505,7 @@ export default function MapExtractionWorkspace({
   const [viewMode, setViewMode] = useState<ViewMode>("graph");
   const [selection, setSelection] = useState<GraphSelection>({ kind: "none" });
   const [jobId, setJobId] = useState<string>("");
+  const [selectedModel, setSelectedModel] = useState<string>("");
 
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractStatus, setExtractStatus] = useState("");
@@ -438,16 +517,27 @@ export default function MapExtractionWorkspace({
 
   const [history, setHistory] = useState<MapGraphPayload[]>([]);
 
+  const latestOverviewFilesRef = useRef<LocalUploadFile[]>([]);
+  const latestBinFilesRef = useRef<LocalUploadFile[]>([]);
+
+  useEffect(() => {
+    latestOverviewFilesRef.current = overviewFiles;
+  }, [overviewFiles]);
+
+  useEffect(() => {
+    latestBinFilesRef.current = binFiles;
+  }, [binFiles]);
+
   const mainMapPreview = useMemo(() => {
     return overviewFiles.find((entry) => entry.previewUrl)?.previewUrl ?? null;
   }, [overviewFiles]);
 
   useEffect(() => {
     return () => {
-      overviewFiles.forEach(revokeFilePreview);
-      binFiles.forEach(revokeFilePreview);
+      latestOverviewFilesRef.current.forEach(revokeFilePreview);
+      latestBinFilesRef.current.forEach(revokeFilePreview);
     };
-  }, [binFiles, overviewFiles]);
+  }, []);
 
   const overviewDisplayNames = useMemo(
     () => dedupeNames([...overviewStoredFileNames, ...overviewFiles.map((entry) => entry.file.name)]),
@@ -458,6 +548,31 @@ export default function MapExtractionWorkspace({
     () => dedupeNames([...binStoredFileNames, ...binFiles.map((entry) => entry.file.name)]),
     [binFiles, binStoredFileNames],
   );
+
+  const modelOptions = useMemo(() => {
+    const envOptions = (process.env.NEXT_PUBLIC_MAP_EXTRACT_MODEL_OPTIONS || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    return dedupeNames([...envOptions, ...MAP_MODEL_FALLBACK_OPTIONS]);
+  }, []);
+
+  const usageStats = useMemo(() => {
+    const meta = graphData?.metadata;
+    const tokenUsage = meta?.tokenUsage;
+    const costEstimate = meta?.costEstimate;
+    return {
+      promptTokens: Number(tokenUsage?.promptTokens || 0),
+      outputTokens: Number(tokenUsage?.outputTokens || 0),
+      totalTokens: Number(tokenUsage?.totalTokens || 0),
+      callCount: Number(tokenUsage?.callCount || 0),
+      estimatedCost:
+        typeof costEstimate?.estimatedCost === "number" ? costEstimate.estimatedCost : null,
+      currency: String(costEstimate?.currency || "USD"),
+      costSource: String(costEstimate?.source || "unknown"),
+    };
+  }, [graphData]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(snapshotKey);
@@ -494,6 +609,10 @@ export default function MapExtractionWorkspace({
         setJobId(parsed.jobId);
       }
 
+      if (typeof parsed?.selectedModel === "string") {
+        setSelectedModel(parsed.selectedModel.trim());
+      }
+
       if (Array.isArray(parsed?.changeLog)) {
         setChangeLog(parsed.changeLog);
       }
@@ -514,6 +633,7 @@ export default function MapExtractionWorkspace({
     const snapshot: MapWorkspaceSnapshot = {
       graph: graphData,
       jobId,
+      selectedModel,
       overviewAdditionalInfo,
       binAdditionalInfo,
       overviewFileNames: overviewDisplayNames,
@@ -532,6 +652,7 @@ export default function MapExtractionWorkspace({
     editStatus,
     graphData,
     jobId,
+    selectedModel,
     overviewDisplayNames,
     selection,
     snapshotKey,
@@ -614,6 +735,15 @@ export default function MapExtractionWorkspace({
         binAdditionalInformation: binAdditionalInfo,
         overviewMapFiles: overviewFiles.map((entry) => entry.file),
         binLocationFiles: binFiles.map((entry) => entry.file),
+        model: selectedModel,
+      }, {
+        onProgress: (progress) => {
+          const stage = progress.stage || "waiting";
+          const message = progress.message || progress.status;
+          const seconds = Math.max(0, Math.floor(progress.elapsedMs / 1000));
+          setExtractStatus(`Running ${stage}: ${message} (${String(seconds)}s)`);
+          setJobId(progress.jobId);
+        },
       });
 
       setGraphData(result.graph);
@@ -708,6 +838,7 @@ export default function MapExtractionWorkspace({
       JSON.stringify({
         graph: graphData,
         jobId,
+        selectedModel,
         overviewAdditionalInfo,
         binAdditionalInfo,
         overviewFileNames: overviewDisplayNames,
@@ -718,6 +849,105 @@ export default function MapExtractionWorkspace({
       } satisfies MapWorkspaceSnapshot),
     );
     setEditStatus("Saved current map workspace snapshot locally.");
+  };
+
+  const handleExportArtifacts = () => {
+    const snapshot: MapWorkspaceSnapshot = {
+      graph: graphData,
+      jobId,
+      selectedModel,
+      overviewAdditionalInfo,
+      binAdditionalInfo,
+      overviewFileNames: overviewDisplayNames,
+      binFileNames: binDisplayNames,
+      changeLog,
+      editStatus,
+      selection: graphData ? selectionToRef(selection) : null,
+    };
+
+    const bundle: MapArtifactBundle = {
+      artifactType: "map_extract_workspace",
+      artifactVersion: 1,
+      exportedAt: new Date().toISOString(),
+      componentId,
+      title,
+      projectName,
+      snapshot,
+    };
+
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const safeComponentId = componentId.replace(/[^a-zA-Z0-9_-]+/g, "_");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    anchor.href = objectUrl;
+    anchor.download = `map_extract_artifacts_${safeComponentId}_${timestamp}.json`;
+    anchor.click();
+    URL.revokeObjectURL(objectUrl);
+
+    setEditStatus("Exported map extraction artifacts as JSON.");
+  };
+
+  const resolveImportedSnapshot = (payload: unknown): MapWorkspaceSnapshot | null => {
+    if (!payload || typeof payload !== "object") {
+      return null;
+    }
+
+    const asRecord = payload as Record<string, unknown>;
+    if (asRecord.snapshot && typeof asRecord.snapshot === "object") {
+      return asRecord.snapshot as MapWorkspaceSnapshot;
+    }
+
+    return payload as MapWorkspaceSnapshot;
+  };
+
+  const handleImportArtifacts = async (file: File) => {
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw) as unknown;
+      const snapshot = resolveImportedSnapshot(parsed);
+
+      if (!snapshot) {
+        setEditStatus("Invalid artifact file format.");
+        return;
+      }
+
+      if (snapshot.graph && (!Array.isArray(snapshot.graph.vertices) || !Array.isArray(snapshot.graph.edges))) {
+        setEditStatus("Invalid graph payload in artifact file.");
+        return;
+      }
+
+      setOverviewFiles((prev) => {
+        prev.forEach(revokeFilePreview);
+        return [];
+      });
+      setBinFiles((prev) => {
+        prev.forEach(revokeFilePreview);
+        return [];
+      });
+
+      setGraphData(snapshot.graph ?? null);
+      setJobId(typeof snapshot.jobId === "string" ? snapshot.jobId : "");
+      setSelectedModel(typeof snapshot.selectedModel === "string" ? snapshot.selectedModel.trim() : "");
+      setOverviewAdditionalInfo(typeof snapshot.overviewAdditionalInfo === "string" ? snapshot.overviewAdditionalInfo : "");
+      setBinAdditionalInfo(typeof snapshot.binAdditionalInfo === "string" ? snapshot.binAdditionalInfo : "");
+      setOverviewStoredFileNames(dedupeNames(Array.isArray(snapshot.overviewFileNames) ? snapshot.overviewFileNames : []));
+      setBinStoredFileNames(dedupeNames(Array.isArray(snapshot.binFileNames) ? snapshot.binFileNames : []));
+      setChangeLog(Array.isArray(snapshot.changeLog) ? snapshot.changeLog : []);
+      setEditStatus(typeof snapshot.editStatus === "string" ? snapshot.editStatus : "Imported map extraction artifacts.");
+      setHistory([]);
+      setViewMode("graph");
+
+      if (snapshot.graph) {
+        setSelection(selectionFromRef(snapshot.graph, snapshot.selection ?? null));
+        setExtractStatus("Imported map extraction artifacts. Re-upload source files to run extraction again.");
+      } else {
+        setSelection({ kind: "none" });
+        setExtractStatus("Imported artifact bundle without graph data.");
+      }
+    } catch {
+      setEditStatus("Failed to import artifact JSON. Ensure the file is valid.");
+    }
   };
 
   return (
@@ -734,6 +964,37 @@ export default function MapExtractionWorkspace({
             >
               <SaveIcon className="h-4 w-4" />
             </button>
+            <button
+              type="button"
+              onClick={handleExportArtifacts}
+              aria-label="Export map artifacts"
+              title="Export artifacts (.json)"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-100 transition hover:border-sky-500"
+            >
+              <ExportIcon className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => artifactImportInputRef.current?.click()}
+              aria-label="Import map artifacts"
+              title="Import artifacts (.json)"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-100 transition hover:border-sky-500"
+            >
+              <ImportIcon className="h-4 w-4" />
+            </button>
+            <input
+              ref={artifactImportInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  void handleImportArtifacts(file);
+                }
+                event.currentTarget.value = "";
+              }}
+            />
             <BackToHome
               href={backHref}
               label="Back to project"
@@ -744,6 +1005,21 @@ export default function MapExtractionWorkspace({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-300">
+              <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-400">model</div>
+              <input
+                list="map-extract-model-options"
+                value={selectedModel}
+                onChange={(event) => setSelectedModel(event.target.value)}
+                placeholder="default from .env"
+                className="w-52 rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 outline-none transition focus:border-sky-500"
+              />
+              <datalist id="map-extract-model-options">
+                {modelOptions.map((modelName) => (
+                  <option key={modelName} value={modelName} />
+                ))}
+              </datalist>
+            </div>
             <span className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-300">
               component: {title}
             </span>
@@ -961,7 +1237,7 @@ export default function MapExtractionWorkspace({
             </article>
           </aside>
 
-          <section className="space-y-4">
+          <section className="min-w-0 space-y-4">
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
               <div className="mb-3 flex items-center justify-end">
                 <div className="inline-flex rounded-full border border-neutral-700 bg-neutral-800 p-1 text-sm">
@@ -998,26 +1274,56 @@ export default function MapExtractionWorkspace({
                   </button>
                 </div>
               ) : viewMode === "graph" ? (
-                <GraphCanvas
-                  graph={graphData}
-                  selected={selection}
-                  onSelect={setSelection}
-                  mapImageSrc={mainMapPreview}
-                />
+                <div className="space-y-3">
+                  <GraphCanvas
+                    graph={graphData}
+                    selected={selection}
+                    onSelect={setSelection}
+                    mapImageSrc={mainMapPreview}
+                  />
+                  <div className="rounded-xl border border-neutral-700 bg-neutral-900/70 p-3">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-300">
+                      Node Metadata (fallback view)
+                    </p>
+                    <div className="max-h-56 space-y-2 overflow-auto pr-1">
+                      {graphData.vertices.map((vertex) => (
+                        <div key={`meta-${vertex.id}`} className="rounded-md border border-neutral-700 bg-neutral-950/70 p-2">
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-neutral-100">{vertex.id} ({vertex.label})</span>
+                            <span className="text-[11px] text-neutral-400">{vertex.type || "node"}</span>
+                          </div>
+                          <pre className="overflow-auto whitespace-pre-wrap rounded bg-neutral-900 p-2 text-[11px] text-neutral-300">
+                            {JSON.stringify(vertex.metadata || {}, null, 2)}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <CodeExplorer graph={graphData} onPick={setSelection} />
               )}
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="text-xs text-neutral-400">{extractStatus}</div>
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  disabled={history.length === 0}
-                  className="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  undo last edit
-                </button>
+                <div className="ml-auto flex items-end gap-3">
+                  <div className="text-right text-[11px] text-neutral-400">
+                    <div>
+                      tokens: in {usageStats.promptTokens.toLocaleString()} / out {usageStats.outputTokens.toLocaleString()} / total {usageStats.totalTokens.toLocaleString()}
+                    </div>
+                    <div>
+                      model calls: {usageStats.callCount.toLocaleString()} | est. cost: {usageStats.estimatedCost == null ? "n/a" : `${usageStats.currency} ${usageStats.estimatedCost.toFixed(6)}`} ({usageStats.costSource})
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={history.length === 0}
+                    className="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs text-neutral-200 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    undo last edit
+                  </button>
+                </div>
               </div>
             </div>
 
