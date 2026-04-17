@@ -299,7 +299,7 @@ export default function ProjectDashboardPage() {
 
           {filteredComponents.map((component) => {
             const isQueryNavigationCategory =
-              component.category === "Causal" || component.category === "PolicyTesting";
+              component.category === "Causal" || component.category === "Code" || component.category === "PolicyTesting";
             const targetPath = isQueryNavigationCategory
               ? {
                   pathname: `/${categoryPath[component.category]}`,

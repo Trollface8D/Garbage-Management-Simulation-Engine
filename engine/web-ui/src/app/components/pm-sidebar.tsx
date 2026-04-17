@@ -76,7 +76,7 @@ export function PMSidebar() {
 
   return (
     <aside
-      className={`w-full border-b border-neutral-800 bg-neutral-950/90 p-4 transition-all duration-300 md:h-screen md:border-b-0 md:border-r ${
+      className={`w-full border-b border-neutral-800 bg-neutral-950/90 p-4 transition-[width,padding] duration-300 md:sticky md:top-0 md:z-20 md:h-screen md:shrink-0 md:self-start md:border-b-0 md:border-r ${
         isCollapsed ? "md:w-16 md:p-3" : "md:w-72 md:p-5"
       }`}
     >
