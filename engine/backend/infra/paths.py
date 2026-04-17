@@ -46,6 +46,8 @@ DEFAULT_ENTITY_TEMPLATE_DIR = (
     / "gemini_3_pro_entity"
 )
 DEFAULT_STRUCTURE_EXTRACTION_PROMPT = BACKEND_DIR / "prompt" / "causal_extract.txt"
+DEFAULT_MAP_EXTRACT_PROMPT_CONFIG = BACKEND_DIR / "prompt" / "map_extarct.json"
+DEFAULT_MAP_BUFFER_TRAIT_TABLE = BACKEND_DIR / "prompt" / "buffer_trait_table.json"
 DEFAULT_CAUSAL_DB_PATH = ROOT_DIR / "engine" / "web-ui" / "local.db"
 DEFAULT_OUTPUT_ROOT = ROOT_DIR / "Engine" / "output" / "pipeline_runs"
 DEFAULT_MEDIA_DIR = ROOT_DIR / "Engine" / "media"

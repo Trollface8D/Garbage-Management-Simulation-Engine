@@ -1,6 +1,7 @@
 import json
 import logging
 from io import BytesIO
+import json
 from typing import Any
 from uuid import uuid4
 
@@ -240,9 +241,8 @@ async def generate_follow_up_questions(request: Request):
 
     try:
         prompt_template = read_text(FOLLOW_UP_PROMPT_PATH).strip()
-    except OSError:
-        logger.exception("Failed to load follow-up prompt template")
-        return JSONResponse({"error": "Failed to initialize follow-up generation."}, status_code=500)
+    except OSError as exc:
+        return JSONResponse({"error": f"Failed to load follow-up prompt: {exc}"}, status_code=500)
 
     prompt = f"{prompt_template}\n\nInput JSON:\n{json.dumps(causal_items, ensure_ascii=False)}"
 
