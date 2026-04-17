@@ -1,3 +1,5 @@
+import json
+import logging
 from io import BytesIO
 import json
 from typing import Any
@@ -25,6 +27,7 @@ from ..services.structure_extractor import (
 
 router = APIRouter(tags=["extract"])
 FOLLOW_UP_PROMPT_PATH = BACKEND_DIR / "prompt" / "follow_up.txt"
+logger = logging.getLogger(__name__)
 
 
 def _resolve_uploaded_file_type(text_file: UploadFile) -> str:
@@ -251,18 +254,25 @@ async def generate_follow_up_questions(request: Request):
         lowered = message.lower()
         if any(token in lowered for token in ("429", "rate limit", "resource exhausted", "quota")):
             return JSONResponse({"error": "Gemini API rate limit exceeded"}, status_code=429)
-        return JSONResponse({"error": f"Gemini request failed: {message}"}, status_code=502)
+        if any(token in lowered for token in ("503", "unavailable", "high demand", "temporarily")):
+            logger.exception("Follow-up generation request to Gemini is temporarily unavailable")
+            return JSONResponse(
+                {"error": "Follow-up service is temporarily busy. Please retry shortly."},
+                status_code=503,
+            )
+        logger.exception("Follow-up generation request to Gemini failed")
+        return JSONResponse({"error": "Follow-up generation failed."}, status_code=502)
 
     if not raw_text:
         return JSONResponse({"error": "Gemini returned empty payload."}, status_code=502)
 
     try:
         parsed_payload = GeminiGateway.parse_json_relaxed(raw_text)
-    except ValueError as exc:
+    except ValueError:
+        logger.exception("Failed to parse Gemini follow-up JSON output")
         return JSONResponse(
             {
-                "error": f"Failed to parse Gemini JSON output: {exc}",
-                "raw": raw_text,
+                "error": "Follow-up generation returned an invalid response.",
             },
             status_code=502,
         )

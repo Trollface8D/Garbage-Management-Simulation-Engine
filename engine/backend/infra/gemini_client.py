@@ -131,6 +131,26 @@ class GeminiGateway:
         )
         return any(token in message for token in transient_tokens)
 
+    @staticmethod
+    def _is_retryable_transient_error(exc: Exception) -> bool:
+        if isinstance(exc, genai_errors.ServerError):
+            return True
+
+        message = str(exc).lower()
+        transient_tokens = (
+            "503",
+            "unavailable",
+            "high demand",
+            "resource exhausted",
+            "temporarily",
+            "timeout",
+            "timed out",
+            "connection reset",
+            "connection aborted",
+            "network",
+        )
+        return any(token in message for token in transient_tokens)
+
     def generate_json(self, prompt: str) -> Any:
         return self.parse_json_relaxed(self.generate_text(prompt, response_json=True))
 
