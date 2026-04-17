@@ -1,41 +1,63 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import {
+  findComponentById as findSeedComponentById,
+  findProjectById as findSeedProjectById,
+  type SimulationComponent,
   type SimulationProject,
 } from "@/lib/simulation-components";
-import BackToHome from "../../components/back-to-home";
 import FollowUpGenerationPage, { type CausalItem } from "@/app/components/follow-up-generation-page";
-import { loadCausalArtifactsForItem, loadFollowUpRecordsForItem, loadProjects, type FollowUpRecord } from "@/lib/pm-storage";
+import { loadCausalArtifactsForItem, loadCausalSourceItem, loadComponents, loadFollowUpRecordsForItem, loadProjects, type FollowUpRecord } from "@/lib/pm-storage";
+import CausalWorkflowHeader from "../workflow-header";
+
+const DEFAULT_ITEM_FILE_NAME = "selected file";
 
 function CausalFollowUpPageContent() {
-  const searchParams = useSearchParams();
+  const params = useParams<{ componentId?: string; itemId?: string }>();
 
-  const queryProjectId = searchParams.get("projectId");
-  const queryTitle = searchParams.get("title");
-  const itemId = searchParams.get("itemId") ?? "";
-  const itemFileName = searchParams.get("fileName") ?? "selected file";
+  const componentId = params.componentId ?? null;
+  const itemId = params.itemId ?? "";
 
-  const selectedProjectId = queryProjectId ?? "";
-  const selectedTitle = queryTitle ?? "Unselected component";
   const [projects, setProjects] = useState<SimulationProject[]>([]);
+  const [components, setComponents] = useState<SimulationComponent[]>([]);
   const [includeImplicit, setIncludeImplicit] = useState<boolean>(true);
   const [causalItems, setCausalItems] = useState<CausalItem[]>([]);
   const [followUpRecords, setFollowUpRecords] = useState<FollowUpRecord[]>([]);
   const [artifactLoadStatus, setArtifactLoadStatus] = useState<string>("");
   const [loadedItemId, setLoadedItemId] = useState<string>("");
+  const [selectedModel, setSelectedModel] = useState<string>("");
 
   useEffect(() => {
-    const loadProjectList = async () => {
-      setProjects(await loadProjects());
+    const loadData = async () => {
+      const [nextProjects, nextComponents] = await Promise.all([loadProjects(), loadComponents()]);
+      setProjects(nextProjects);
+      setComponents(nextComponents);
     };
 
-    void loadProjectList();
+    void loadData();
   }, []);
 
+  const selectedComponent = useMemo(
+    () => (componentId
+      ? components.find((component) => component.id === componentId) ?? findSeedComponentById(componentId)
+      : undefined),
+    [componentId, components],
+  );
+
+  const selectedProjectId = useMemo(() => {
+    if (!selectedComponent || selectedComponent.category === "PolicyTesting") {
+      return "";
+    }
+
+    return selectedComponent.projectId;
+  }, [selectedComponent]);
+
+  const selectedTitle = selectedComponent?.title ?? "Unselected component";
+
   const selectedProjectName = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId)?.name ?? "Unselected project",
+    () => projects.find((project) => project.id === selectedProjectId)?.name ?? findSeedProjectById(selectedProjectId)?.name ?? "Unselected project",
     [projects, selectedProjectId],
   );
 
@@ -68,13 +90,16 @@ function CausalFollowUpPageContent() {
 
     const loadExtractedCausals = async () => {
       try {
-        const [artifacts, storedFollowUps] = await Promise.all([
+        const [artifacts, storedFollowUps, sourceItem] = await Promise.all([
           loadCausalArtifactsForItem(itemId),
           loadFollowUpRecordsForItem(itemId).catch(() => [] as FollowUpRecord[]),
+          loadCausalSourceItem(itemId).catch(() => null),
         ]);
         if (cancelled) {
           return;
         }
+
+        const resolvedItemFileName = sourceItem?.fileName || DEFAULT_ITEM_FILE_NAME;
 
         const sourceChunkPayloads = artifacts.raw_extraction.filter((payload) =>
           /^chunk\s+\d+$/i.test((payload.chunk_label || "").trim()),
@@ -103,13 +128,13 @@ function CausalFollowUpPageContent() {
         setFollowUpRecords(storedFollowUps);
 
         if (flattenedItems.length === 0) {
-          setArtifactLoadStatus(`No extracted causal found for ${itemFileName}. Please run extraction first.`);
+          setArtifactLoadStatus(`No extracted causal found for ${resolvedItemFileName}. Please run extraction first.`);
           return;
         }
 
         const skippedFollowUpDerived = artifacts.raw_extraction.length - sourceChunkPayloads.length;
         setArtifactLoadStatus(
-          `Loaded ${String(flattenedItems.length)} extracted causal${flattenedItems.length === 1 ? "" : "s"} from ${itemFileName}.${
+          `Loaded ${String(flattenedItems.length)} extracted causal${flattenedItems.length === 1 ? "" : "s"} from ${resolvedItemFileName}.${
             skippedFollowUpDerived > 0
               ? ` Skipped ${String(skippedFollowUpDerived)} follow-up-derived chunk${skippedFollowUpDerived === 1 ? "" : "s"}.`
               : ""
@@ -130,32 +155,18 @@ function CausalFollowUpPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [itemFileName, itemId]);
+  }, [itemId]);
 
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
       <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-black uppercase tracking-tight md:text-4xl">Causal Extract - Follow Up</h1>
-            <p className="mt-2 text-sm text-neutral-300">
-              Selected component: <span className="font-semibold text-neutral-100">{selectedTitle}</span>
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                Project
-              </span>
-              <span className="text-sm text-neutral-300">{selectedProjectName}</span>
-            </div>
-          </div>
-          <BackToHome
-            href="/"
-            label="Back to project"
-            useHistoryBack
-            containerClassName=""
-            className="rounded-md px-3 py-2"
-          />
-        </header>
+        <CausalWorkflowHeader
+          title="Causal Extract - Follow Up"
+          selectedTitle={selectedTitle}
+          selectedProjectName={selectedProjectName}
+          selectedModel={selectedModel}
+          onSelectedModelChange={setSelectedModel}
+        />
 
         {artifactStatus ? <p className="mb-3 text-xs text-neutral-300">{artifactStatus}</p> : null}
         <FollowUpGenerationPage
@@ -163,6 +174,7 @@ function CausalFollowUpPageContent() {
           initialCausalItems={visibleCausalItems}
           experimentItemId={itemId}
           initialFollowUpRecords={loadedItemId === itemId ? followUpRecords : []}
+          model={selectedModel}
         />
       </main>
 

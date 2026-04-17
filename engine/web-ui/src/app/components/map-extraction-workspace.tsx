@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "@/app/components/back-to-home";
+import ModelPicker from "@/app/components/model-picker";
+import ProjectPageHeader from "@/app/components/project-page-header";
 import { editMapGraph, extractMapGraph } from "@/lib/map-api-client";
 import type {
   GraphSelection,
@@ -58,15 +60,6 @@ type ExplorerEntry = {
   label: string;
   payload: unknown;
 };
-
-const MAP_MODEL_FALLBACK_OPTIONS = [
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-2.5-pro",
-  "gemini-3-flash-preview",
-  "gemini-3.1-flash-lite-preview",
-  "gemini-3.1-pro-preview",
-];
 
 function createLocalId(prefix: string): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -468,7 +461,7 @@ function CodeExplorer({
           </button>
           {metadataOpen ? (
             <div className="border-t border-neutral-700 p-2">
-              <pre className="overflow-auto whitespace-pre-wrap wrap-break-word rounded bg-neutral-900 p-2 text-xs text-neutral-300">
+              <pre className="overflow-auto whitespace-pre-wrap break-words rounded bg-neutral-900 p-2 text-xs text-neutral-300">
                 {JSON.stringify(graph.metadata || {}, null, 2)}
               </pre>
             </div>
@@ -548,15 +541,6 @@ export default function MapExtractionWorkspace({
     () => dedupeNames([...binStoredFileNames, ...binFiles.map((entry) => entry.file.name)]),
     [binFiles, binStoredFileNames],
   );
-
-  const modelOptions = useMemo(() => {
-    const envOptions = (process.env.NEXT_PUBLIC_MAP_EXTRACT_MODEL_OPTIONS || "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    return dedupeNames([...envOptions, ...MAP_MODEL_FALLBACK_OPTIONS]);
-  }, []);
 
   const usageStats = useMemo(() => {
     const meta = graphData?.metadata;
@@ -953,34 +937,60 @@ export default function MapExtractionWorkspace({
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
       <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <ProjectPageHeader
+          title="Map Extraction Section"
+          projectName={projectName}
+          titleClassName="text-3xl font-black uppercase tracking-tight text-neutral-100 md:text-4xl"
+          subtitle={
+            <>
+              Selected component: <span className="font-semibold text-neutral-100">{title}</span>
+            </>
+          }
+          actions={(
+            <div className="flex flex-wrap items-center gap-3">
+              <ModelPicker value={selectedModel} onChange={setSelectedModel} />
+              <BackToHome
+                href={backHref}
+                label="Back to project"
+                useHistoryBack
+                containerClassName=""
+                className="rounded-md px-3 py-2"
+              />
+            </div>
+          )}
+        />
+
+        <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handleSaveLocally}
               aria-label="Save map workspace"
               title="Save"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-100 transition hover:border-sky-500"
+              className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20"
             >
               <SaveIcon className="h-4 w-4" />
+              <span>Save</span>
             </button>
             <button
               type="button"
               onClick={handleExportArtifacts}
               aria-label="Export map artifacts"
               title="Export artifacts (.json)"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-100 transition hover:border-sky-500"
+              className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-500/10 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20"
             >
               <ExportIcon className="h-4 w-4" />
+              <span>Export</span>
             </button>
             <button
               type="button"
               onClick={() => artifactImportInputRef.current?.click()}
               aria-label="Import map artifacts"
               title="Import artifacts (.json)"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-100 transition hover:border-sky-500"
+              className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-500/10 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20"
             >
               <ImportIcon className="h-4 w-4" />
+              <span>Import</span>
             </button>
             <input
               ref={artifactImportInputRef}
@@ -995,31 +1005,9 @@ export default function MapExtractionWorkspace({
                 event.currentTarget.value = "";
               }}
             />
-            <BackToHome
-              href={backHref}
-              label="Back to project"
-              useHistoryBack
-              containerClassName=""
-              className="rounded-md px-3 py-2"
-            />
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-300">
-              <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-400">model</div>
-              <input
-                list="map-extract-model-options"
-                value={selectedModel}
-                onChange={(event) => setSelectedModel(event.target.value)}
-                placeholder="default from .env"
-                className="w-52 rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 outline-none transition focus:border-sky-500"
-              />
-              <datalist id="map-extract-model-options">
-                {modelOptions.map((modelName) => (
-                  <option key={modelName} value={modelName} />
-                ))}
-              </datalist>
-            </div>
             <span className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-300">
               component: {title}
             </span>
@@ -1042,7 +1030,7 @@ export default function MapExtractionWorkspace({
                 onClick={() => setIsOverviewCollapsed((prev) => !prev)}
                 className="flex w-full items-center justify-between gap-2 text-left"
               >
-                <span className="text-lg font-bold text-neutral-100">overview map images</span>
+                <span className="text-lg font-bold text-neutral-100">Overview map images</span>
                 <div className="flex items-center gap-2">
                   <span
                     className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-bold ${sectionHeaderClassName(
@@ -1106,7 +1094,7 @@ export default function MapExtractionWorkspace({
                     ) : null}
                   </div>
 
-                  <p className="text-sm font-semibold text-neutral-200">additional information</p>
+                  <p className="text-sm font-semibold text-neutral-200">Additional information</p>
                   <label htmlFor="map-additional-info" className="text-xs text-neutral-400">
                     Text document
                   </label>
@@ -1127,7 +1115,7 @@ export default function MapExtractionWorkspace({
                 onClick={() => setIsBinCollapsed((prev) => !prev)}
                 className="flex w-full items-center justify-between gap-2 text-left"
               >
-                <span className="text-lg font-bold text-neutral-100">bin location images / any files</span>
+                <span className="text-lg font-bold text-neutral-100">Bin location images / any files</span>
                 <div className="flex items-center gap-2">
                   <span
                     className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-bold ${sectionHeaderClassName(
@@ -1191,7 +1179,7 @@ export default function MapExtractionWorkspace({
                     ) : null}
                   </div>
 
-                  <p className="text-sm font-semibold text-neutral-200">additional information</p>
+                  <p className="text-sm font-semibold text-neutral-200">Additional information</p>
                   <label htmlFor="map-additional-info-bin" className="text-xs text-neutral-400">
                     Text document
                   </label>
@@ -1212,7 +1200,7 @@ export default function MapExtractionWorkspace({
                 onClick={() => setIsSymbolCollapsed((prev) => !prev)}
                 className="flex w-full items-center justify-between text-left"
               >
-                <span className="text-lg font-bold text-neutral-100">selection details</span>
+                <span className="text-lg font-bold text-neutral-100">Selection details</span>
                 <span className="text-neutral-300">{isSymbolCollapsed ? "v" : "^"}</span>
               </button>
 
@@ -1224,7 +1212,7 @@ export default function MapExtractionWorkspace({
             </article>
 
             <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
-              <p className="text-lg font-bold text-neutral-100">change details</p>
+              <p className="text-lg font-bold text-neutral-100">Change details</p>
               {changeLog.length === 0 ? (
                 <p className="mt-2 text-sm text-neutral-400">No edits yet.</p>
               ) : (

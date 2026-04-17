@@ -207,7 +207,7 @@ export default function ProjectDashboardPage() {
     setComponents(await loadComponents());
 
     if (category === "Causal") {
-      const targetHref = `/${categoryPath.Causal}?componentId=${encodeURIComponent(createdArtifactId)}&title=${encodeURIComponent(title)}&projectId=${encodeURIComponent(projectId)}`;
+      const targetHref = `/${categoryPath.Causal}/${encodeURIComponent(createdArtifactId)}`;
       await trackRecentArtifact({
         componentId: createdArtifactId,
         title,
@@ -225,6 +225,19 @@ export default function ProjectDashboardPage() {
         componentId: createdArtifactId,
         title,
         category: "Map",
+        projectId,
+        href: targetHref,
+      });
+      router.push(targetHref);
+      return;
+    }
+
+    if (category === "Code") {
+      const targetHref = `/${categoryPath.Code}/${encodeURIComponent(createdArtifactId)}`;
+      await trackRecentArtifact({
+        componentId: createdArtifactId,
+        title,
+        category: "Code",
         projectId,
         href: targetHref,
       });
@@ -299,7 +312,7 @@ export default function ProjectDashboardPage() {
 
           {filteredComponents.map((component) => {
             const isQueryNavigationCategory =
-              component.category === "Causal" || component.category === "Code" || component.category === "PolicyTesting";
+              component.category === "PolicyTesting";
             const targetPath = isQueryNavigationCategory
               ? {
                   pathname: `/${categoryPath[component.category]}`,

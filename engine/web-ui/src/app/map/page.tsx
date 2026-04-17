@@ -3,7 +3,7 @@ import CategoryPageShell from "../components/category-page-shell";
 export default function MapPage() {
   return (
     <CategoryPageShell
-      title="Map Category"
+      title="Map Extraction Section"
       description="Open a map artifact from PM dashboard to use the map extraction workspace."
     >
       <div className="space-y-3 rounded-xl border border-neutral-700 bg-neutral-950/70 p-4 text-sm text-neutral-200">

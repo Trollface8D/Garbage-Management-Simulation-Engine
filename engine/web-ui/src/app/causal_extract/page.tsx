@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "../components/back-to-home";
+import ProjectPageHeader from "../components/project-page-header";
 import {
+    findComponentById as findSeedComponentById,
+    findProjectById as findSeedProjectById,
     type SimulationComponent,
     type SimulationProject,
 } from "@/lib/simulation-components";
@@ -132,10 +135,6 @@ function isArtifactBundleImportPayload(value: unknown): value is ArtifactBundleE
     return payload.export_type === "causal_bundle" && payload.item !== undefined && Array.isArray(payload.chunks);
 }
 
-function isFeatureTab(value: string | null): value is FeatureTab {
-    return value === "chunking" || value === "extract" || value === "follow_up";
-}
-
 const STATUS_RANK: Record<DataStatus, number> = {
     raw_text: 0,
     chunked: 1,
@@ -155,9 +154,9 @@ const STATUS_LABEL: Record<DataStatus, string> = {
 };
 
 const FEATURE_PATH: Record<FeatureTab, string> = {
-    chunking: "/causal_extract/chunking",
-    extract: "/causal_extract/extract",
-    follow_up: "/causal_extract/follow_up",
+    chunking: "chunking",
+    extract: "extract",
+    follow_up: "follow_up",
 };
 
 function createLocalId(prefix: string): string {
@@ -233,14 +232,9 @@ function getUploadLogLevelClass(level: UploadProcessLogLevel): string {
 }
 
 function CausalExtractHomeContent() {
-    const router = useRouter();
-    const pathname = usePathname();
-    const searchParams = useSearchParams();
+    const params = useParams<{ componentId?: string }>();
 
-    const componentId = searchParams.get("componentId");
-    const queryTitle = searchParams.get("title");
-    const queryProjectId = searchParams.get("projectId");
-    const featureFromQuery = searchParams.get("feature");
+    const componentId = params.componentId ?? null;
 
     const [projects, setProjects] = useState<SimulationProject[]>([]);
     const [components, setComponents] = useState<SimulationComponent[]>([]);
@@ -260,18 +254,17 @@ function CausalExtractHomeContent() {
     }, []);
 
     const selectedComponent = useMemo(
-        () => components.find((component) => component.id === componentId),
+        () => (componentId
+            ? components.find((component) => component.id === componentId) ?? findSeedComponentById(componentId)
+            : undefined),
         [componentId, components],
     );
-    const selectedTitle = queryTitle ?? selectedComponent?.title ?? "Causal Experiment";
+    const selectedTitle = selectedComponent?.title ?? "Causal Experiment";
     const selectedProjectId =
-        queryProjectId ??
         (selectedComponent && selectedComponent.category !== "PolicyTesting" ? selectedComponent.projectId : undefined) ??
         projects[0]?.id ??
         "";
-    const [activeFeature, setActiveFeature] = useState<FeatureTab>(
-        isFeatureTab(featureFromQuery) ? featureFromQuery : "chunking",
-    );
+    const [activeFeature, setActiveFeature] = useState<FeatureTab>("chunking");
     const [inputText, setInputText] = useState<string>("");
     const [uploadedFiles, setUploadedFiles] = useState<UploadedLocalFile[]>([]);
     const [experimentItems, setExperimentItems] = useState<ExperimentItem[]>([]);
@@ -285,6 +278,7 @@ function CausalExtractHomeContent() {
     const selectedProjectName = useMemo(
         () =>
             projects.find((project) => project.id === selectedProjectId)?.name ??
+            findSeedProjectById(selectedProjectId)?.name ??
             "Unselected project",
         [projects, selectedProjectId],
     );
@@ -342,18 +336,8 @@ function CausalExtractHomeContent() {
         void hydrateItemsFromDb(selectedProjectId, componentId ?? "");
     }, [componentId, hydrateItemsFromDb, selectedProjectId]);
 
-    useEffect(() => {
-        if (isFeatureTab(featureFromQuery) && featureFromQuery !== activeFeature) {
-            setActiveFeature(featureFromQuery);
-        }
-    }, [activeFeature, featureFromQuery]);
-
     const handleSelectFeature = (feature: FeatureTab) => {
         setActiveFeature(feature);
-
-        const nextQuery = new URLSearchParams(searchParams.toString());
-        nextQuery.set("feature", feature);
-        router.replace(`${pathname}?${nextQuery.toString()}`, { scroll: false });
     };
 
     useEffect(() => {
@@ -865,32 +849,30 @@ function CausalExtractHomeContent() {
         })();
     };
 
-    const activeFeaturePath = FEATURE_PATH[activeFeature];
+    const activeFeaturePath = componentId
+        ? `/causal_extract/${encodeURIComponent(componentId)}/${FEATURE_PATH[activeFeature]}`
+        : "/causal_extract";
     const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 
     return (
         <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
             <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
-                <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-                    <h1 className="text-left text-3xl font-black uppercase tracking-tight text-neutral-100 md:text-5xl lg:text-6xl">
-                        Garbage Flow Simulation Engine
-                    </h1>
-                    <div className="mt-5 flex flex-wrap items-center gap-3">
-                        <span className="text-sm font-semibold text-neutral-300">
-                            Project
-                        </span>
-                        <span className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100">
-                            {selectedProjectName}
-                        </span>
-                        {/* <span className="text-xs text-neutral-400">{selectedProjectName}</span> */}
-                    </div>
-                    <BackToHome
-                        href={projectBackHref}
-                        label="Back to project"
-                        containerClassName=""
-                        className="rounded-md px-3 py-2"
-                    />
-                </header>
+                <ProjectPageHeader
+                    title="Garbage Flow Simulation Engine"
+                    projectName={selectedProjectName}
+                    titleClassName="text-left text-3xl font-black uppercase tracking-tight text-neutral-100 md:text-4xl"
+                    projectRowClassName="mt-5 flex flex-wrap items-center gap-3"
+                    projectLabelClassName="text-sm font-semibold text-neutral-300"
+                    projectValueClassName="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100"
+                    actions={
+                        <BackToHome
+                            href={projectBackHref}
+                            label="Back to project"
+                            containerClassName=""
+                            className="rounded-md px-3 py-2"
+                        />
+                    }
+                />
 
                 <section className="grid gap-6 lg:grid-cols-[280px_1fr]">
                     <aside className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
@@ -1073,19 +1055,7 @@ function CausalExtractHomeContent() {
                                         return (
                                     <Link
                                         key={item.id}
-                                        href={{
-                                            pathname: activeFeaturePath,
-                                            query: {
-                                                componentId: componentId ?? "",
-                                                title: selectedTitle,
-                                                projectId: selectedProjectId,
-                                                feature: activeFeature,
-                                                itemId: item.id,
-                                                itemStatus: item.status,
-                                                sourceType: item.sourceType,
-                                                fileName: item.fileName,
-                                            },
-                                        }}
+                                        href={`${activeFeaturePath}/${encodeURIComponent(item.id)}`}
                                         className={`block rounded-lg border bg-neutral-900/80 p-4 transition hover:border-sky-500/70 ${
                                             isChunked ? "border-emerald-600/80" : "border-neutral-700"
                                         }`}
