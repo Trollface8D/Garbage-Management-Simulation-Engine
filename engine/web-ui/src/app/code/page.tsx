@@ -346,6 +346,14 @@ export default function CodePage() {
       });
     });
 
+    if (causalItems.length === 0 && firstSourceText) {
+      causalItems.push({
+        id: `causal-gemini-file-${sanitizeFilenameSegment(baseName.toLowerCase())}`,
+        title: clip(cleanFileName || firstSourceText || "imported-transcript", 180),
+        lastEdited: "extracted",
+      });
+    }
+
     return { causalItems };
   };
 
