@@ -64,6 +64,10 @@ type GeminiRawChunkItem = {
   extracted?: GeminiExtractedRelation[];
 };
 
+function sanitizeFilenameSegment(value: string): string {
+  return value.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "imported";
+}
+
 const EXTRACTION_DELAY_MS = 1300;
 const PROGRESS_TICK_MS = 240;
 const PROGRESS_STEP = 6;
@@ -296,51 +300,46 @@ export default function CodePage() {
   const clip = (value: string, max: number): string =>
     value.length <= max ? value : `${value.slice(0, Math.max(0, max - 3))}...`;
 
-  const normalizeGeminiTranscriptArray = (input: unknown[]): JsonImportPayload => {
-    const causalItems: JsonImportItem[] = [];
+  const normalizeGeminiTranscriptArray = (input: unknown[], sourceFileName: string): JsonImportPayload => {
+    let relationCount = 0;
+    let firstSourceText = "";
 
-    input.forEach((rawItem, itemIndex) => {
+    input.forEach((rawItem) => {
       if (!isObject(rawItem)) {
         return;
       }
 
       const item = rawItem as GeminiRawChunkItem;
-      const sourceText = readText(item.source_text);
       const extractedList = Array.isArray(item.extracted) ? item.extracted : [];
+      relationCount += extractedList.filter((entry) => isObject(entry)).length;
 
-      extractedList.forEach((rawRelation, relationIndex) => {
-        if (!isObject(rawRelation)) {
-          return;
-        }
-
-        const relation = rawRelation as GeminiExtractedRelation;
-        const head = readText(relation.head);
-        const relationship = readText(relation.relationship);
-        const tail = readText(relation.tail);
-        const detail = readText(relation.detail);
-
-        const relationText = [head, relationship, tail].filter(Boolean).join(" ");
-        const detailSuffix = detail && detail.toLowerCase() !== "null" ? ` (${detail})` : "";
-        const fallback = sourceText || `Imported causal relation ${String(itemIndex + 1)}.${String(relationIndex + 1)}`;
-        const title = clip(`${relationText || fallback}${detailSuffix}`, 180);
-
-        if (!title) {
-          return;
-        }
-
-        causalItems.push({
-          id: `causal-gemini-${String(itemIndex + 1)}-${String(relationIndex + 1)}`,
-          title,
-        });
-      });
+      if (!firstSourceText) {
+        firstSourceText = readText(item.source_text);
+      }
     });
 
-    return { causalItems };
+    if (relationCount === 0) {
+      return { causalItems: [] };
+    }
+
+    const cleanFileName = sourceFileName.trim() || "imported-transcript.json";
+    const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
+    const title = clip(cleanFileName || firstSourceText || "imported-transcript", 180);
+
+    return {
+      causalItems: [
+        {
+          id: `causal-gemini-file-${sanitizeFilenameSegment(baseName.toLowerCase())}`,
+          title,
+          lastEdited: "extracted",
+        },
+      ],
+    };
   };
 
-  const normalizeImportPayload = (value: unknown): JsonImportPayload => {
+  const normalizeImportPayload = (value: unknown, sourceFileName: string): JsonImportPayload => {
     if (Array.isArray(value)) {
-      const normalized = normalizeGeminiTranscriptArray(value);
+      const normalized = normalizeGeminiTranscriptArray(value, sourceFileName);
       if ((normalized.causalItems?.length ?? 0) > 0) {
         return normalized;
       }
@@ -453,7 +452,7 @@ export default function CodePage() {
 
     try {
       const raw = await file.text();
-      const payload = normalizeImportPayload(JSON.parse(raw) as unknown);
+      const payload = normalizeImportPayload(JSON.parse(raw) as unknown, file.name);
 
       const causalPayload = readImportItems(payload, "Causal");
       const mapPayload = readImportItems(payload, "Map");
