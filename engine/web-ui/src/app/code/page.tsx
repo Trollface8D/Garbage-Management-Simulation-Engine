@@ -67,7 +67,6 @@ type GeminiRawChunkItem = {
 function sanitizeFilenameSegment(value: string): string {
   return value.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "imported";
 }
-
 const EXTRACTION_DELAY_MS = 1300;
 const PROGRESS_TICK_MS = 240;
 const PROGRESS_STEP = 6;
@@ -301,40 +300,53 @@ export default function CodePage() {
     value.length <= max ? value : `${value.slice(0, Math.max(0, max - 3))}...`;
 
   const normalizeGeminiTranscriptArray = (input: unknown[], sourceFileName: string): JsonImportPayload => {
-    let relationCount = 0;
+    const causalItems: JsonImportItem[] = [];
+    const cleanFileName = sourceFileName.trim() || "imported-transcript.json";
+    const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
     let firstSourceText = "";
 
-    input.forEach((rawItem) => {
+    input.forEach((rawItem, itemIndex) => {
       if (!isObject(rawItem)) {
         return;
       }
 
       const item = rawItem as GeminiRawChunkItem;
-      const extractedList = Array.isArray(item.extracted) ? item.extracted : [];
-      relationCount += extractedList.filter((entry) => isObject(entry)).length;
-
+      const sourceText = readText(item.source_text);
       if (!firstSourceText) {
-        firstSourceText = readText(item.source_text);
+        firstSourceText = sourceText;
       }
-    });
 
-    if (relationCount === 0) {
-      return { causalItems: [] };
-    }
+      const extractedList = Array.isArray(item.extracted) ? item.extracted : [];
 
-    const cleanFileName = sourceFileName.trim() || "imported-transcript.json";
-    const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
-    const title = clip(cleanFileName || firstSourceText || "imported-transcript", 180);
+      extractedList.forEach((rawRelation, relationIndex) => {
+        if (!isObject(rawRelation)) {
+          return;
+        }
 
-    return {
-      causalItems: [
-        {
-          id: `causal-gemini-file-${sanitizeFilenameSegment(baseName.toLowerCase())}`,
+        const relation = rawRelation as GeminiExtractedRelation;
+        const head = readText(relation.head);
+        const relationship = readText(relation.relationship);
+        const tail = readText(relation.tail);
+        const detail = readText(relation.detail);
+
+        const relationText = [head, relationship, tail].filter(Boolean).join(" ");
+        const detailSuffix = detail && detail.toLowerCase() !== "null" ? ` (${detail})` : "";
+        const fallback = sourceText || `Imported causal relation ${String(itemIndex + 1)}.${String(relationIndex + 1)}`;
+        const title = clip(`${relationText || fallback}${detailSuffix}`, 180);
+
+        if (!title) {
+          return;
+        }
+
+        causalItems.push({
+          id: `causal-gemini-${sanitizeFilenameSegment(baseName.toLowerCase())}-${String(itemIndex + 1)}-${String(relationIndex + 1)}`,
           title,
           lastEdited: "extracted",
-        },
-      ],
-    };
+        });
+      });
+    });
+
+    return { causalItems };
   };
 
   const normalizeImportPayload = (value: unknown, sourceFileName: string): JsonImportPayload => {
