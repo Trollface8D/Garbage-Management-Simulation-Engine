@@ -312,7 +312,6 @@ export default function CodePage() {
       router.push(`/${categoryPath[category]}/${encodeURIComponent(id)}`);
     })();
   };
-
   const makeSlug = (value: string): string => {
     const trimmed = value.trim().toLowerCase();
     if (!trimmed) {
@@ -663,7 +662,6 @@ export default function CodePage() {
           ],
         };
       }
-
       return value as JsonImportPayload;
     }
 
@@ -750,7 +748,6 @@ export default function CodePage() {
       if (category === "Causal") {
         await persistImportedCausalArtifacts(entry, component, projectId);
       }
-
       created.push(component);
     }
 
