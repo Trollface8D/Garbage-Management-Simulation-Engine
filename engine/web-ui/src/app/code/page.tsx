@@ -629,7 +629,6 @@ export default function CodePage() {
       ],
     };
   };
-
   const normalizeImportPayload = (value: unknown, sourceFileName: string): JsonImportPayload => {
     if (Array.isArray(value)) {
       const normalized = normalizeGeminiTranscriptArray(value, sourceFileName);
