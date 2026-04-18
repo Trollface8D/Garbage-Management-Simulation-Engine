@@ -39,6 +39,7 @@ type FollowUpGenerationPageProps = {
   includeImplicit?: boolean;
   experimentItemId?: string;
   initialFollowUpRecords?: FollowUpRecord[];
+  model?: string;
 };
 
 type AnswerFilterMode = "all" | "unanswered" | "answered";
@@ -565,13 +566,16 @@ function CausalCard({
   );
 }
 
-async function requestGeneratedQuestions(causalItems: CausalItem[]): Promise<GeneratedQuestionsData[]> {
+async function requestGeneratedQuestions(causalItems: CausalItem[], model?: string): Promise<GeneratedQuestionsData[]> {
   const response = await fetch("/api/causal-extract/follow-up", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ causalItems }),
+    body: JSON.stringify({
+      causalItems,
+      model: model?.trim() || undefined,
+    }),
   });
 
   const payload = (await response.json().catch(() => null)) as
@@ -595,6 +599,7 @@ async function submitFollowUpAnswersWithReextract(input: {
     answerText: string;
     answeredBy?: string;
   }>;
+  model?: string;
 }): Promise<{ savedAnswers: number; extractedFromFollowUp: number }> {
   const response = await fetch("/api/causal-extract/follow-up-submit", {
     method: "POST",
@@ -682,6 +687,7 @@ export default function FollowUpGenerationPage({
   includeImplicit = true,
   experimentItemId,
   initialFollowUpRecords = [],
+  model = "",
 }: FollowUpGenerationPageProps) {
   const [generatedResults, setGeneratedResults] = useState<GeneratedQuestionsData[]>(() => toGeneratedResults(initialFollowUpRecords));
   const [questionIdsBySource, setQuestionIdsBySource] = useState<Record<string, Record<string, string>>>(() =>
@@ -1030,7 +1036,7 @@ export default function FollowUpGenerationPage({
 
     try {
       const itemId = ensureExperimentItemId();
-      const generatedRows = await requestGeneratedQuestions(visibleCausalItems);
+      const generatedRows = await requestGeneratedQuestions(visibleCausalItems, model);
       const generatedBySource = new Map(generatedRows.map((row) => [row.source_text, row]));
 
       await saveFollowUpQuestionsForItem({
@@ -1067,7 +1073,7 @@ export default function FollowUpGenerationPage({
 
     try {
       const itemId = ensureExperimentItemId();
-      const generatedRows = await requestGeneratedQuestions([causal]);
+      const generatedRows = await requestGeneratedQuestions([causal], model);
       const generated = generatedRows.find((row) => row.source_text === causal.source_text);
 
       await saveFollowUpQuestionsForItem({
@@ -1246,6 +1252,7 @@ export default function FollowUpGenerationPage({
 
       const submitResult = await submitFollowUpAnswersWithReextract({
         experimentItemId: itemId,
+        model,
         answers: answeredQuestions.map((question) => ({
           questionId: questionIds[question],
           questionText: question,
@@ -1343,6 +1350,7 @@ export default function FollowUpGenerationPage({
 
       const submitResult = await submitFollowUpAnswersWithReextract({
         experimentItemId: itemId,
+        model,
         answers: answersPayload,
       });
 

@@ -23,7 +23,7 @@ export async function ingestUploadedSource(input: ParsedIngestRequest): Promise<
     }
 
     const sourceType: SupportedSourceType = uploadKind === "audio" ? "audio" : "text";
-    const itemId = `upload-${randomUUID()}`;
+    const itemId = randomUUID();
     let storedPath = "";
 
     try {

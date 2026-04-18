@@ -1,9 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CausalUsedCard, MapUsedCard } from "../causal_extract/used-item-cards";
+import ProjectPageHeader from "../components/project-page-header";
+import {
+  findComponentById as findSeedComponentById,
+  findProjectById as findSeedProjectById,
+  type SimulationComponent,
+  type SimulationProject,
+} from "@/lib/simulation-components";
+import { loadComponents, loadProjects } from "@/lib/pm-storage";
 
 type UsedItem = {
   id: string;
@@ -48,9 +56,10 @@ const INITIAL_ENTITIES: GeneratedEntity[] = [
 export default function CodePage() {
   const [causalItems, setCausalItems] = useState<UsedItem[]>(INITIAL_CAUSAL_ITEMS);
   const [mapItems, setMapItems] = useState<UsedItem[]>(INITIAL_MAP_ITEMS);
-  const searchParams = useSearchParams();
-  const projectId = searchParams.get("projectId");
-  const projectBackHref = projectId ? `/pm/${encodeURIComponent(projectId)}` : "/";
+  const [projects, setProjects] = useState<SimulationProject[]>([]);
+  const [components, setComponents] = useState<SimulationComponent[]>([]);
+  const params = useParams<{ componentId?: string }>();
+  const componentId = params.componentId ?? null;
 
   const [entities, setEntities] = useState<GeneratedEntity[]>(INITIAL_ENTITIES);
   const [isExtracted, setIsExtracted] = useState<boolean>(false);
@@ -68,6 +77,42 @@ export default function CodePage() {
     () => selectedEntities.reduce((sum, entity) => sum + entity.count, 0),
     [selectedEntities],
   );
+
+  const selectedComponent = useMemo(() => {
+    if (!componentId) {
+      return undefined;
+    }
+
+    return components.find((component) => component.id === componentId) ?? findSeedComponentById(componentId);
+  }, [componentId, components]);
+
+  const resolvedProjectId = useMemo(() => {
+    if (!selectedComponent || selectedComponent.category === "PolicyTesting") {
+      return null;
+    }
+
+    return selectedComponent.projectId;
+  }, [selectedComponent]);
+
+  const projectBackHref = resolvedProjectId ? `/pm/${encodeURIComponent(resolvedProjectId)}` : "/";
+
+  const selectedProjectName = useMemo(() => {
+    if (!resolvedProjectId) {
+      return "Unselected project";
+    }
+
+    return projects.find((project) => project.id === resolvedProjectId)?.name ?? findSeedProjectById(resolvedProjectId)?.name ?? "Unselected project";
+  }, [resolvedProjectId, projects]);
+
+  useEffect(() => {
+    const loadData = async () => {
+      const [nextProjects, nextComponents] = await Promise.all([loadProjects(), loadComponents()]);
+      setProjects(nextProjects);
+      setComponents(nextComponents);
+    };
+
+    void loadData();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -147,18 +192,20 @@ export default function CodePage() {
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
       <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
-        <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-black tracking-tight text-neutral-100 md:text-4xl">
-            Simulation object generation config
-          </h1>
-
-          <Link
-            href={projectBackHref}
-            className="rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white transition hover:border-sky-500"
-          >
-            Back to code generation home
-          </Link>
-        </header>
+        <ProjectPageHeader
+          title="Simulation object generation config"
+          projectName={selectedProjectName}
+          containerClassName="mb-8 flex flex-wrap items-center justify-between gap-4"
+          titleClassName="text-3xl font-black uppercase tracking-tight text-neutral-100 md:text-4xl"
+          actions={
+            <Link
+              href={projectBackHref}
+              className="rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white transition hover:border-sky-500"
+            >
+              Back to code generation home
+            </Link>
+          }
+        />
 
         <section className="space-y-8">
           <div>

@@ -1,12 +1,15 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import BackToHome from "../../components/back-to-home";
 import {
+    findComponentById as findSeedComponentById,
+    findProjectById as findSeedProjectById,
+    type SimulationComponent,
     type SimulationProject,
 } from "@/lib/simulation-components";
-import { loadCausalSourceItem, loadProjects, loadTextChunksForItem, saveTextChunksForItem } from "@/lib/pm-storage";
+import { loadCausalSourceItem, loadComponents, loadProjects, loadTextChunksForItem, saveTextChunksForItem } from "@/lib/pm-storage";
+import CausalWorkflowHeader from "../workflow-header";
 
 type TextBlock = {
     id: string;
@@ -91,20 +94,21 @@ function AiToolIcon({ className }: { className?: string }) {
     );
 }
 
+function SaveIcon({ className }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M5 3h12l4 4v14H3V3h2z" />
+            <path d="M7 3v6h10V3" />
+            <path d="M8 21v-7h8v7" />
+        </svg>
+    );
+}
+
 function CausalExtractChunkingContent() {
-    const searchParams = useSearchParams();
+    const params = useParams<{ componentId?: string; itemId?: string }>();
 
-    const componentId = searchParams.get("componentId");
-    const queryProjectId = searchParams.get("projectId");
-    const queryTitle = searchParams.get("title");
-    const initialItemId = searchParams.get("itemId") ?? "";
-    const initialItemStatus = searchParams.get("itemStatus") ?? "";
-    const initialSourceType = searchParams.get("sourceType") ?? "";
-    const initialFileName = searchParams.get("fileName") ?? "";
-
-    const selectedProjectId = queryProjectId ?? "";
-
-    const selectedTitle = queryTitle ?? "Unselected component";
+    const componentId = params.componentId ?? null;
+    const initialItemId = params.itemId ?? "";
 
     const [blocks, setBlocks] = useState<TextBlock[]>(() => buildBlocksFromTexts([]));
     const [activeIndex, setActiveIndex] = useState<number>(0);
@@ -114,26 +118,49 @@ function CausalExtractChunkingContent() {
     const [chunkSaveStatus, setChunkSaveStatus] = useState<string>("");
     const [isSavingChunks, setIsSavingChunks] = useState<boolean>(false);
     const [projects, setProjects] = useState<SimulationProject[]>([]);
+    const [components, setComponents] = useState<SimulationComponent[]>([]);
+    const [itemSourceType, setItemSourceType] = useState<string>("");
+    const [itemFileName, setItemFileName] = useState<string>("");
+    const [selectedModel, setSelectedModel] = useState<string>("");
 
     const isCutMode = toolMode === "split";
 
+    const selectedComponent = useMemo(
+        () => (componentId
+            ? components.find((component) => component.id === componentId) ?? findSeedComponentById(componentId)
+            : undefined),
+        [componentId, components],
+    );
+
+    const selectedProjectId = useMemo(() => {
+        if (!selectedComponent || selectedComponent.category === "PolicyTesting") {
+            return "";
+        }
+
+        return selectedComponent.projectId;
+    }, [selectedComponent]);
+
+    const selectedTitle = selectedComponent?.title ?? "Unselected component";
+
     const selectedProjectName = useMemo(
-        () => projects.find((project) => project.id === selectedProjectId)?.name ?? "Unselected project",
+        () => projects.find((project) => project.id === selectedProjectId)?.name ?? findSeedProjectById(selectedProjectId)?.name ?? "Unselected project",
         [projects, selectedProjectId],
     );
     const hasOriginalAttachment = Boolean(
-        initialItemId && (initialSourceType === "audio" || !/\.txt$/i.test(initialFileName)),
+        initialItemId && (itemSourceType === "audio" || !/\.txt$/i.test(itemFileName)),
     );
     const attachmentHref = initialItemId
         ? `/api/causal-source/file?itemId=${encodeURIComponent(initialItemId)}`
         : "";
 
     useEffect(() => {
-        const loadProjectList = async () => {
-            setProjects(await loadProjects());
+        const loadData = async () => {
+            const [nextProjects, nextComponents] = await Promise.all([loadProjects(), loadComponents()]);
+            setProjects(nextProjects);
+            setComponents(nextComponents);
         };
 
-        void loadProjectList();
+        void loadData();
     }, []);
 
     useEffect(() => {
@@ -150,19 +177,20 @@ function CausalExtractChunkingContent() {
         if (initialItemId) {
             void (async () => {
                 try {
-                    if (initialItemStatus === "chunked") {
-                        const savedChunks = await loadTextChunksForItem(initialItemId);
-                        if (savedChunks.length > 0) {
-                            setBlocks(buildBlocksFromTexts(savedChunks));
-                            setActiveIndex(0);
-                            setSelectedForJoin([]);
-                            setToolMode("edit");
-                            setLoadStatus(`Loaded ${String(savedChunks.length)} saved chunks from this file.`);
-                            return;
-                        }
+                    const savedItem = await loadCausalSourceItem(initialItemId);
+                    setItemSourceType(savedItem.sourceType);
+                    setItemFileName(savedItem.fileName);
+
+                    const savedChunks = await loadTextChunksForItem(initialItemId);
+                    if (savedChunks.length > 0) {
+                        setBlocks(buildBlocksFromTexts(savedChunks));
+                        setActiveIndex(0);
+                        setSelectedForJoin([]);
+                        setToolMode("edit");
+                        setLoadStatus(`Loaded ${String(savedChunks.length)} saved chunks from this file.`);
+                        return;
                     }
 
-                    const savedItem = await loadCausalSourceItem(initialItemId);
                     if (savedItem.textContent.trim()) {
                         setBlocks(buildBlocksFromTexts([savedItem.textContent]));
                         setActiveIndex(0);
@@ -174,14 +202,18 @@ function CausalExtractChunkingContent() {
 
                     setLoadStatus("Selected item has no saved text content.");
                 } catch {
+                    setItemSourceType("");
+                    setItemFileName("");
                     setLoadStatus("Unable to load saved source content.");
                 }
             })();
             return;
         }
 
+        setItemSourceType("");
+        setItemFileName("");
         setLoadStatus("No stored source item selected. Upload or open a saved source file first.");
-    }, [componentId, initialItemId, initialItemStatus]);
+    }, [componentId, initialItemId]);
 
     const handleEdit = (index: number, nextText: string) => {
         setBlocks((prev) => {
@@ -306,7 +338,7 @@ function CausalExtractChunkingContent() {
                 projectId: selectedProjectId,
                 componentId,
                 chunks: chunkTexts,
-                model: "manual-chunking",
+                model: selectedModel.trim() || "manual-chunking",
                 chunkSizeWords: 20,
                 chunkOverlapWords: 0,
             });
@@ -318,42 +350,19 @@ function CausalExtractChunkingContent() {
         } finally {
             setIsSavingChunks(false);
         }
-    }, [blocks, componentId, initialItemId, selectedProjectId]);
+    }, [blocks, componentId, initialItemId, selectedModel, selectedProjectId]);
 
     return (
         <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
             <main className="mx-auto w-full max-w-6xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
-                <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h1 className="text-3xl font-black uppercase tracking-tight md:text-4xl">Causal Extract - Chunking</h1>
-                        <p className="mt-2 text-sm text-neutral-300">
-                            Selected component: <span className="font-semibold text-neutral-100">{selectedTitle}</span>
-                        </p>
-                        <div className="mt-3 flex flex-wrap items-center gap-3">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                                Project
-                            </span>
-                            <span className="text-sm text-neutral-300">{selectedProjectName}</span>
-                        </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <BackToHome
-                            href="/"
-                            label="Back to project"
-                            useHistoryBack
-                            containerClassName=""
-                            className="rounded-md px-3 py-2"
-                        />
-                        <button
-                            type="button"
-                            onClick={() => void handleSaveChunks()}
-                            disabled={isSavingChunks || !initialItemId || !selectedProjectId || !componentId}
-                            className="rounded-md border border-emerald-600 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                            {isSavingChunks ? "Saving..." : "Save chunks"}
-                        </button>
-                    </div>
-                </header>
+                <CausalWorkflowHeader
+                    title="Causal Extract - Chunking"
+                    selectedTitle={selectedTitle}
+                    selectedProjectName={selectedProjectName}
+                    selectedModel={selectedModel}
+                    onSelectedModelChange={setSelectedModel}
+                    actionsClassName="ml-auto flex flex-wrap items-center justify-end gap-2"
+                />
 
                 <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[auto_1fr] lg:items-start">
                     <aside className="lg:sticky lg:top-6">
@@ -410,15 +419,16 @@ function CausalExtractChunkingContent() {
                             type="button"
                             onClick={() => void handleSaveChunks()}
                             disabled={isSavingChunks || !initialItemId || !selectedProjectId || !componentId}
-                            className="mt-3 w-full rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
+                            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
                         >
+                            <SaveIcon className="h-4 w-4" />
                             {isSavingChunks ? "Saving..." : "Save chunks"}
                         </button>
 
                         {hasOriginalAttachment && (
                             <article className="mt-3 w-full max-w-xs rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Original file</p>
-                                <p className="mt-1 break-all text-sm text-neutral-200">{initialFileName || "attachment"}</p>
+                                <p className="mt-1 break-all text-sm text-neutral-200">{itemFileName || "attachment"}</p>
                                 <a
                                     href={attachmentHref}
                                     target="_blank"
