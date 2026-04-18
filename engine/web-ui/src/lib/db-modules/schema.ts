@@ -238,6 +238,106 @@ export const generatedEntities = sqliteTable(
   (table) => [uniqueIndex("generated_entities_causal_entity_unique").on(table.causalId, table.entityName)],
 );
 
+export const codegenRuns = sqliteTable(
+  "codegen_runs",
+  {
+    id: text("id").primaryKey().notNull(),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    componentId: text("component_id").references(() => projectComponents.id, { onDelete: "set null" }),
+    causalProjectDocumentId: text("causal_project_document_id").references(() => causalProjectDocuments.id, {
+      onDelete: "set null",
+    }),
+    sourceType: text("source_type").notNull().default("manual"),
+    status: text("status").notNull().default("queued"),
+    model: text("model"),
+    inputPrompt: text("input_prompt"),
+    startedAt: text("started_at"),
+    finishedAt: text("finished_at"),
+    durationMs: integer("duration_ms"),
+    inputEntityCount: integer("input_entity_count").notNull().default(0),
+    generatedEntityCount: integer("generated_entity_count").notNull().default(0),
+    generatedFileCount: integer("generated_file_count").notNull().default(0),
+    errorMessage: text("error_message"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "codegen_runs_source_type_check",
+      sql`${table.sourceType} IN ('manual', 'derived_causal', 'follow_up', 'imported')`,
+    ),
+    check(
+      "codegen_runs_status_check",
+      sql`${table.status} IN ('queued', 'running', 'completed', 'failed', 'cancelled')`,
+    ),
+    index("idx_codegen_runs_project_id").on(table.projectId),
+    index("idx_codegen_runs_component_id").on(table.componentId),
+    index("idx_codegen_runs_status").on(table.status),
+    index("idx_codegen_runs_created_at").on(table.createdAt),
+  ],
+);
+
+export const codegenInputEntities = sqliteTable(
+  "codegen_input_entities",
+  {
+    id: text("id").primaryKey().notNull(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => codegenRuns.id, { onDelete: "cascade" }),
+    entityName: text("entity_name").notNull(),
+    sourceCausalId: text("source_causal_id").references(() => causal.id, { onDelete: "set null" }),
+    sourceHead: text("source_head"),
+    sourceRelationship: text("source_relationship"),
+    sourceTail: text("source_tail"),
+    sourceDetail: text("source_detail"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("codegen_input_entities_run_entity_unique").on(table.runId, table.entityName),
+    index("idx_codegen_input_entities_run_id").on(table.runId),
+  ],
+);
+
+export const codegenGeneratedFiles = sqliteTable(
+  "codegen_generated_files",
+  {
+    id: text("id").primaryKey().notNull(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => codegenRuns.id, { onDelete: "cascade" }),
+    entityName: text("entity_name").notNull(),
+    filePath: text("file_path").notNull(),
+    language: text("language"),
+    fileSizeBytes: integer("file_size_bytes"),
+    generationOrder: integer("generation_order").notNull().default(0),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("codegen_generated_files_run_path_unique").on(table.runId, table.filePath),
+    index("idx_codegen_generated_files_run_id").on(table.runId),
+    index("idx_codegen_generated_files_entity_name").on(table.entityName),
+  ],
+);
+
+export const codegenRunMetrics = sqliteTable(
+  "codegen_run_metrics",
+  {
+    id: text("id").primaryKey().notNull(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => codegenRuns.id, { onDelete: "cascade" }),
+    metricKey: text("metric_key").notNull(),
+    metricType: text("metric_type").notNull().default("text"),
+    metricValue: text("metric_value").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    check("codegen_run_metrics_metric_type_check", sql`${table.metricType} IN ('text', 'number', 'boolean', 'json')`),
+    uniqueIndex("codegen_run_metrics_run_key_unique").on(table.runId, table.metricKey),
+    index("idx_codegen_run_metrics_run_id").on(table.runId),
+  ],
+);
+
 // Not part of schema.dbml, kept for current UI recent-artifacts feature.
 export const recents = sqliteTable(
   "recents",
