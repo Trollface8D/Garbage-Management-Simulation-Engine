@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { CausalUsedCard, MapUsedCard } from "../causal_extract/used-item-cards";
 import ProjectPageHeader from "../components/project-page-header";
 import {
@@ -11,7 +11,7 @@ import {
   type SimulationComponent,
   type SimulationProject,
 } from "@/lib/simulation-components";
-import { loadComponents, loadProjects } from "@/lib/pm-storage";
+import { createComponent, createProject, loadComponents, loadProjects } from "@/lib/pm-storage";
 
 type UsedItem = {
   id: string;
@@ -25,6 +25,43 @@ type GeneratedEntity = {
   name: string;
   count: number;
   selected: boolean;
+};
+
+type JsonImportItem = {
+  id?: string;
+  title?: string;
+  name?: string;
+  projectId?: string;
+  projectName?: string;
+  project?: string;
+  lastEdited?: string;
+  category?: string;
+};
+
+type JsonImportProject = {
+  id?: string;
+  name?: string;
+};
+
+type JsonImportPayload = {
+  projects?: JsonImportProject[];
+  causal?: JsonImportItem[];
+  causalItems?: JsonImportItem[];
+  map?: JsonImportItem[];
+  mapItems?: JsonImportItem[];
+  components?: JsonImportItem[];
+};
+
+type GeminiExtractedRelation = {
+  head?: string;
+  relationship?: string;
+  tail?: string;
+  detail?: string;
+};
+
+type GeminiRawChunkItem = {
+  source_text?: string;
+  extracted?: GeminiExtractedRelation[];
 };
 
 const EXTRACTION_DELAY_MS = 1300;
@@ -66,8 +103,12 @@ export default function CodePage() {
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(0);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
+  const [importMessage, setImportMessage] = useState<string>("");
+  const [importError, setImportError] = useState<string>("");
 
   const progressTimerRef = useRef<number | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedEntities = useMemo(
     () => entities.filter((entity) => entity.selected),
@@ -189,6 +230,296 @@ export default function CodePage() {
     );
   };
 
+  const makeSlug = (value: string): string => {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) {
+      return "untitled";
+    }
+
+    return trimmed
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "untitled";
+  };
+
+  const makeUniqueId = (base: string, usedIds: Set<string>): string => {
+    let candidate = base;
+    let seq = 2;
+    while (usedIds.has(candidate)) {
+      candidate = `${base}-${String(seq)}`;
+      seq += 1;
+    }
+    usedIds.add(candidate);
+    return candidate;
+  };
+
+  const toUsedItem = (
+    component: SimulationComponent,
+    projectNameById: Map<string, string>,
+  ): UsedItem => {
+    const projectId = component.category === "PolicyTesting" ? "" : component.projectId;
+    const resolvedProject =
+      projectNameById.get(projectId) ||
+      findSeedProjectById(projectId)?.name ||
+      "Unknown project";
+
+    return {
+      id: component.id,
+      title: component.title,
+      project: resolvedProject,
+      lastEdited: component.lastEdited || "just now",
+    };
+  };
+
+  const handleOpenImportDialog = () => {
+    importInputRef.current?.click();
+  };
+
+  const readImportItems = (payload: JsonImportPayload, category: "Causal" | "Map"): JsonImportItem[] => {
+    const itemsFromDedicatedList =
+      category === "Causal"
+        ? [...(payload.causal ?? []), ...(payload.causalItems ?? [])]
+        : [...(payload.map ?? []), ...(payload.mapItems ?? [])];
+
+    const itemsFromComponents = (payload.components ?? []).filter(
+      (entry) => entry.category?.toLowerCase() === category.toLowerCase(),
+    );
+
+    return [...itemsFromDedicatedList, ...itemsFromComponents];
+  };
+
+  const isObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null;
+
+  const readText = (value: unknown): string =>
+    typeof value === "string" ? value.trim() : "";
+
+  const clip = (value: string, max: number): string =>
+    value.length <= max ? value : `${value.slice(0, Math.max(0, max - 3))}...`;
+
+  const normalizeGeminiTranscriptArray = (input: unknown[]): JsonImportPayload => {
+    const causalItems: JsonImportItem[] = [];
+
+    input.forEach((rawItem, itemIndex) => {
+      if (!isObject(rawItem)) {
+        return;
+      }
+
+      const item = rawItem as GeminiRawChunkItem;
+      const sourceText = readText(item.source_text);
+      const extractedList = Array.isArray(item.extracted) ? item.extracted : [];
+
+      extractedList.forEach((rawRelation, relationIndex) => {
+        if (!isObject(rawRelation)) {
+          return;
+        }
+
+        const relation = rawRelation as GeminiExtractedRelation;
+        const head = readText(relation.head);
+        const relationship = readText(relation.relationship);
+        const tail = readText(relation.tail);
+        const detail = readText(relation.detail);
+
+        const relationText = [head, relationship, tail].filter(Boolean).join(" ");
+        const detailSuffix = detail && detail.toLowerCase() !== "null" ? ` (${detail})` : "";
+        const fallback = sourceText || `Imported causal relation ${String(itemIndex + 1)}.${String(relationIndex + 1)}`;
+        const title = clip(`${relationText || fallback}${detailSuffix}`, 180);
+
+        if (!title) {
+          return;
+        }
+
+        causalItems.push({
+          id: `causal-gemini-${String(itemIndex + 1)}-${String(relationIndex + 1)}`,
+          title,
+        });
+      });
+    });
+
+    return { causalItems };
+  };
+
+  const normalizeImportPayload = (value: unknown): JsonImportPayload => {
+    if (Array.isArray(value)) {
+      const normalized = normalizeGeminiTranscriptArray(value);
+      if ((normalized.causalItems?.length ?? 0) > 0) {
+        return normalized;
+      }
+
+      throw new Error(
+        "Unsupported JSON array format. For array payloads, provide transcript items with an extracted list.",
+      );
+    }
+
+    if (isObject(value)) {
+      return value as JsonImportPayload;
+    }
+
+    throw new Error("Invalid JSON format. Expected an object payload or transcript array payload.");
+  };
+
+  const resolveProjectIdFromItem = async (
+    item: JsonImportItem,
+    context: {
+      projectsById: Map<string, SimulationProject>;
+      projectIdByName: Map<string, string>;
+      fallbackProjectId: string | null;
+      usedProjectIds: Set<string>;
+    },
+  ): Promise<string> => {
+    const incomingProjectId = item.projectId?.trim() || "";
+    const incomingProjectName = item.projectName?.trim() || item.project?.trim() || "";
+
+    if (incomingProjectId && context.projectsById.has(incomingProjectId)) {
+      return incomingProjectId;
+    }
+
+    if (incomingProjectName) {
+      const key = incomingProjectName.toLowerCase();
+      const existingByName = context.projectIdByName.get(key);
+      if (existingByName) {
+        return existingByName;
+      }
+
+      const projectIdBase = incomingProjectId || `project-${makeSlug(incomingProjectName)}`;
+      const projectId = makeUniqueId(projectIdBase, context.usedProjectIds);
+      const created = await createProject({ id: projectId, name: incomingProjectName });
+      context.projectsById.set(created.id, created);
+      context.projectIdByName.set(created.name.toLowerCase(), created.id);
+      return created.id;
+    }
+
+    if (context.fallbackProjectId) {
+      return context.fallbackProjectId;
+    }
+
+    if (context.projectsById.size > 0) {
+      return Array.from(context.projectsById.keys())[0];
+    }
+
+    const defaultProjectName = "Imported Project";
+    const defaultProjectId = makeUniqueId("project-imported", context.usedProjectIds);
+    const created = await createProject({ id: defaultProjectId, name: defaultProjectName });
+    context.projectsById.set(created.id, created);
+    context.projectIdByName.set(created.name.toLowerCase(), created.id);
+    return created.id;
+  };
+
+  const insertImportedCategory = async (
+    payloadItems: JsonImportItem[],
+    category: "Causal" | "Map",
+    context: {
+      projectsById: Map<string, SimulationProject>;
+      projectIdByName: Map<string, string>;
+      fallbackProjectId: string | null;
+      usedProjectIds: Set<string>;
+      usedComponentIds: Set<string>;
+    },
+  ): Promise<SimulationComponent[]> => {
+    const created: SimulationComponent[] = [];
+
+    for (const entry of payloadItems) {
+      const title = (entry.title || entry.name || "").trim() || `${category} Item`;
+      const projectId = await resolveProjectIdFromItem(entry, context);
+      const lastEdited = entry.lastEdited?.trim() || "just now";
+      const baseId = (entry.id?.trim() || `${category.toLowerCase()}-${makeSlug(title)}`);
+      const id = makeUniqueId(baseId, context.usedComponentIds);
+
+      const component: SimulationComponent = {
+        id,
+        title,
+        category,
+        projectId,
+        lastEdited,
+      };
+
+      await createComponent(component);
+      created.push(component);
+    }
+
+    return created;
+  };
+
+  const handleImportJson = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    setImportMessage("");
+    setImportError("");
+    setIsImporting(true);
+
+    try {
+      const raw = await file.text();
+      const payload = normalizeImportPayload(JSON.parse(raw) as unknown);
+
+      const causalPayload = readImportItems(payload, "Causal");
+      const mapPayload = readImportItems(payload, "Map");
+
+      if (causalPayload.length === 0 && mapPayload.length === 0) {
+        throw new Error("No causal/map items found in JSON. Expected keys: causal, causalItems, map, mapItems, components, or transcript extracted array entries.");
+      }
+
+      const latestProjects = await loadProjects();
+      const latestComponents = await loadComponents();
+      const projectsById = new Map(latestProjects.map((project) => [project.id, project]));
+      const projectIdByName = new Map(latestProjects.map((project) => [project.name.toLowerCase(), project.id]));
+      const usedProjectIds = new Set(latestProjects.map((project) => project.id));
+      const usedComponentIds = new Set(latestComponents.map((component) => component.id));
+
+      for (const project of payload.projects ?? []) {
+        const name = (project.name || "").trim();
+        if (!name) {
+          continue;
+        }
+
+        const existingProjectId = projectIdByName.get(name.toLowerCase());
+        if (existingProjectId) {
+          continue;
+        }
+
+        const baseId = (project.id?.trim() || `project-${makeSlug(name)}`);
+        const id = makeUniqueId(baseId, usedProjectIds);
+        const created = await createProject({ id, name });
+        projectsById.set(created.id, created);
+        projectIdByName.set(created.name.toLowerCase(), created.id);
+      }
+
+      const context = {
+        projectsById,
+        projectIdByName,
+        fallbackProjectId: resolvedProjectId,
+        usedProjectIds,
+        usedComponentIds,
+      };
+
+      const [createdCausal, createdMap] = await Promise.all([
+        insertImportedCategory(causalPayload, "Causal", context),
+        insertImportedCategory(mapPayload, "Map", context),
+      ]);
+
+      const refreshedProjects = await loadProjects();
+      const refreshedComponents = await loadComponents();
+      setProjects(refreshedProjects);
+      setComponents(refreshedComponents);
+
+      const projectNameById = new Map(refreshedProjects.map((project) => [project.id, project.name]));
+      setCausalItems((prev) => [...createdCausal.map((entry) => toUsedItem(entry, projectNameById)), ...prev]);
+      setMapItems((prev) => [...createdMap.map((entry) => toUsedItem(entry, projectNameById)), ...prev]);
+
+      setImportMessage(
+        `Imported ${String(createdCausal.length)} causal and ${String(createdMap.length)} map component(s).`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown import error.";
+      setImportError(message);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
       <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
@@ -206,6 +537,37 @@ export default function CodePage() {
             </Link>
           }
         />
+
+        <div className="mb-4 flex justify-start">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleImportJson}
+          />
+
+          <button
+            type="button"
+            onClick={handleOpenImportDialog}
+            disabled={isImporting}
+            className="rounded-md border border-emerald-700 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isImporting ? "Importing JSON..." : "Import JSON (Causal/Map)"}
+          </button>
+        </div>
+
+        {importMessage ? (
+          <div className="mb-4 rounded-md border border-emerald-700/70 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200">
+            {importMessage}
+          </div>
+        ) : null}
+
+        {importError ? (
+          <div className="mb-4 rounded-md border border-red-800/70 bg-red-500/10 px-4 py-2 text-sm text-red-200">
+            Import failed: {importError}
+          </div>
+        ) : null}
 
         <section className="space-y-8">
           <div>
