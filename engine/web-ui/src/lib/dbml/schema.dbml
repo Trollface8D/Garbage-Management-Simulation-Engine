@@ -55,6 +55,28 @@ Enum submit_scope_type {
     ALL
 }
 
+Enum codegen_source_type {
+    manual
+    derived_causal
+    follow_up
+    imported
+}
+
+Enum codegen_status {
+    queued
+    running
+    completed
+    failed
+    cancelled
+}
+
+Enum codegen_metric_type {
+    text
+    number
+    boolean
+    json
+}
+
 // ==========================================
 // CORE PROJECT & COMPONENT STRUCTURE
 // ==========================================
@@ -207,5 +229,73 @@ Table generated_entities {
 
     indexes {
         (causal_id, entity_name) [unique]
+    }
+}
+
+// ==========================================
+// CODE GENERATION FOUNDATION (POWER BI FEED)
+// ==========================================
+
+Table codegen_runs {
+    id uuid [pk]
+    project_id varchar [ref: > projects.id]
+    component_id varchar [ref: > project_components.id]
+    causal_project_document_id uuid [ref: > causal_project_documents.id]
+    source_type codegen_source_type [not null, default: 'manual']
+    status codegen_status [not null, default: 'queued']
+    model varchar
+    input_prompt text
+    started_at timestamp
+    finished_at timestamp
+    duration_ms int
+    input_entity_count int [not null, default: 0]
+    generated_entity_count int [not null, default: 0]
+    generated_file_count int [not null, default: 0]
+    error_message text
+    created_at timestamp [not null]
+    updated_at timestamp [not null]
+}
+
+Table codegen_input_entities {
+    id uuid [pk]
+    run_id uuid [not null, ref: > codegen_runs.id]
+    entity_name varchar [not null]
+    source_causal_id uuid [ref: > causal.id]
+    source_head text
+    source_relationship text
+    source_tail text
+    source_detail text
+    created_at timestamp [not null]
+
+    indexes {
+        (run_id, entity_name) [unique]
+    }
+}
+
+Table codegen_generated_files {
+    id uuid [pk]
+    run_id uuid [not null, ref: > codegen_runs.id]
+    entity_name varchar [not null]
+    file_path text [not null]
+    language varchar
+    file_size_bytes int
+    generation_order int [not null, default: 0]
+    created_at timestamp [not null]
+
+    indexes {
+        (run_id, file_path) [unique]
+    }
+}
+
+Table codegen_run_metrics {
+    id uuid [pk]
+    run_id uuid [not null, ref: > codegen_runs.id]
+    metric_key varchar [not null]
+    metric_type codegen_metric_type [not null, default: 'text']
+    metric_value text [not null]
+    created_at timestamp [not null]
+
+    indexes {
+        (run_id, metric_key) [unique]
     }
 }

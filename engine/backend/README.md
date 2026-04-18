@@ -20,6 +20,9 @@ This guide explains how the backend is structured, how to add another pipeline, 
 ## API endpoints (current)
 
 - `GET /health`
+- `POST /analytics/codegen/refresh`
+- `GET /analytics/codegen/tables`
+- `GET /analytics/codegen/table/{table_name}`
 - `POST /pipeline/jobs`
 - `GET /pipeline/jobs/{job_id}`
 - `GET /pipeline/jobs/{job_id}/stream`
@@ -27,6 +30,40 @@ This guide explains how the backend is structured, how to add another pipeline, 
 - `GET /pipeline/jobs/{job_id}/artifacts`
 - `GET /pipeline/jobs/{job_id}/artifacts/{artifact_name}`
 - `POST /pipeline/run/stream` (compat endpoint)
+
+## Codegen Analytics Layer (Power BI Foundation)
+
+The backend now provides a dedicated analytics materialization flow for code-generation data.
+
+Default paths:
+
+- source DB: `Engine/web-ui/local.db`
+- analytics DB: `Engine/output/analytics/codegen_analytics.db`
+
+Materialized analytics tables:
+
+- `fact_codegen_runs`
+- `fact_codegen_generated_files`
+- `fact_codegen_input_entities`
+- `fact_codegen_metrics`
+
+### Refresh codegen analytics
+
+```powershell
+curl -X POST http://127.0.0.1:8000/analytics/codegen/refresh
+```
+
+### List analytics tables
+
+```powershell
+curl http://127.0.0.1:8000/analytics/codegen/tables
+```
+
+### Query a table (Power BI Web connector ready)
+
+```powershell
+curl "http://127.0.0.1:8000/analytics/codegen/table/fact_codegen_runs?limit=1000&offset=0"
+```
 
 ## How to run
 
