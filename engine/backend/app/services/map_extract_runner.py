@@ -9,11 +9,13 @@ from typing import Any
 
 from google.genai.types import Part
 
+from ..response_schema.map_extract import MAP_EXTRACT_EDGE_RESPONSE_SCHEMA, MAP_EXTRACT_NODE_RESPONSE_SCHEMA
 from ...infra.gemini_client import GeminiGateway
 from ...infra.io_utils import read_text
 from ...infra.paths import DEFAULT_MAP_BUFFER_TRAIT_TABLE, DEFAULT_MAP_EXTRACT_PROMPT_CONFIG
 from ..models.job_models import JobRecord
 from .job_store import emit_job_event
+from .usage_utils import ensure_usage_progress
 
 
 logger = logging.getLogger(__name__)
@@ -70,15 +72,12 @@ def _load_map_extract_config() -> dict[str, Any]:
         "extractmap_text_dedup_policy",
         "extractmap_text_exclusion_policy",
         "extractmap_symbol_output_hint",
+        "extractmap_text_symbol_usage_policy",
         "compact_output_policy",
         "tabular_extraction_output_hint",
         "tabular_extraction_no_support_hint",
-        "extractmap_text_support_joint_prompt",
-        "extractmap_text_support_fallback_prompt",
-        "extractmap_text_support_delta_prompt",
         "extractmap_text_normalize_prompt",
         "extractmap_text_normalize_context",
-        "extractmap_text_support_delta_context",
         "edge_extraction_json_schema",
         "edge_extraction_dedup_policy",
         "edge_extraction_csv_fallback_hint",
@@ -102,8 +101,171 @@ def _config_text(config: dict[str, Any], key: str, *, default: str = "") -> str:
     return default
 
 
+def _normalize_symbol_enum(value: Any) -> str:
+    token = str(value or "").strip().upper()
+    token = re.sub(r"[^A-Z0-9]+", "_", token)
+    token = re.sub(r"_+", "_", token).strip("_")
+    return token or "UNKNOWN"
+
+
+def _split_symbol_tokens(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        output: list[str] = []
+        for item in value:
+            output.extend(_split_symbol_tokens(item))
+        return output
+    if isinstance(value, dict):
+        output: list[str] = []
+        for item in value.values():
+            output.extend(_split_symbol_tokens(item))
+        return output
+
+    text = str(value).strip()
+    if not text:
+        return []
+
+    parts = [part.strip() for part in re.split(r"[,/|;]", text) if part.strip()]
+    return parts or [text]
+
+
+def _extract_symbol_legend(symbol_output: str) -> list[dict[str, str]]:
+    text = str(symbol_output or "").strip()
+    if not text:
+        return []
+
+    candidates: list[Any] = []
+    try:
+        parsed = GeminiGateway.parse_json_relaxed(text)
+    except ValueError:
+        parsed = None
+
+    if isinstance(parsed, dict):
+        symbols = parsed.get("symbols")
+        if isinstance(symbols, list):
+            candidates.extend(symbols)
+        elif isinstance(symbols, dict):
+            candidates.extend(symbols.values())
+    elif isinstance(parsed, list):
+        candidates.extend(parsed)
+
+    if not candidates:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        table_rows = [line for line in lines if line.startswith("|") and line.endswith("|")]
+        if len(table_rows) >= 2:
+            header_cells = [cell.strip().lower() for cell in table_rows[0].strip("|").split("|")]
+
+            def idx(names: set[str], default: int) -> int:
+                for i, cell in enumerate(header_cells):
+                    cell_norm = re.sub(r"[^a-z0-9]", "", cell)
+                    if cell_norm in names:
+                        return i
+                return default
+
+            symbol_idx = idx({"symbol", "symbols", "notation"}, 0)
+            notation_idx = idx({"notation", "code", "legendcode"}, min(1, len(header_cells) - 1))
+            desc_idx = idx({"description", "symboldescription", "meaning"}, min(2, len(header_cells) - 1))
+            color_idx = idx({"color", "colour"}, -1)
+
+            for row in table_rows[1:]:
+                cells = [cell.strip() for cell in row.strip("|").split("|")]
+                if not cells or all(set(cell) <= {"-", ":"} for cell in cells):
+                    continue
+                candidates.append(
+                    {
+                        "symbol": cells[symbol_idx] if symbol_idx < len(cells) else "",
+                        "notation": cells[notation_idx] if notation_idx < len(cells) else "",
+                        "description": cells[desc_idx] if desc_idx < len(cells) else "",
+                        "color": cells[color_idx] if color_idx >= 0 and color_idx < len(cells) else "",
+                    }
+                )
+
+    legend: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        raw_symbol = item.get("symbol") or item.get("notation") or item.get("name") or item.get("code")
+        symbol = _normalize_symbol_enum(raw_symbol)
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        legend.append(
+            {
+                "symbol": symbol,
+                "notation": str(item.get("notation") or item.get("symbol") or "").strip(),
+                "description": str(item.get("description") or item.get("meaning") or "").strip(),
+                "color": str(item.get("color") or "").strip(),
+            }
+        )
+
+    return legend
+
+
+def _resolve_symbol_token(token: str, allowed_symbols: set[str]) -> str:
+    normalized = _normalize_symbol_enum(token)
+    if normalized in allowed_symbols:
+        return normalized
+
+    for symbol in allowed_symbols:
+        if normalized in symbol or symbol in normalized:
+            return symbol
+
+    color_aliases = {
+        "RED": "RED",
+        "GREEN": "GREEN",
+        "BLUE": "BLUE",
+        "YELLOW": "YELLOW",
+        "ORANGE": "ORANGE",
+        "BLACK": "BLACK",
+        "WHITE": "WHITE",
+    }
+    if normalized in color_aliases and color_aliases[normalized] in allowed_symbols:
+        return color_aliases[normalized]
+
+    return "UNKNOWN"
+
+
+def _apply_symbol_metadata(nodes: list[dict[str, Any]], symbol_enum: list[str]) -> list[dict[str, Any]]:
+    allowed = {value for value in symbol_enum if value}
+    output: list[dict[str, Any]] = []
+
+    for node in nodes:
+        metadata = node.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {"raw": metadata} if metadata is not None else {}
+
+        raw_candidates: list[Any] = []
+        for key in ("symbols", "symbol", "legend_symbol", "legend_symbols", "color", "colour"):
+            if key in metadata:
+                raw_candidates.append(metadata.get(key))
+
+        raw_symbols: list[str] = []
+        for value in raw_candidates:
+            raw_symbols.extend(_split_symbol_tokens(value))
+
+        normalized: list[str] = []
+        for token in raw_symbols:
+            symbol = _resolve_symbol_token(token, allowed) if allowed else _normalize_symbol_enum(token)
+            if symbol not in normalized:
+                normalized.append(symbol)
+
+        if not normalized and allowed:
+            normalized = ["UNKNOWN"]
+
+        if normalized:
+            metadata["symbols"] = normalized
+            metadata["primarySymbol"] = normalized[0]
+
+        node["metadata"] = metadata
+        output.append(node)
+
+    return output
+
+
 def _normalize_node(item: Any, index: int) -> dict[str, Any]:
-    def normalize_coordinate(raw: Any, *, axis: str) -> float | None:
+    def normalize_coordinate(raw: Any) -> float | None:
         try:
             value = float(raw)
         except (TypeError, ValueError):
@@ -126,8 +288,11 @@ def _normalize_node(item: Any, index: int) -> dict[str, Any]:
         node_id = str(item.get("id") or item.get("node_id") or f"N{index + 1}").strip()
         label = str(item.get("label") or item.get("name") or node_id).strip() or node_id
         node_type = item.get("type") or item.get("node_type")
-        fx = normalize_coordinate(item.get("x"), axis="x")
-        fy = normalize_coordinate(item.get("y"), axis="y")
+        raw_x = item.get("x")
+        raw_y = item.get("y")
+        fx = normalize_coordinate(raw_x)
+        fy = normalize_coordinate(raw_y)
+        coord_source = "model" if fx is not None and fy is not None else "fallback"
 
         if fx is None:
             fx = round(0.15 + ((index % 5) * 0.16), 3)
@@ -140,6 +305,7 @@ def _normalize_node(item: Any, index: int) -> dict[str, Any]:
             "x": fx,
             "y": fy,
             "type": str(node_type) if node_type else None,
+            "_coordSource": coord_source,
             "metadata": item,
         }
 
@@ -150,6 +316,7 @@ def _normalize_node(item: Any, index: int) -> dict[str, Any]:
         "x": round(0.15 + ((index % 5) * 0.16), 3),
         "y": round(0.2 + ((index // 5) * 0.18), 3),
         "type": None,
+        "_coordSource": "fallback",
         "metadata": {"raw": item},
     }
 
@@ -159,6 +326,51 @@ def _canonical_text(value: Any) -> str:
     raw = re.sub(r"\s+", " ", raw)
     raw = re.sub(r"[^a-z0-9._\- ]", "", raw)
     return raw
+
+
+def _canonical_node_id(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    return re.sub(r"[^a-z0-9]", "", raw)
+
+
+def _resolve_node_id(token: str, known_node_ids: set[str] | None) -> str:
+    resolved = str(token or "").strip()
+    if not resolved or not known_node_ids:
+        return resolved
+    if resolved in known_node_ids:
+        return resolved
+
+    canonical_token = _canonical_node_id(resolved)
+    if not canonical_token:
+        return resolved
+
+    canonical_to_actual: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    for known in known_node_ids:
+        c = _canonical_node_id(known)
+        if not c:
+            continue
+        if c in canonical_to_actual and canonical_to_actual[c] != known:
+            ambiguous.add(c)
+            continue
+        canonical_to_actual[c] = known
+
+    if canonical_token in ambiguous:
+        return resolved
+    return canonical_to_actual.get(canonical_token, resolved)
+
+
+def _coordinate_quality(node: dict[str, Any]) -> int:
+    score = 0
+    for axis in ("x", "y"):
+        try:
+            value = float(node.get(axis))
+        except (TypeError, ValueError):
+            continue
+        # Interior normalized coordinates are generally more informative than hard boundaries.
+        if 0.0 < value < 1.0:
+            score += 1
+    return score
 
 
 def _semantic_node_key(node: dict[str, Any]) -> str:
@@ -219,11 +431,11 @@ def _is_canceled_node(node: dict[str, Any]) -> bool:
             sink.append(str(value))
             return
         if isinstance(value, list):
-            for item in value[:20]:
+            for item in value:
                 collect_texts(item, sink)
             return
         if isinstance(value, dict):
-            for key, item in list(value.items())[:40]:
+            for key, item in value.items():
                 sink.append(str(key))
                 collect_texts(item, sink)
 
@@ -248,12 +460,14 @@ def _filter_edges_by_nodes(edges: list[dict[str, Any]], nodes: list[dict[str, An
     active_ids.discard("")
     filtered: list[dict[str, Any]] = []
     for edge in edges:
-        source = str(edge.get("source") or "").strip()
-        target = str(edge.get("target") or "").strip()
+        source = _resolve_node_id(str(edge.get("source") or "").strip(), active_ids)
+        target = _resolve_node_id(str(edge.get("target") or "").strip(), active_ids)
         if not source or not target:
             continue
         if source not in active_ids or target not in active_ids:
             continue
+        edge["source"] = source
+        edge["target"] = target
         filtered.append(edge)
     return filtered
 
@@ -325,8 +539,171 @@ def _normalize_edge(item: Any, index: int) -> dict[str, Any] | None:
     }
 
 
+def _extract_nodes_from_text(text: str) -> list[dict[str, Any]]:
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+
+    # First, try relaxed JSON parsing from text-like responses.
+    try:
+        parsed = GeminiGateway.parse_json_relaxed(raw)
+    except ValueError:
+        parsed = None
+    if parsed is not None and not isinstance(parsed, str):
+        return _extract_nodes(parsed)
+
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if not lines:
+        return []
+
+    if lines and lines[0].startswith("```"):
+        lines = [line for line in lines if not line.startswith("```")]
+    if not lines:
+        return []
+
+    # Markdown table fallback.
+    table_rows = [line for line in lines if line.startswith("|") and line.endswith("|")]
+    if len(table_rows) >= 2:
+        headers = [cell.strip().lower() for cell in table_rows[0].strip("|").split("|")]
+
+        def idx(names: set[str], default: int) -> int:
+            for i, cell in enumerate(headers):
+                cell_norm = re.sub(r"[^a-z0-9]", "", cell)
+                if cell_norm in names:
+                    return i
+            return default
+
+        id_idx = idx({"id", "nodeid", "node", "nodecode"}, 0)
+        label_idx = idx({"label", "name", "nodelabel", "description"}, min(1, len(headers) - 1))
+        type_idx = idx({"type", "nodetype", "category"}, -1)
+        x_idx = idx({"x", "xcoord", "xcoordinate"}, -1)
+        y_idx = idx({"y", "ycoord", "ycoordinate"}, -1)
+
+        extracted: list[dict[str, Any]] = []
+        for row in table_rows[1:]:
+            cells = [cell.strip() for cell in row.strip("|").split("|")]
+            if not cells or all(set(cell) <= {"-", ":"} for cell in cells):
+                continue
+            node_obj: dict[str, Any] = {
+                "id": cells[id_idx] if id_idx < len(cells) else "",
+                "label": cells[label_idx] if label_idx < len(cells) else "",
+            }
+            if type_idx >= 0 and type_idx < len(cells):
+                node_obj["type"] = cells[type_idx]
+            if x_idx >= 0 and x_idx < len(cells):
+                node_obj["x"] = cells[x_idx]
+            if y_idx >= 0 and y_idx < len(cells):
+                node_obj["y"] = cells[y_idx]
+            normalized = _normalize_node(node_obj, len(extracted))
+            extracted.append(normalized)
+
+        if extracted:
+            return extracted
+
+    # CSV/TSV fallback.
+    header = [part.strip().lower() for part in re.split(r",|\t|;", lines[0])]
+    id_idx = -1
+    label_idx = -1
+    type_idx = -1
+    x_idx = -1
+    y_idx = -1
+    for i, col in enumerate(header):
+        col_norm = re.sub(r"[^a-z0-9]", "", col)
+        if col_norm in {"id", "nodeid", "node", "nodecode"}:
+            id_idx = i
+        elif col_norm in {"label", "name", "nodelabel", "description"}:
+            label_idx = i
+        elif col_norm in {"type", "nodetype", "category"}:
+            type_idx = i
+        elif col_norm in {"x", "xcoord", "xcoordinate"}:
+            x_idx = i
+        elif col_norm in {"y", "ycoord", "ycoordinate"}:
+            y_idx = i
+
+    if id_idx >= 0 or label_idx >= 0:
+        extracted: list[dict[str, Any]] = []
+        for row in lines[1:]:
+            parts = [part.strip() for part in re.split(r",|\t|;", row)]
+            node_obj: dict[str, Any] = {}
+            if id_idx >= 0 and id_idx < len(parts):
+                node_obj["id"] = parts[id_idx]
+            if label_idx >= 0 and label_idx < len(parts):
+                node_obj["label"] = parts[label_idx]
+            if type_idx >= 0 and type_idx < len(parts):
+                node_obj["type"] = parts[type_idx]
+            if x_idx >= 0 and x_idx < len(parts):
+                node_obj["x"] = parts[x_idx]
+            if y_idx >= 0 and y_idx < len(parts):
+                node_obj["y"] = parts[y_idx]
+            if not node_obj:
+                continue
+            normalized = _normalize_node(node_obj, len(extracted))
+            extracted.append(normalized)
+
+        if extracted:
+            return extracted
+
+    # JSON-like fallback for partially broken model outputs.
+    # This recovers nodes when output looks like JSON but cannot be parsed strictly.
+    id_matches = list(re.finditer(r'"id"\s*:\s*"(?P<id>[^"]+)"', raw))
+    if id_matches:
+        extracted: list[dict[str, Any]] = []
+        for i, match in enumerate(id_matches):
+            start = match.start()
+            end = id_matches[i + 1].start() if i + 1 < len(id_matches) else len(raw)
+            segment = raw[start:end]
+
+            node_id = (match.group("id") or "").strip()
+            if not node_id:
+                continue
+
+            label_match = re.search(r'"label"\s*:\s*"(?P<label>[^"]*)"', segment)
+            type_match = re.search(r'"type"\s*:\s*"(?P<type>[^"]*)"', segment)
+            x_match = re.search(r'"x"\s*:\s*(?P<x>-?\d+(?:\.\d+)?)', segment)
+            y_match = re.search(r'"y"\s*:\s*(?P<y>-?\d+(?:\.\d+)?)', segment)
+
+            node_obj: dict[str, Any] = {
+                "id": node_id,
+                "label": label_match.group("label").strip() if label_match else node_id,
+            }
+            if type_match:
+                node_obj["type"] = type_match.group("type").strip()
+            if x_match:
+                node_obj["x"] = x_match.group("x")
+            if y_match:
+                node_obj["y"] = y_match.group("y")
+
+            extracted.append(_normalize_node(node_obj, len(extracted)))
+
+        if extracted:
+            return extracted
+
+    # Line-oriented fallback: "ID: label" or "ID - label".
+    extracted: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    line_pattern = re.compile(r"^(?:[-*]\s*)?(?P<id>[A-Za-z0-9._-]{2,})\s*(?::|-|->)\s*(?P<label>.+)$")
+    for line in lines:
+        if line.startswith("#"):
+            continue
+        match = line_pattern.match(line)
+        if not match:
+            continue
+        node_id = (match.group("id") or "").strip()
+        if not node_id or node_id in seen_ids:
+            continue
+        seen_ids.add(node_id)
+        label = (match.group("label") or "").strip() or node_id
+        normalized = _normalize_node({"id": node_id, "label": label}, len(extracted))
+        extracted.append(normalized)
+
+    return extracted
+
+
 def _extract_nodes(payload: Any) -> list[dict[str, Any]]:
     candidates: list[Any] = []
+    if isinstance(payload, str):
+        return _extract_nodes_from_text(payload)
+
     if isinstance(payload, dict):
         primary = payload.get("nodes") or payload.get("vertices") or payload.get("items")
         if isinstance(primary, list):
@@ -358,6 +735,60 @@ def _extract_nodes(payload: Any) -> list[dict[str, Any]]:
     for i, item in enumerate(candidates):
         normalized.append(_normalize_node(item, i))
     return normalized
+
+
+def _merge_stage4_completion(
+    stage2_nodes: list[dict[str, Any]],
+    stage4_nodes: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int, int]:
+    # Stage 4 enriches metadata/text only; Stage 2 remains authoritative for geometry and ID set.
+    stage2_ids = {str(node.get("id") or "").strip() for node in stage2_nodes}
+    stage2_ids.discard("")
+
+    stage4_by_id: dict[str, dict[str, Any]] = {}
+    ignored_non_stage2 = 0
+    for node in stage4_nodes:
+        node_id = str(node.get("id") or "").strip()
+        if not node_id:
+            continue
+        if node_id not in stage2_ids:
+            ignored_non_stage2 += 1
+            continue
+        stage4_by_id[node_id] = node
+
+    merged: list[dict[str, Any]] = []
+    matched = 0
+    for stage2_node in stage2_nodes:
+        node = dict(stage2_node)
+        node_id = str(node.get("id") or "").strip()
+        incoming = stage4_by_id.get(node_id)
+        if not incoming:
+            merged.append(node)
+            continue
+
+        matched += 1
+        incoming_label = str(incoming.get("label") or "").strip()
+        if incoming_label:
+            node["label"] = incoming_label
+
+        incoming_type = incoming.get("type")
+        if incoming_type is not None:
+            node["type"] = incoming_type
+
+        base_meta = node.get("metadata")
+        if not isinstance(base_meta, dict):
+            base_meta = {"raw": base_meta} if base_meta is not None else {}
+
+        incoming_meta = incoming.get("metadata")
+        if isinstance(incoming_meta, dict):
+            for key, value in incoming_meta.items():
+                base_meta[key] = value
+
+        node["metadata"] = base_meta
+        merged.append(node)
+
+    unmatched = ignored_non_stage2
+    return merged, matched, unmatched
 
 
 def _extract_edges_from_text(text: str, known_node_ids: set[str] | None = None) -> list[dict[str, Any]]:
@@ -427,7 +858,49 @@ def _extract_edges_from_text(text: str, known_node_ids: set[str] | None = None) 
         if extracted:
             return extracted
 
-    # 3) Arrow fallback: A -> B (cost=...)
+    # 3) JSON-like fallback for partially truncated model outputs.
+    # Example: '{"edges": [{"source": "A", "target": "B", ...}, ...' cut before final closing tokens.
+    source_matches = list(re.finditer(r'"source"\s*:\s*"(?P<source>[^"]+)"', text))
+    if source_matches:
+        recovered: list[dict[str, Any]] = []
+        for i, match in enumerate(source_matches):
+            start = match.start()
+            end = source_matches[i + 1].start() if i + 1 < len(source_matches) else len(text)
+            segment = text[start:end]
+
+            source = (match.group("source") or "").strip()
+            target_match = re.search(r'"target"\s*:\s*"(?P<target>[^"]+)"', segment)
+            if not source or not target_match:
+                continue
+            target = (target_match.group("target") or "").strip()
+
+            source_resolved = _resolve_node_id(source, known_node_ids)
+            target_resolved = _resolve_node_id(target, known_node_ids)
+            if known_node_ids and (source_resolved not in known_node_ids or target_resolved not in known_node_ids):
+                continue
+
+            edge_obj: dict[str, Any] = {
+                "id": f"E{i + 1}",
+                "source": source_resolved,
+                "target": target_resolved,
+            }
+
+            cost_match = re.search(r'"approximate_cost"\s*:\s*(?P<cost>-?\d+(?:\.\d+)?)', segment)
+            if cost_match:
+                edge_obj["approximate_cost"] = cost_match.group("cost")
+
+            label_match = re.search(r'"label"\s*:\s*"(?P<label>[^"]*)"', segment)
+            if label_match:
+                edge_obj["label"] = label_match.group("label").strip() or "path"
+
+            normalized = _normalize_edge(edge_obj, i)
+            if normalized:
+                recovered.append(normalized)
+
+        if recovered:
+            return recovered
+
+    # 4) Arrow fallback: A -> B (cost=...)
     arrow_pattern = re.compile(
         r"(?P<src>[A-Za-z0-9._-]+)\s*(?:->|→|=>|to)\s*(?P<tgt>[A-Za-z0-9._-]+)(?:[^\n]*?(?P<cost>\d+(?:\.\d+)?))?",
         flags=re.IGNORECASE,
@@ -439,10 +912,12 @@ def _extract_edges_from_text(text: str, known_node_ids: set[str] | None = None) 
             continue
         src = match.group("src")
         tgt = match.group("tgt")
-        if known_node_ids and (src not in known_node_ids or tgt not in known_node_ids):
+        src_resolved = _resolve_node_id(src, known_node_ids)
+        tgt_resolved = _resolve_node_id(tgt, known_node_ids)
+        if known_node_ids and (src_resolved not in known_node_ids or tgt_resolved not in known_node_ids):
             # Keep strict when we know expected node IDs to reduce hallucinated edges.
             continue
-        edge_obj: dict[str, Any] = {"id": f"E{line_no}", "source": src, "target": tgt}
+        edge_obj: dict[str, Any] = {"id": f"E{line_no}", "source": src_resolved, "target": tgt_resolved}
         if match.group("cost"):
             edge_obj["approximate_cost"] = match.group("cost")
         normalized = _normalize_edge(edge_obj, line_no - 1)
@@ -451,13 +926,17 @@ def _extract_edges_from_text(text: str, known_node_ids: set[str] | None = None) 
     if extracted:
         return extracted
 
-    # 4) Last resort: if line mentions exactly two known nodes, infer an edge.
+    # 5) Last resort: if line mentions exactly two known nodes, infer an edge.
     if known_node_ids:
         node_pattern = re.compile(r"[A-Za-z0-9._-]+")
         inferred: list[dict[str, Any]] = []
         for line_no, row in enumerate(lines, start=1):
             tokens = node_pattern.findall(row)
-            hits = [token for token in tokens if token in known_node_ids]
+            hits: list[str] = []
+            for token in tokens:
+                resolved = _resolve_node_id(token, known_node_ids)
+                if resolved in known_node_ids:
+                    hits.append(resolved)
             if len(hits) < 2:
                 continue
             src, tgt = hits[0], hits[1]
@@ -491,6 +970,9 @@ def _extract_edges(payload: Any, known_node_ids: set[str] | None = None) -> list
     for i, item in enumerate(candidates):
         normalized = _normalize_edge(item, i)
         if normalized:
+            if known_node_ids:
+                normalized["source"] = _resolve_node_id(str(normalized.get("source") or "").strip(), known_node_ids)
+                normalized["target"] = _resolve_node_id(str(normalized.get("target") or "").strip(), known_node_ids)
             result.append(normalized)
     return result
 
@@ -522,6 +1004,19 @@ def _merge_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
             existing["label"] = node["label"]
         if existing.get("type") is None and node.get("type") is not None:
             existing["type"] = node["type"]
+
+        # Upgrade coordinates when a later model-derived coordinate arrives.
+        existing_source = str(existing.get("_coordSource") or "")
+        incoming_source = str(node.get("_coordSource") or "")
+        if existing_source != "model" and incoming_source == "model":
+            existing["x"] = node.get("x")
+            existing["y"] = node.get("y")
+            existing["_coordSource"] = "model"
+        elif existing_source == "model" and incoming_source == "model":
+            if _coordinate_quality(node) > _coordinate_quality(existing):
+                existing["x"] = node.get("x")
+                existing["y"] = node.get("y")
+                existing["_coordSource"] = "model"
 
         existing_meta = existing.get("metadata")
         next_meta = node.get("metadata")
@@ -571,6 +1066,61 @@ def _estimate_cost_usd(
     }
 
 
+def _usage_snapshot(
+    *,
+    model_name: str,
+    token_usage: dict[str, int],
+) -> dict[str, Any]:
+    prompt_tokens = int(token_usage.get("prompt_tokens", 0))
+    output_tokens = int(token_usage.get("output_tokens", 0))
+    total_tokens = prompt_tokens + output_tokens
+    provider_total_tokens = int(token_usage.get("provider_total_tokens", 0))
+    hidden_tokens = int(token_usage.get("hidden_tokens", 0))
+    call_count = int(token_usage.get("call_count", 0))
+
+    estimate = _estimate_cost_usd(
+        model_name=model_name,
+        prompt_tokens=prompt_tokens,
+        output_tokens=output_tokens,
+    )
+    return {
+        "tokenUsage": {
+            "promptTokens": prompt_tokens,
+            "outputTokens": output_tokens,
+            "totalTokens": total_tokens,
+            "providerTotalTokens": provider_total_tokens,
+            "hiddenTokens": hidden_tokens,
+            "callCount": call_count,
+        },
+        "costEstimate": {
+            "currency": "USD",
+            "estimatedCost": estimate.get("estimated"),
+            "source": estimate.get("source"),
+        },
+    }
+
+
+def _emit_stage_with_usage(
+    *,
+    job: JobRecord,
+    stage: str,
+    message: str,
+    model_name: str,
+    token_usage: dict[str, int],
+) -> None:
+    usage = _usage_snapshot(model_name=model_name, token_usage=token_usage)
+    emit_job_event(
+        job,
+        "stage",
+        {
+            "stage": stage,
+            "message": message,
+            "tokenUsage": usage["tokenUsage"],
+            "costEstimate": usage["costEstimate"],
+        },
+    )
+
+
 def _merge_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
     merged: dict[str, dict[str, Any]] = {}
     next_index = 1
@@ -618,9 +1168,11 @@ def _make_part(file_data: dict[str, Any]) -> Part:
 def _run_stage_json(
     gateway: GeminiGateway,
     *,
+    stage_name: str,
     base_prompt: str,
     extra_context: str,
     parts: list[Part] | None,
+    response_schema: dict[str, Any] | None,
     usage_totals: dict[str, int],
 ) -> Any:
     prompt_payload = f"{base_prompt}\n\n{extra_context}"
@@ -629,21 +1181,35 @@ def _run_stage_json(
         prompt_payload,
         parts=parts,
         response_json=True,
+        response_schema=response_schema,
         usage_collector=usage_totals,
     ).strip()
 
-    # Defensive fallback: ensure cumulative counters advance even if SDK usage metadata is unavailable.
-    if int(usage_totals.get("call_count", 0)) <= before_calls:
-        prompt_est = max(1, len(prompt_payload) // 4)
-        output_est = max(0, len(raw) // 4)
-        usage_totals["prompt_tokens"] = int(usage_totals.get("prompt_tokens", 0)) + prompt_est
-        usage_totals["output_tokens"] = int(usage_totals.get("output_tokens", 0)) + output_est
-        usage_totals["total_tokens"] = int(usage_totals.get("total_tokens", 0)) + prompt_est + output_est
-        usage_totals["call_count"] = before_calls + 1
+    ensure_usage_progress(
+        usage_totals=usage_totals,
+        before_calls=before_calls,
+        prompt_payload=prompt_payload,
+        raw=raw,
+    )
 
     if not raw:
         return {}
-    return GeminiGateway.parse_json_relaxed(raw)
+    try:
+        return GeminiGateway.parse_json_relaxed(raw)
+    except ValueError:
+        truncated_likely = (raw.count("{") > raw.count("}")) or (raw.count("[") > raw.count("]"))
+        logger.warning(
+            "[map_extract][worker] json parse fallback stage=%s model=%s promptState={basePromptChars:%s,extraContextChars:%s,partsCount:%s,rawChars:%s,truncatedLikely:%s} snippet=%s",
+            stage_name,
+            gateway.model_name,
+            len(base_prompt),
+            len(extra_context),
+            len(parts or []),
+            len(raw),
+            truncated_likely,
+            raw,
+        )
+        return raw
 
 
 def _run_stage_text(
@@ -663,14 +1229,12 @@ def _run_stage_text(
         usage_collector=usage_totals,
     ).strip()
 
-    # Defensive fallback: ensure cumulative counters advance even if SDK usage metadata is unavailable.
-    if int(usage_totals.get("call_count", 0)) <= before_calls:
-        prompt_est = max(1, len(prompt_payload) // 4)
-        output_est = max(0, len(raw) // 4)
-        usage_totals["prompt_tokens"] = int(usage_totals.get("prompt_tokens", 0)) + prompt_est
-        usage_totals["output_tokens"] = int(usage_totals.get("output_tokens", 0)) + output_est
-        usage_totals["total_tokens"] = int(usage_totals.get("total_tokens", 0)) + prompt_est + output_est
-        usage_totals["call_count"] = before_calls + 1
+    ensure_usage_progress(
+        usage_totals=usage_totals,
+        before_calls=before_calls,
+        prompt_payload=prompt_payload,
+        raw=raw,
+    )
 
     return raw
 
@@ -684,23 +1248,34 @@ def _to_graph(
     nodes: list[dict[str, Any]],
     edges: list[dict[str, Any]],
     symbol_markdown: str,
+    symbol_legend: list[dict[str, str]],
+    symbol_enum: list[str],
     tabular_csv: str,
     token_usage: dict[str, int],
     estimated_cost: dict[str, Any],
 ) -> dict[str, Any]:
-    existing_ids = {node["id"] for node in nodes}
+    clean_nodes: list[dict[str, Any]] = []
+    for node in nodes:
+        cleaned = dict(node)
+        cleaned.pop("_coordSource", None)
+        clean_nodes.append(cleaned)
+
+    existing_ids = {node["id"] for node in clean_nodes}
     for edge in edges:
         if edge["source"] not in existing_ids:
-            nodes.append(_normalize_node({"id": edge["source"], "label": edge["source"]}, len(nodes)))
+            clean_nodes.append(_normalize_node({"id": edge["source"], "label": edge["source"]}, len(clean_nodes)))
             existing_ids.add(edge["source"])
         if edge["target"] not in existing_ids:
-            nodes.append(_normalize_node({"id": edge["target"], "label": edge["target"]}, len(nodes)))
+            clean_nodes.append(_normalize_node({"id": edge["target"], "label": edge["target"]}, len(clean_nodes)))
             existing_ids.add(edge["target"])
+
+    for node in clean_nodes:
+        node.pop("_coordSource", None)
 
     return {
         "jobId": job.job_id,
         "graph": {
-            "vertices": nodes,
+            "vertices": clean_nodes,
             "edges": edges,
             "metadata": {
                 "pipeline": "map_extract",
@@ -712,7 +1287,10 @@ def _to_graph(
                 "tokenUsage": {
                     "promptTokens": int(token_usage.get("prompt_tokens", 0)),
                     "outputTokens": int(token_usage.get("output_tokens", 0)),
-                    "totalTokens": int(token_usage.get("total_tokens", 0)),
+                    "totalTokens": int(token_usage.get("prompt_tokens", 0))
+                    + int(token_usage.get("output_tokens", 0)),
+                    "providerTotalTokens": int(token_usage.get("provider_total_tokens", 0)),
+                    "hiddenTokens": int(token_usage.get("hidden_tokens", 0)),
                     "callCount": int(token_usage.get("call_count", 0)),
                 },
                 "costEstimate": {
@@ -723,8 +1301,10 @@ def _to_graph(
                     "source": estimated_cost.get("source"),
                     "note": "Rough estimate from configured rates (env) or model-family defaults.",
                 },
-                "extractmapSymbol": symbol_markdown[:4000],
-                "tabularExtractionCsv": tabular_csv[:4000],
+                "extractmapSymbol": symbol_markdown,
+                "symbolLegend": symbol_legend,
+                "symbolEnum": symbol_enum,
+                "tabularExtractionCsv": tabular_csv,
                 "note": "Generated from map_extarct.json staged extraction.",
             },
         },
@@ -786,14 +1366,11 @@ def run_map_extract_worker(
         exclusion_policy_text = _config_text(config, "extractmap_text_exclusion_policy")
         compact_output_policy = _config_text(config, "compact_output_policy")
         symbol_output_hint = _config_text(config, "extractmap_symbol_output_hint")
+        symbol_usage_policy = _config_text(config, "extractmap_text_symbol_usage_policy")
         tabular_output_hint = _config_text(config, "tabular_extraction_output_hint")
         tabular_no_support_hint = _config_text(config, "tabular_extraction_no_support_hint")
-        support_joint_prompt = _config_text(config, "extractmap_text_support_joint_prompt")
-        support_fallback_prompt = _config_text(config, "extractmap_text_support_fallback_prompt")
-        support_delta_prompt = _config_text(config, "extractmap_text_support_delta_prompt")
         normalize_prompt = _config_text(config, "extractmap_text_normalize_prompt")
         normalize_context = _config_text(config, "extractmap_text_normalize_context")
-        support_delta_context = _config_text(config, "extractmap_text_support_delta_context")
         edge_schema_text = _config_text(config, "edge_extraction_json_schema")
         edge_dedup_policy = _config_text(config, "edge_extraction_dedup_policy")
         edge_csv_fallback_hint = _config_text(config, "edge_extraction_csv_fallback_hint")
@@ -825,13 +1402,12 @@ def run_map_extract_worker(
             for idx, file_data in enumerate(support_files)
         ]
 
-        emit_job_event(
-            job,
-            "stage",
-            {
-                "stage": "map_extract/extractmap_symbol",
-                "message": "Extracting map symbols and notations.",
-            },
+        _emit_stage_with_usage(
+            job=job,
+            stage="map_extract/extractmap_symbol",
+            message="Extracting map symbols and notations.",
+            model_name=model_name,
+            token_usage=usage_totals,
         )
         symbol_started = _stage_begin(job.job_id, "extractmap_symbol")
         symbol_chunks: list[str] = []
@@ -851,71 +1427,114 @@ def run_map_extract_worker(
                 symbol_chunks.append(f"## {map_name}\n{chunk}")
 
         symbol_markdown = "\n\n".join(symbol_chunks)
+        symbol_legend = _extract_symbol_legend(symbol_markdown)
+        symbol_enum = [entry["symbol"] for entry in symbol_legend if entry.get("symbol")]
+        symbol_context_payload = json.dumps(
+            {
+                "symbolEnum": symbol_enum,
+                "symbolLegend": symbol_legend,
+            },
+            ensure_ascii=False,
+        )
         _stage_end(job.job_id, "extractmap_symbol", symbol_started, markdownLen=len(symbol_markdown))
 
-        emit_job_event(
-            job,
-            "stage",
-            {
-                "stage": "map_extract/extractmap_text",
-                "message": "Extracting nodes and metadata from map with static buffer trait table.",
-            },
+        _emit_stage_with_usage(
+            job=job,
+            stage="map_extract/extractmap_text",
+            message="Extracting nodes and metadata from map with static buffer trait table.",
+            model_name=model_name,
+            token_usage=usage_totals,
         )
         node_started = _stage_begin(job.job_id, "extractmap_text")
         all_nodes: list[dict[str, Any]] = []
         node_payload_types: list[str] = []
 
         if support_parts:
+            total_maps = len(map_parts)
+            total_support = len(support_parts)
             for map_name, map_part in map_parts:
                 for support_name, support_part in support_parts:
                     nodes_payload = _run_stage_json(
                         stage_gateway("extractmap_text"),
+                        stage_name="map_extract/extractmap_text",
                         base_prompt=str(config["extractmap_text"].get("prompt") or ""),
                         extra_context=(
                             f"{node_schema_text}\n\n"
                             f"{dedup_policy_text}\n"
                             f"{exclusion_policy_text}\n"
+                            f"{symbol_usage_policy}\n"
                             f"{compact_output_policy}\n"
                             f"incomplete_json={{\"nodes\": []}}\n"
                             f"buffer_trait_table={trait_table_raw}\n"
+                            f"symbol_legend_json={symbol_context_payload}\n"
                             f"overviewAdditionalInformation={overview_additional_information}\n"
                             f"binAdditionalInformation={support_additional_information}\n"
-                            f"extractmap_symbol_markdown={symbol_markdown[:3000]}\n"
+                            f"extractmap_symbol_markdown={symbol_markdown}\n"
                             f"source_map={map_name}\n"
                             f"source_bin_data={support_name}"
                         ),
                         parts=[map_part, support_part],
+                        response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
                         usage_totals=usage_totals,
                     )
                     all_nodes.extend(_extract_nodes(nodes_payload))
                     node_payload_types.append(type(nodes_payload).__name__)
+                    _emit_stage_with_usage(
+                        job=job,
+                        stage="map_extract/extractmap_text",
+                        message=(
+                            f"Processed map '{map_name}' with support '{support_name}' "
+                            f"({len(node_payload_types)}/{total_maps * total_support})."
+                        ),
+                        model_name=model_name,
+                        token_usage=usage_totals,
+                    )
         else:
+            total_maps = len(map_parts)
             for map_name, map_part in map_parts:
                 nodes_payload = _run_stage_json(
                     stage_gateway("extractmap_text"),
+                    stage_name="map_extract/extractmap_text",
                     base_prompt=str(config["extractmap_text"].get("prompt") or ""),
                     extra_context=(
                         f"{node_schema_text}\n\n"
                         f"{dedup_policy_text}\n"
                         f"{exclusion_policy_text}\n"
+                        f"{symbol_usage_policy}\n"
                         f"{compact_output_policy}\n"
                         f"incomplete_json={{\"nodes\": []}}\n"
                         f"buffer_trait_table={trait_table_raw}\n"
+                        f"symbol_legend_json={symbol_context_payload}\n"
                         f"overviewAdditionalInformation={overview_additional_information}\n"
                         f"binAdditionalInformation={support_additional_information}\n"
-                        f"extractmap_symbol_markdown={symbol_markdown[:3000]}\n"
+                        f"extractmap_symbol_markdown={symbol_markdown}\n"
                         f"source_map={map_name}"
                     ),
                     parts=[map_part],
+                    response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
                     usage_totals=usage_totals,
                 )
                 all_nodes.extend(_extract_nodes(nodes_payload))
                 node_payload_types.append(type(nodes_payload).__name__)
+                _emit_stage_with_usage(
+                    job=job,
+                    stage="map_extract/extractmap_text",
+                    message=(
+                        f"Processed map '{map_name}' "
+                        f"({len(node_payload_types)}/{total_maps})."
+                    ),
+                    model_name=model_name,
+                    token_usage=usage_totals,
+                )
 
         nodes = _merge_nodes(_filter_active_nodes(all_nodes))
+        nodes = _apply_symbol_metadata(nodes, symbol_enum)
 
-        if not nodes:
-            nodes = [_normalize_node({"id": "N1", "label": "Map Root", "type": "Map"}, 0)]
+        if len(nodes) < 2:
+            raise ValueError(
+                "map_extract failed: insufficient nodes extracted in stage 2 "
+                f"(nodeCount={len(nodes)}, payloadTypes={node_payload_types})."
+            )
 
         _stage_end(
             job.job_id,
@@ -925,24 +1544,33 @@ def run_map_extract_worker(
             payloadTypes=node_payload_types,
         )
 
-        emit_job_event(
-            job,
-            "stage",
-            {
-                "stage": "map_extract/tabular_extraction",
-                "message": "Extracting tabular data from support images/PDFs.",
-            },
+        _emit_stage_with_usage(
+            job=job,
+            stage="map_extract/tabular_extraction",
+            message="Extracting tabular data from support images/PDFs.",
+            model_name=model_name,
+            token_usage=usage_totals,
         )
         table_started = _stage_begin(job.job_id, "tabular_extraction")
         csv_chunks: list[str] = []
         if support_parts:
-            for support_name, support_part in support_parts:
+            total_support = len(support_parts)
+            for support_idx, (support_name, support_part) in enumerate(support_parts, start=1):
+                emit_job_event(
+                    job,
+                    "stage",
+                    {
+                        "stage": "map_extract/tabular_extraction",
+                        "message": f"Processing support file {support_idx}/{total_support}: {support_name}",
+                    },
+                )
                 csv_text = _run_stage_text(
                     stage_gateway("tabular_extraction"),
                     base_prompt=str(config["tabular_extraction"].get("prompt") or ""),
                     extra_context=(
                         f"{tabular_output_hint}\n"
                         f"{compact_output_policy}\n"
+                        f"prior_table={trait_table_raw}\n"
                         "Process only the provided single artifact.\n"
                         f"source_artifact={support_name}"
                     ),
@@ -951,6 +1579,13 @@ def run_map_extract_worker(
                 )
                 if csv_text:
                     csv_chunks.append(f"# {support_name}\n{csv_text}")
+                _emit_stage_with_usage(
+                    job=job,
+                    stage="map_extract/tabular_extraction",
+                    message=f"Processed support file {support_idx}/{total_support}: {support_name}",
+                    model_name=model_name,
+                    token_usage=usage_totals,
+                )
         else:
             first_map_name, first_map_part = map_parts[0]
             csv_text = _run_stage_text(
@@ -959,7 +1594,9 @@ def run_map_extract_worker(
                 extra_context=(
                     f"{tabular_output_hint}\n"
                     f"{compact_output_policy}\n"
+                    f"prior_table={trait_table_raw}\n"
                     f"{tabular_no_support_hint}\n"
+                    f"map_ocr_text_context={overview_additional_information}\n"
                     f"source_map={first_map_name}"
                 ),
                 parts=[first_map_part],
@@ -967,145 +1604,93 @@ def run_map_extract_worker(
             )
             if csv_text:
                 csv_chunks.append(f"# {first_map_name}\n{csv_text}")
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/tabular_extraction",
+                message=f"Processed map-derived tabular extraction for: {first_map_name}",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
 
         tabular_csv = "\n\n".join(csv_chunks)
+        # Keep full stage-3 output for stage-4 merging; do not truncate context.
+        stage4_tabular_csv_context = "\n\n".join(csv_chunks)
 
-        # LLM-based enrichment from support/bin artifacts to capture bin series (e.g., L.*) robustly.
-        support_enriched_nodes: list[dict[str, Any]] = []
-        if support_parts:
-            reference_map_name, reference_map_part = map_parts[0]
-            for support_name, support_part in support_parts:
-                support_nodes_payload = _run_stage_json(
-                    stage_gateway("extractmap_text"),
-                    base_prompt=support_joint_prompt,
-                    extra_context=(
-                        f"{node_schema_text}\n\n"
-                        f"{dedup_policy_text}\n"
-                        f"{exclusion_policy_text}\n"
-                        f"{compact_output_policy}\n"
-                        f"reference_map={reference_map_name}\n"
-                        f"support_artifact={support_name}\n"
-                        "Use support artifact for detailed bin data and map for placement/context.\n"
-                        f"existing_nodes={json.dumps({'nodes': nodes}, ensure_ascii=False)[:6000]}\n"
-                        f"extractmap_symbol_markdown={symbol_markdown[:3000]}\n"
-                        f"tabular_extraction_csv={tabular_csv[:5000]}"
-                    ),
-                    parts=[reference_map_part, support_part],
-                    usage_totals=usage_totals,
-                )
+        # Stage 4: always let Gemini map stage-3 text into the stage-2 JSON.
+        _emit_stage_with_usage(
+            job=job,
+            stage="map_extract/support_enrichment",
+            message="Applying Gemini mapping from stage-3 outputs into stage-2 nodes.",
+            model_name=model_name,
+            token_usage=usage_totals,
+        )
+        merged_payload = _run_stage_json(
+            stage_gateway("extractmap_text"),
+            stage_name="map_extract/support_enrichment",
+            base_prompt=normalize_prompt,
+            extra_context=(
+                f"{normalize_context}\n"
+                f"{node_schema_text}\n"
+                f"{dedup_policy_text}\n"
+                f"{exclusion_policy_text}\n"
+                f"{symbol_usage_policy}\n"
+                f"{compact_output_policy}\n"
+                "CRITICAL: existing_nodes is the stage-2 seed JSON. Complete/fill it from source_text. "
+                "Do not invent map-root placeholders. Keep existing IDs.\n"
+                f"symbol_legend_json={symbol_context_payload}\n"
+                f"existing_nodes={json.dumps({'nodes': nodes}, ensure_ascii=False)}\n"
+                f"extractmap_symbol_markdown={symbol_markdown}\n"
+                f"source_text={stage4_tabular_csv_context}"
+            ),
+            parts=None,
+            response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
+            usage_totals=usage_totals,
+        )
+        support_enriched_nodes = _extract_nodes(merged_payload)
+        nodes, matched_count, ignored_non_stage2_count = _merge_stage4_completion(nodes, support_enriched_nodes)
+        nodes = _apply_symbol_metadata(nodes, symbol_enum)
+        _emit_stage_with_usage(
+            job=job,
+            stage="map_extract/support_enrichment",
+            message=(
+                f"Gemini completion merged into stage-2 nodes: "
+                f"matched={matched_count}, ignoredNonStage2={ignored_non_stage2_count}."
+            ),
+            model_name=model_name,
+            token_usage=usage_totals,
+        )
+        logger.info(
+            "[map_extract][worker] support enrichment mapped jobId=%s supportNodeCount=%s matched=%s ignoredNonStage2=%s finalNodeCount=%s",
+            job.job_id,
+            len(support_enriched_nodes),
+            matched_count,
+            ignored_non_stage2_count,
+            len(nodes),
+        )
 
-                extracted_from_support = _extract_nodes(support_nodes_payload)
-
-                if not extracted_from_support:
-                    # LLM normalization fallback for non-conforming JSON.
-                    support_nodes_text = _run_stage_text(
-                        stage_gateway("extractmap_text"),
-                        base_prompt=support_fallback_prompt,
-                        extra_context=(
-                            f"{exclusion_policy_text}\n"
-                            f"{dedup_policy_text}\n"
-                            f"{compact_output_policy}\n"
-                            f"support_artifact={support_name}\n"
-                            f"tabular_extraction_csv={tabular_csv[:5000]}\n"
-                            f"extractmap_symbol_markdown={symbol_markdown[:3000]}\n"
-                            f"existing_nodes={json.dumps({'nodes': nodes}, ensure_ascii=False)[:5000]}"
-                        ),
-                        parts=[support_part],
-                        usage_totals=usage_totals,
-                    )
-
-                    normalized_payload = _run_stage_json(
-                        stage_gateway("extractmap_text"),
-                        base_prompt=normalize_prompt,
-                        extra_context=(
-                            f"{normalize_context}\n"
-                            f"{exclusion_policy_text}\n"
-                            f"{dedup_policy_text}\n"
-                            f"{compact_output_policy}\n"
-                            f"source_text={support_nodes_text[:7000]}"
-                        ),
-                        parts=None,
-                        usage_totals=usage_totals,
-                    )
-                    extracted_from_support = _extract_nodes(normalized_payload)
-
-                if not extracted_from_support:
-                    # Final coercion: if model returned a single dict-like node, wrap it.
-                    if isinstance(support_nodes_payload, dict):
-                        support_nodes_payload = {"nodes": [support_nodes_payload]}
-                    extracted_from_support = _extract_nodes(support_nodes_payload)
-
-                logger.info(
-                    "[map_extract][worker] support artifact extraction jobId=%s support=%s extractedNodeCount=%s",
-                    job.job_id,
-                    support_name,
-                    len(extracted_from_support),
-                )
-
-                support_enriched_nodes.extend(extracted_from_support)
-
-                # Keep merged context updated so later support files can enrich missing fields.
-                if extracted_from_support:
-                    nodes = _merge_nodes(_filter_active_nodes([*nodes, *extracted_from_support]))
-
-                # Backward-compatible text extraction path retained for noisy artifacts.
-                support_nodes_text = _run_stage_text(
-                    stage_gateway("extractmap_text"),
-                    base_prompt=support_delta_prompt,
-                    extra_context=(
-                        f"{support_delta_context}\n"
-                        f"{compact_output_policy}\n"
-                        f"support_artifact={support_name}\n"
-                        f"existing_nodes={json.dumps({'nodes': nodes}, ensure_ascii=False)[:6000]}"
-                    ),
-                    parts=[support_part],
-                    usage_totals=usage_totals,
-                )
-
-                if support_nodes_text.strip():
-                    normalized_payload = _run_stage_json(
-                        stage_gateway("extractmap_text"),
-                        base_prompt=normalize_prompt,
-                        extra_context=(
-                            f"{normalize_context}\n"
-                            f"{exclusion_policy_text}\n"
-                            f"{dedup_policy_text}\n"
-                            f"{compact_output_policy}\n"
-                            f"source_text={support_nodes_text[:7000]}"
-                        ),
-                        parts=None,
-                        usage_totals=usage_totals,
-                    )
-                    text_nodes = _extract_nodes(normalized_payload)
-                    if text_nodes:
-                        support_enriched_nodes.extend(text_nodes)
-                        nodes = _merge_nodes(_filter_active_nodes([*nodes, *text_nodes]))
-
-        if support_enriched_nodes:
-            nodes = _merge_nodes(_filter_active_nodes([*nodes, *support_enriched_nodes]))
-            logger.info(
-                "[map_extract][worker] support node enrichment jobId=%s supportNodeCount=%s mergedNodeCount=%s",
-                job.job_id,
-                len(support_enriched_nodes),
-                len(nodes),
+        if len(nodes) < 2:
+            raise ValueError(
+                "map_extract failed: insufficient nodes after stage 4 enrichment "
+                f"(nodeCount={len(nodes)})."
             )
 
         _stage_end(job.job_id, "tabular_extraction", table_started, csvLen=len(tabular_csv))
 
-        emit_job_event(
-            job,
-            "stage",
-            {
-                "stage": "map_extract/edge_extraction",
-                "message": "Generating traversal edges with approximate costs.",
-            },
+        _emit_stage_with_usage(
+            job=job,
+            stage="map_extract/edge_extraction",
+            message="Generating traversal edges with approximate costs.",
+            model_name=model_name,
+            token_usage=usage_totals,
         )
         edge_started = _stage_begin(job.job_id, "edge_extraction")
         all_edges: list[dict[str, Any]] = []
         edge_payload_types: list[str] = []
-        for map_name, map_part in map_parts:
-            edge_raw_text = _run_stage_text(
+        total_maps_for_edge = len(map_parts)
+        for edge_index, (map_name, map_part) in enumerate(map_parts, start=1):
+            edges_payload = _run_stage_json(
                 stage_gateway("edge_extraction"),
+                stage_name="map_extract/edge_extraction",
                 base_prompt=str(config["edge_extraction"].get("prompt") or ""),
                 extra_context=(
                     f"{edge_schema_text}\n\n"
@@ -1114,19 +1699,22 @@ def run_map_extract_worker(
                     f"{edge_csv_fallback_hint}\n"
                     f"source_map={map_name}\n"
                     f"extracted_node_json={json.dumps({'nodes': nodes}, ensure_ascii=False)}\n"
-                    f"tabular_extraction_csv={tabular_csv[:3000]}"
+                    f"tabular_extraction_csv={tabular_csv}"
                 ),
                 parts=[map_part],
+                response_schema=MAP_EXTRACT_EDGE_RESPONSE_SCHEMA,
                 usage_totals=usage_totals,
             )
 
-            try:
-                edges_payload: Any = GeminiGateway.parse_json_relaxed(edge_raw_text)
-            except ValueError:
-                edges_payload = edge_raw_text
-
             all_edges.extend(_extract_edges(edges_payload, {node["id"] for node in nodes}))
             edge_payload_types.append(type(edges_payload).__name__)
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/edge_extraction",
+                message=f"Processed edge extraction for map {edge_index}/{total_maps_for_edge}: {map_name}",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
 
         edges = _merge_edges(all_edges)
         edges = _filter_edges_by_nodes(edges, nodes)
@@ -1139,13 +1727,12 @@ def run_map_extract_worker(
             payloadTypes=edge_payload_types,
         )
 
-        emit_job_event(
-            job,
-            "stage",
-            {
-                "stage": "map_extract/finalize_graph",
-                "message": "Building final graph payload from extracted nodes and edges.",
-            },
+        _emit_stage_with_usage(
+            job=job,
+            stage="map_extract/finalize_graph",
+            message="Building final graph payload from extracted nodes and edges.",
+            model_name=model_name,
+            token_usage=usage_totals,
         )
         finalize_started = _stage_begin(job.job_id, "finalize_graph")
 
@@ -1163,6 +1750,8 @@ def run_map_extract_worker(
             nodes=nodes,
             edges=edges,
             symbol_markdown=symbol_markdown,
+            symbol_legend=symbol_legend,
+            symbol_enum=symbol_enum,
             tabular_csv=tabular_csv,
             token_usage=usage_totals,
             estimated_cost=cost_estimate,

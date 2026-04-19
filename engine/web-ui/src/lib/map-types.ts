@@ -21,6 +21,14 @@ export type MapGraphMeta = {
   coordinateSystem?: "pixel" | "normalized";
   width?: number;
   height?: number;
+  symbolLegend?: Array<{
+    symbol?: string;
+    notation?: string;
+    description?: string;
+    color?: string;
+  }>;
+  symbolEnum?: string[];
+  extractmapSymbol?: string;
   tokenUsage?: {
     promptTokens?: number;
     outputTokens?: number;
@@ -70,6 +78,17 @@ export type MapExtractionJobStatus = {
   status: "queued" | "running" | "completed" | "failed" | string;
   currentStage?: string | null;
   stageMessage?: string;
+  tokenUsage?: {
+    promptTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    callCount?: number;
+  };
+  costEstimate?: {
+    currency?: string;
+    estimatedCost?: number | null;
+    source?: string;
+  };
   error?: string | null;
 };
 
@@ -80,6 +99,17 @@ export type MapExtractionProgress = {
   status: string;
   stage?: string | null;
   message?: string;
+  tokenUsage?: {
+    promptTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    callCount?: number;
+  };
+  costEstimate?: {
+    currency?: string;
+    estimatedCost?: number | null;
+    source?: string;
+  };
 };
 
 export type MapEditRequest = {

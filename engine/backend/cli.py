@@ -71,25 +71,3 @@ def main() -> None:
 
         uvicorn.run(app, host=args.host, port=args.port, reload=False)
         return
-
-    api_key = resolve_api_key()
-
-    engine = C4PipelineEngine(
-        api_key=api_key or "",
-        model_name=args.model,
-        chunk_size_words=args.chunk_size_words,
-        chunk_overlap_words=args.chunk_overlap_words,
-        causal_prompt_path=args.causal_prompt,
-        follow_up_prompt_path=args.follow_up_prompt,
-        entity_extraction_prompt_path=args.entity_extraction_prompt,
-        entity_generation_prompt_path=args.entity_generation_prompt,
-        entity_template_dir=args.entity_template_dir,
-        output_root=args.output_root,
-    )
-
-    summary = engine.run(
-        input_type=args.input_type,
-        input_path=args.input_path,
-        input_text=args.input_text,
-    )
-    print(json.dumps(summary, ensure_ascii=False, indent=2))

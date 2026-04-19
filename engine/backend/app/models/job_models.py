@@ -11,7 +11,9 @@ class JobRecord:
     updated_at: str
     current_stage: str | None = None
     stage_message: str = ""
-    stage_history: list[dict[str, str]] = field(default_factory=list)
+    stage_history: list[dict[str, Any]] = field(default_factory=list)
+    token_usage: dict[str, int] = field(default_factory=dict)
+    cost_estimate: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     result: dict[str, Any] | None = None
     run_dir: str | None = None

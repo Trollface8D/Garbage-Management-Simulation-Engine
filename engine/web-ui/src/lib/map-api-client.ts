@@ -138,6 +138,8 @@ export async function extractMapGraph(
       status: status.status,
       stage: status.currentStage,
       message: status.stageMessage,
+      tokenUsage: status.tokenUsage,
+      costEstimate: status.costEstimate,
     });
 
     if (status.status === "failed") {
