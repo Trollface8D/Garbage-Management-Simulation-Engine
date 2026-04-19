@@ -29,6 +29,8 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
     if event == "stage" and isinstance(payload, dict):
         stage = str(payload.get("stage") or "")
         message = str(payload.get("message") or "")
+        token_usage = payload.get("tokenUsage")
+        cost_estimate = payload.get("costEstimate")
         with JOBS_LOCK:
             if job.status == "failed":
                 logger.info("[job_store] ignored stage for failed jobId=%s stage=%s", job.job_id, stage)
@@ -37,7 +39,14 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
                 job.status = "running"
             job.current_stage = stage or job.current_stage
             job.stage_message = message
-            job.stage_history.append({"stage": stage, "message": message})
+            stage_entry: dict[str, Any] = {"stage": stage, "message": message}
+            if isinstance(token_usage, dict):
+                job.token_usage = token_usage
+                stage_entry["tokenUsage"] = token_usage
+            if isinstance(cost_estimate, dict):
+                job.cost_estimate = cost_estimate
+                stage_entry["costEstimate"] = cost_estimate
+            job.stage_history.append(stage_entry)
             job.updated_at = utc_now_iso()
         logger.info("[job_store] stage jobId=%s status=%s stage=%s message=%s", job.job_id, job.status, stage, message)
 
@@ -77,6 +86,8 @@ def serialize_job(job: JobRecord) -> dict[str, Any]:
         "currentStage": job.current_stage,
         "stageMessage": job.stage_message,
         "stageHistory": job.stage_history,
+        "tokenUsage": job.token_usage,
+        "costEstimate": job.cost_estimate,
         "error": job.error,
         "runDir": job.run_dir,
     }

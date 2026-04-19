@@ -1,3 +1,4 @@
+import ast
 import json
 import logging
 import random
@@ -25,22 +26,40 @@ class GeminiGateway:
         *,
         parts: list[Part] | None = None,
         response_json: bool,
+        response_schema: dict[str, Any] | None = None,
         usage_collector: dict[str, int] | None = None,
     ) -> str:
         content_parts: list[Part] = [Part.from_text(text=prompt)]
         if parts:
             content_parts.extend(parts)
 
-        thinking_budget = int(os.getenv("GEMINI_THINKING_BUDGET", "512"))
-        max_output_tokens = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "1200"))
+        def _safe_int_env(name: str, default: int, *, minimum: int, maximum: int | None) -> int:
+            raw = os.getenv(name, str(default))
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                logger.warning("[gemini] invalid %s=%r, fallback=%s", name, raw, default)
+                value = default
+
+            if value < minimum:
+                logger.warning("[gemini] %s=%s below minimum %s, clamped", name, value, minimum)
+                return minimum
+            if maximum is not None and value > maximum:
+                logger.warning("[gemini] %s=%s above maximum %s, clamped", name, value, maximum)
+                return maximum
+            return value
+
+        # Keep values within practical bounds to avoid provider rejection and overly long hidden reasoning.
+        thinking_budget = _safe_int_env("GEMINI_THINKING_BUDGET", 512, minimum=0, maximum=4192)
 
         config_kwargs: dict[str, Any] = {
             "thinking_config": ThinkingConfig(thinking_budget=thinking_budget),
             "temperature": 0.2,
-            "max_output_tokens": max_output_tokens,
         }
         if response_json:
             config_kwargs["response_mime_type"] = "application/json"
+            if response_schema is not None:
+                config_kwargs["response_schema"] = response_schema
 
         response = self.client.models.generate_content(
             model=self.model_name,
@@ -58,6 +77,10 @@ class GeminiGateway:
             usage_collector["prompt_tokens"] = usage_collector.get("prompt_tokens", 0) + usage["prompt_tokens"]
             usage_collector["output_tokens"] = usage_collector.get("output_tokens", 0) + usage["output_tokens"]
             usage_collector["total_tokens"] = usage_collector.get("total_tokens", 0) + usage["total_tokens"]
+            usage_collector["provider_total_tokens"] = usage_collector.get("provider_total_tokens", 0) + usage[
+                "provider_total_tokens"
+            ]
+            usage_collector["hidden_tokens"] = usage_collector.get("hidden_tokens", 0) + usage["hidden_tokens"]
             usage_collector["call_count"] = usage_collector.get("call_count", 0) + 1
 
         return response_text
@@ -92,23 +115,35 @@ class GeminiGateway:
         prompt_tokens_raw = read_field(usage, "prompt_token_count", "promptTokenCount")
         output_tokens_raw = read_field(usage, "candidates_token_count", "candidatesTokenCount")
         total_tokens_raw = read_field(usage, "total_token_count", "totalTokenCount")
+        thinking_tokens_raw = read_field(usage, "thoughts_token_count", "thoughtsTokenCount")
+        cached_tokens_raw = read_field(usage, "cached_content_token_count", "cachedContentTokenCount")
 
         prompt_tokens = int(prompt_tokens_raw or 0)
         output_tokens = int(output_tokens_raw or 0)
-        total_tokens = int(total_tokens_raw or 0)
+        provider_total_tokens = int(total_tokens_raw or 0)
+        thinking_tokens = int(thinking_tokens_raw or 0)
+        cached_tokens = int(cached_tokens_raw or 0)
 
         # Fallback estimate if provider usage metadata is unavailable.
         if prompt_tokens <= 0:
             prompt_tokens = max(1, len(prompt_text) // 4)
         if output_tokens <= 0 and response_text:
             output_tokens = max(1, len(response_text) // 4)
-        if total_tokens <= 0:
-            total_tokens = prompt_tokens + output_tokens
+        # Keep displayed total consistent with visible buckets.
+        total_tokens = prompt_tokens + output_tokens
+        if provider_total_tokens <= 0:
+            provider_total_tokens = total_tokens + thinking_tokens + cached_tokens
+
+        hidden_tokens = provider_total_tokens - total_tokens
+        if hidden_tokens < 0:
+            hidden_tokens = 0
 
         return {
             "prompt_tokens": prompt_tokens,
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
+            "provider_total_tokens": provider_total_tokens,
+            "hidden_tokens": hidden_tokens,
         }
 
     @staticmethod
@@ -160,6 +195,38 @@ class GeminiGateway:
         if not raw:
             return []
 
+        def _balanced_blocks(text: str, open_ch: str, close_ch: str) -> list[str]:
+            blocks: list[str] = []
+            start = -1
+            depth = 0
+            in_string = False
+            escaped = False
+
+            for idx, ch in enumerate(text):
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == '"':
+                        in_string = False
+                    continue
+
+                if ch == '"':
+                    in_string = True
+                    continue
+
+                if ch == open_ch:
+                    if depth == 0:
+                        start = idx
+                    depth += 1
+                elif ch == close_ch and depth > 0:
+                    depth -= 1
+                    if depth == 0 and start >= 0:
+                        blocks.append(text[start : idx + 1])
+
+            return blocks
+
         candidates = [raw]
         list_start, list_end = raw.find("["), raw.rfind("]")
         if list_start != -1 and list_end != -1 and list_end > list_start:
@@ -169,12 +236,31 @@ class GeminiGateway:
         if obj_start != -1 and obj_end != -1 and obj_end > obj_start:
             candidates.append(raw[obj_start : obj_end + 1])
 
-        for candidate in candidates:
+        candidates.extend(_balanced_blocks(raw, "{", "}"))
+        candidates.extend(_balanced_blocks(raw, "[", "]"))
+
+        # Preserve order but remove duplicates.
+        seen_candidates: set[str] = set()
+        uniq_candidates: list[str] = []
+        for cand in candidates:
+            if cand in seen_candidates:
+                continue
+            seen_candidates.add(cand)
+            uniq_candidates.append(cand)
+
+        for candidate in uniq_candidates:
             candidate = re.sub(r"//.*(?=\n)|/\*.*?\*/", "", candidate, flags=re.S)
             candidate = re.sub(r",\s*([}\]])", r"\1", candidate)
             try:
                 return json.loads(candidate)
             except json.JSONDecodeError:
+                pass
+
+            try:
+                parsed = ast.literal_eval(candidate)
+            except (SyntaxError, ValueError):
                 continue
+            if isinstance(parsed, (dict, list)):
+                return parsed
 
         raise ValueError("Could not parse JSON from model response")

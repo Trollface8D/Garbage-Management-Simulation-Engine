@@ -244,7 +244,70 @@ function GraphCanvas({
   const [failedImageSrc, setFailedImageSrc] = useState<string | null>(null);
   const imageLoadFailed = !!mapImageSrc && failedImageSrc === mapImageSrc;
 
+  const symbolColorMap: Record<string, string> = {
+    RED: "#ef4444",
+    GREEN: "#22c55e",
+    BLUE: "#3b82f6",
+    YELLOW: "#f59e0b",
+    ORANGE: "#f97316",
+    BLACK: "#111827",
+    WHITE: "#e5e7eb",
+    HAZARDOUS: "#dc2626",
+    RECYCLABLE: "#16a34a",
+    ORGANIC: "#65a30d",
+    GENERAL: "#0ea5e9",
+    UNKNOWN: "#6b7280",
+  };
+
+  const getVertexSymbols = (vertex: MapVertex): string[] => {
+    const meta = vertex.metadata;
+    if (!meta || typeof meta !== "object") {
+      return [];
+    }
+
+    const record = meta as Record<string, unknown>;
+    const source = record.symbols ?? record.symbol ?? record.primarySymbol;
+    if (source == null) {
+      return [];
+    }
+
+    const rawValues = Array.isArray(source) ? source : [source];
+    const normalized: string[] = [];
+    for (const raw of rawValues) {
+      if (raw == null) {
+        continue;
+      }
+      const token = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+      if (token && !normalized.includes(token)) {
+        normalized.push(token);
+      }
+    }
+
+    return normalized;
+  };
+
+  const nodeFillColor = (vertex: MapVertex): string => {
+    const symbols = getVertexSymbols(vertex);
+    if (symbols.length > 0) {
+      return symbolColorMap[symbols[0]] ?? "#6b7280";
+    }
+    return vertex.type === "Bin" ? "#f97316" : "#0ea5e9";
+  };
+
+  const nodeTooltipText = (vertex: MapVertex): string => {
+    const symbols = getVertexSymbols(vertex);
+    if (symbols.length === 0) {
+      return `${vertex.id} (${vertex.label})`;
+    }
+    return `${vertex.id} (${vertex.label})\nSymbols: ${symbols.join(", ")}`;
+  };
+
   const metadataSummary = (vertex: MapVertex): string => {
+    const symbols = getVertexSymbols(vertex);
+    if (symbols.length > 0) {
+      return `symbols: ${symbols.join("/")}`;
+    }
+
     const meta = vertex.metadata;
     if (!meta || typeof meta !== "object") {
       return vertex.type || "node";
@@ -339,12 +402,14 @@ function GraphCanvas({
                 cx={point.x}
                 cy={point.y}
                 r={isSelected ? 24 : 18}
-                fill={vertex.type === "Bin" ? "#f97316" : "#0ea5e9"}
+                fill={nodeFillColor(vertex)}
                 stroke={isSelected ? "#fde68a" : "#e5e7eb"}
                 strokeWidth={isSelected ? 4 : 2}
                 className="pointer-events-auto cursor-pointer"
                 onClick={() => onSelect({ kind: "vertex", data: vertex })}
-              />
+              >
+                <title>{nodeTooltipText(vertex)}</title>
+              </circle>
               <text
                 x={point.x}
                 y={point.y + 4}
@@ -502,6 +567,10 @@ export default function MapExtractionWorkspace({
 
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractStatus, setExtractStatus] = useState("");
+  const [liveUsage, setLiveUsage] = useState<{
+    tokenUsage?: Record<string, unknown>;
+    costEstimate?: Record<string, unknown>;
+  } | null>(null);
 
   const [chatPrompt, setChatPrompt] = useState("");
   const [isApplyingEdit, setIsApplyingEdit] = useState(false);
@@ -544,18 +613,62 @@ export default function MapExtractionWorkspace({
 
   const usageStats = useMemo(() => {
     const meta = graphData?.metadata;
-    const tokenUsage = meta?.tokenUsage;
-    const costEstimate = meta?.costEstimate;
+    const inFlightTokenUsage = isExtracting ? (liveUsage?.tokenUsage || {}) : undefined;
+    const inFlightCostEstimate = isExtracting ? liveUsage?.costEstimate : undefined;
+    const tokenUsageRaw =
+      inFlightTokenUsage ||
+      (meta?.tokenUsage as Record<string, unknown> | undefined) ||
+      (meta?.token_usage as Record<string, unknown> | undefined) ||
+      (meta?.usage as Record<string, unknown> | undefined) ||
+      undefined;
+    const costEstimate = inFlightCostEstimate || meta?.costEstimate;
+
+    const num = (value: unknown): number => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+      if (typeof value === "string") {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+      }
+      return 0;
+    };
+
+    const promptTokens = num(tokenUsageRaw?.promptTokens ?? tokenUsageRaw?.prompt_tokens);
+    const outputTokens = num(tokenUsageRaw?.outputTokens ?? tokenUsageRaw?.output_tokens);
+    const totalTokens = num(tokenUsageRaw?.totalTokens ?? tokenUsageRaw?.total_tokens);
+    const callCount = num(tokenUsageRaw?.callCount ?? tokenUsageRaw?.call_count);
+
     return {
-      promptTokens: Number(tokenUsage?.promptTokens || 0),
-      outputTokens: Number(tokenUsage?.outputTokens || 0),
-      totalTokens: Number(tokenUsage?.totalTokens || 0),
-      callCount: Number(tokenUsage?.callCount || 0),
+      promptTokens,
+      outputTokens,
+      totalTokens: totalTokens || promptTokens + outputTokens,
+      callCount,
       estimatedCost:
         typeof costEstimate?.estimatedCost === "number" ? costEstimate.estimatedCost : null,
       currency: String(costEstimate?.currency || "USD"),
       costSource: String(costEstimate?.source || "unknown"),
     };
+  }, [graphData, isExtracting, liveUsage]);
+
+  const symbolLegend = useMemo(() => {
+    const raw = graphData?.metadata?.symbolLegend;
+    if (!Array.isArray(raw)) {
+      return [] as Array<{ symbol: string; notation: string; description: string; color: string }>;
+    }
+
+    return raw
+      .filter((item) => item && typeof item === "object")
+      .map((item) => {
+        const record = item as Record<string, unknown>;
+        return {
+          symbol: String(record.symbol || "").trim(),
+          notation: String(record.notation || "").trim(),
+          description: String(record.description || "").trim(),
+          color: String(record.color || "").trim(),
+        };
+      })
+      .filter((item) => item.symbol.length > 0);
   }, [graphData]);
 
   useEffect(() => {
@@ -711,6 +824,19 @@ export default function MapExtractionWorkspace({
     setIsExtracting(true);
     setExtractStatus("Running map extraction...");
     setEditStatus("");
+    setLiveUsage({
+      tokenUsage: {
+        promptTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        callCount: 0,
+      },
+      costEstimate: {
+        currency: "USD",
+        estimatedCost: 0,
+        source: "unknown",
+      },
+    });
 
     try {
       const result = await extractMapGraph({
@@ -727,6 +853,12 @@ export default function MapExtractionWorkspace({
           const seconds = Math.max(0, Math.floor(progress.elapsedMs / 1000));
           setExtractStatus(`Running ${stage}: ${message} (${String(seconds)}s)`);
           setJobId(progress.jobId);
+          if (progress.tokenUsage || progress.costEstimate) {
+            setLiveUsage((prev) => ({
+              tokenUsage: (progress.tokenUsage as Record<string, unknown> | undefined) || prev?.tokenUsage,
+              costEstimate: (progress.costEstimate as Record<string, unknown> | undefined) || prev?.costEstimate,
+            }));
+          }
         },
       });
 
@@ -744,6 +876,7 @@ export default function MapExtractionWorkspace({
       setIsSymbolCollapsed(false);
 
       setExtractStatus("Map extraction completed.");
+      setLiveUsage(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Map extraction failed.";
       setExtractStatus(message);
@@ -1269,6 +1402,26 @@ export default function MapExtractionWorkspace({
                     onSelect={setSelection}
                     mapImageSrc={mainMapPreview}
                   />
+                  {symbolLegend.length > 0 ? (
+                    <div className="rounded-xl border border-neutral-700 bg-neutral-900/70 p-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-300">
+                        Symbol Legend
+                      </p>
+                      <div className="max-h-40 space-y-2 overflow-auto pr-1">
+                        {symbolLegend.map((entry) => (
+                          <div
+                            key={`legend-${entry.symbol}`}
+                            className="grid grid-cols-[1fr_1fr_2fr] gap-2 rounded border border-neutral-700 bg-neutral-950/70 px-2 py-1 text-xs text-neutral-300"
+                            title={entry.description || entry.notation || entry.symbol}
+                          >
+                            <span className="font-semibold text-neutral-100">{entry.symbol}</span>
+                            <span className="text-neutral-400">{entry.notation || "-"}</span>
+                            <span className="truncate">{entry.description || "-"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="rounded-xl border border-neutral-700 bg-neutral-900/70 p-3">
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-300">
                       Node Metadata (fallback view)
