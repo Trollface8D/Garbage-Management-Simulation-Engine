@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { CausalUsedCard, MapUsedCard } from "../causal_extract/used-item-cards";
 import ProjectPageHeader from "../components/project-page-header";
+import UsedItemsSection, { type UsedItem } from "@/app/code/used-items-section";
 import {
+  categoryPath,
   findComponentById as findSeedComponentById,
   findProjectById as findSeedProjectById,
   type SimulationComponent,
@@ -19,15 +20,9 @@ import {
   saveCausalArtifactsForItem,
   saveCausalSourceItem,
   saveTextChunksForItem,
+  softDeleteComponent,
   type ExtractionPayloadRecord,
 } from "@/lib/pm-storage";
-
-type UsedItem = {
-  id: string;
-  title: string;
-  project: string;
-  lastEdited: string;
-};
 
 type GeneratedEntity = {
   id: string;
@@ -98,18 +93,6 @@ const EXTRACTION_DELAY_MS = 1300;
 const PROGRESS_TICK_MS = 240;
 const PROGRESS_STEP = 6;
 
-const INITIAL_CAUSAL_ITEMS: UsedItem[] = [
-  { id: "causal-1", title: "City Waste Flow A", project: "Bangkok Pilot", lastEdited: "2h ago" },
-  { id: "causal-2", title: "Worker Shift Constraints", project: "Bangkok Pilot", lastEdited: "5h ago" },
-  { id: "causal-3", title: "Transfer Route Causal", project: "Nonthaburi Study", lastEdited: "1d ago" },
-  { id: "causal-4", title: "Vehicle Downtime Effects", project: "Phuket Ops", lastEdited: "3d ago" },
-];
-
-const INITIAL_MAP_ITEMS: UsedItem[] = [
-  { id: "map-1", title: "District Collection Map", project: "Bangkok Pilot", lastEdited: "4h ago" },
-  { id: "map-2", title: "Depot Access Heatmap", project: "Phuket Ops", lastEdited: "1d ago" },
-];
-
 const INITIAL_ENTITIES: GeneratedEntity[] = [
   { id: "entity-1", name: "Janitor", count: 8, selected: true },
   { id: "entity-2", name: "Garbage Truck", count: 14, selected: true },
@@ -121,8 +104,7 @@ const INITIAL_ENTITIES: GeneratedEntity[] = [
 ];
 
 export default function CodePage() {
-  const [causalItems, setCausalItems] = useState<UsedItem[]>(INITIAL_CAUSAL_ITEMS);
-  const [mapItems, setMapItems] = useState<UsedItem[]>(INITIAL_MAP_ITEMS);
+  const router = useRouter();
   const [projects, setProjects] = useState<SimulationProject[]>([]);
   const [components, setComponents] = useState<SimulationComponent[]>([]);
   const params = useParams<{ componentId?: string }>();
@@ -175,14 +157,33 @@ export default function CodePage() {
     return projects.find((project) => project.id === resolvedProjectId)?.name ?? findSeedProjectById(resolvedProjectId)?.name ?? "Unselected project";
   }, [resolvedProjectId, projects]);
 
-  useEffect(() => {
-    const loadData = async () => {
-      const [nextProjects, nextComponents] = await Promise.all([loadProjects(), loadComponents()]);
-      setProjects(nextProjects);
-      setComponents(nextComponents);
-    };
+  const projectNameById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project.name])),
+    [projects],
+  );
 
-    void loadData();
+  const causalItems = useMemo(
+    () => components
+      .filter((component) => component.category === "Causal")
+      .map((component) => toUsedItem(component, projectNameById)),
+    [components, projectNameById],
+  );
+
+  const mapItems = useMemo(
+    () => components
+      .filter((component) => component.category === "Map")
+      .map((component) => toUsedItem(component, projectNameById)),
+    [components, projectNameById],
+  );
+
+  const refreshPmData = async () => {
+    const [nextProjects, nextComponents] = await Promise.all([loadProjects(), loadComponents()]);
+    setProjects(nextProjects);
+    setComponents(nextComponents);
+  };
+
+  useEffect(() => {
+    void refreshPmData();
   }, []);
 
   useEffect(() => {
@@ -242,12 +243,15 @@ export default function CodePage() {
     }, PROGRESS_TICK_MS);
   };
 
-  const handleDeleteCausalItem = (targetId: string) => {
-    setCausalItems((prev) => prev.filter((item) => item.id !== targetId));
-  };
-
-  const handleDeleteMapItem = (targetId: string) => {
-    setMapItems((prev) => prev.filter((item) => item.id !== targetId));
+  const handleDeleteComponent = (targetId: string) => {
+    void (async () => {
+      try {
+        await softDeleteComponent(targetId);
+        await refreshPmData();
+      } catch {
+        setImportError("Unable to delete component from database.");
+      }
+    })();
   };
 
   const handleToggleEntity = (targetId: string) => {
@@ -258,6 +262,55 @@ export default function CodePage() {
           : entity,
       ),
     );
+  };
+
+  const resolveProjectIdForCreate = (): string | null => {
+    if (resolvedProjectId) {
+      return resolvedProjectId;
+    }
+
+    if (projects.length > 0) {
+      return projects[0].id;
+    }
+
+    return null;
+  };
+
+  const handleCreateFromEmptySection = (category: "Causal" | "Map") => {
+    void (async () => {
+      setImportError("");
+
+      const rawTitle = window.prompt(`${category} name`);
+      if (!rawTitle) {
+        return;
+      }
+
+      const title = rawTitle.trim();
+      if (!title) {
+        return;
+      }
+
+      const projectId = resolveProjectIdForCreate();
+      if (!projectId) {
+        setImportError("No project found. Create a project first before adding artifacts.");
+        return;
+      }
+
+      const existingIds = new Set(components.map((component) => component.id));
+      const baseId = `${category.toLowerCase()}-${makeSlug(title)}`;
+      const id = makeUniqueId(baseId, existingIds);
+
+      await createComponent({
+        id,
+        title,
+        category,
+        projectId,
+        lastEdited: "just now",
+      });
+
+      await refreshPmData();
+      router.push(`/${categoryPath[category]}/${encodeURIComponent(id)}`);
+    })();
   };
 
   const makeSlug = (value: string): string => {
@@ -282,10 +335,10 @@ export default function CodePage() {
     return candidate;
   };
 
-  const toUsedItem = (
+  function toUsedItem(
     component: SimulationComponent,
     projectNameById: Map<string, string>,
-  ): UsedItem => {
+  ): UsedItem {
     const projectId = component.category === "PolicyTesting" ? "" : component.projectId;
     const resolvedProject =
       projectNameById.get(projectId) ||
@@ -298,7 +351,7 @@ export default function CodePage() {
       project: resolvedProject,
       lastEdited: component.lastEdited || "just now",
     };
-  };
+  }
 
   const handleOpenImportDialog = () => {
     importInputRef.current?.click();
@@ -765,14 +818,7 @@ export default function CodePage() {
         insertImportedCategory(mapPayload, "Map", context),
       ]);
 
-      const refreshedProjects = await loadProjects();
-      const refreshedComponents = await loadComponents();
-      setProjects(refreshedProjects);
-      setComponents(refreshedComponents);
-
-      const projectNameById = new Map(refreshedProjects.map((project) => [project.id, project.name]));
-      setCausalItems((prev) => [...createdCausal.map((entry) => toUsedItem(entry, projectNameById)), ...prev]);
-      setMapItems((prev) => [...createdMap.map((entry) => toUsedItem(entry, projectNameById)), ...prev]);
+      await refreshPmData();
 
       setImportMessage(
         `Imported ${String(createdCausal.length)} causal and ${String(createdMap.length)} map component(s).`,
@@ -835,35 +881,21 @@ export default function CodePage() {
         ) : null}
 
         <section className="space-y-8">
-          <div>
-            <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">Causal used</h2>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {causalItems.map((item) => (
-                <CausalUsedCard
-                  key={item.id}
-                  title={item.title}
-                  project={item.project}
-                  lastEdited={item.lastEdited}
-                  onDelete={() => handleDeleteCausalItem(item.id)}
-                />
-              ))}
-            </div>
-          </div>
+          <UsedItemsSection
+            title="Causal used"
+            category="Causal"
+            items={causalItems}
+            onDelete={handleDeleteComponent}
+            onCreate={handleCreateFromEmptySection}
+          />
 
-          <div>
-            <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">Map used</h2>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {mapItems.map((item) => (
-                <MapUsedCard
-                  key={item.id}
-                  title={item.title}
-                  project={item.project}
-                  lastEdited={item.lastEdited}
-                  onDelete={() => handleDeleteMapItem(item.id)}
-                />
-              ))}
-            </div>
-          </div>
+          <UsedItemsSection
+            title="Map used"
+            category="Map"
+            items={mapItems}
+            onDelete={handleDeleteComponent}
+            onCreate={handleCreateFromEmptySection}
+          />
 
           <div>
             <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">Entity that will be generated</h2>
