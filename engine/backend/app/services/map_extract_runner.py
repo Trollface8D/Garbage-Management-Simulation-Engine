@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import struct
 import time
 from typing import Any
 
@@ -264,18 +265,84 @@ def _apply_symbol_metadata(nodes: list[dict[str, Any]], symbol_enum: list[str]) 
     return output
 
 
-def _normalize_node(item: Any, index: int) -> dict[str, Any]:
-    def normalize_coordinate(raw: Any) -> float | None:
+def _image_dimensions(data: bytes) -> tuple[int, int] | None:
+    """Extract (width, height) in pixels from PNG or JPEG byte payloads. Returns None otherwise."""
+    if not data or len(data) < 24:
+        return None
+
+    # PNG: 8-byte signature, then IHDR chunk at offsets 8.. with width/height as big-endian uint32 at 16..24
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        try:
+            width, height = struct.unpack(">II", data[16:24])
+            if width > 0 and height > 0:
+                return (int(width), int(height))
+        except struct.error:
+            return None
+        return None
+
+    # JPEG: scan for SOFn marker (0xFFC0..0xFFCF excluding DHT/DAC/DRI which share prefix)
+    if data[:2] == b"\xff\xd8":
+        i = 2
+        n = len(data)
+        sof_markers = {
+            0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+            0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF,
+        }
+        while i + 9 < n:
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            marker = data[i + 1]
+            if marker in sof_markers:
+                try:
+                    height, width = struct.unpack(">HH", data[i + 5 : i + 9])
+                    if width > 0 and height > 0:
+                        return (int(width), int(height))
+                except struct.error:
+                    return None
+                return None
+            # Standalone markers (no length byte)
+            if 0xD0 <= marker <= 0xD9:
+                i += 2
+                continue
+            try:
+                seg_len = struct.unpack(">H", data[i + 2 : i + 4])[0]
+            except struct.error:
+                return None
+            i += 2 + seg_len
+        return None
+
+    return None
+
+
+def _normalize_node(
+    item: Any,
+    index: int,
+    *,
+    image_dims: tuple[int, int] | None = None,
+) -> dict[str, Any]:
+    image_width = image_dims[0] if image_dims else None
+    image_height = image_dims[1] if image_dims else None
+
+    def normalize_coordinate(raw: Any, axis_size: int | None) -> float | None:
         try:
             value = float(raw)
         except (TypeError, ValueError):
             return None
 
+        # Already normalized 0..1 — use as-is.
+        if 0.0 <= value <= 1.0:
+            return value
+
         if value > 1:
-            # Heuristic: model may return pixel-like coordinates.
-            if value > 100:
+            # Prefer real image dimensions when known (most accurate for pixel coords).
+            if axis_size and axis_size > 0:
+                value = value / float(axis_size)
+            elif value > 100:
+                # Fallback heuristic: probably pixel coords in an image ≤1000px.
                 value = value / 1000.0
             else:
+                # Fallback heuristic: looks like a 0..100 percent.
                 value = value / 100.0
 
         if value < 0:
@@ -290,8 +357,8 @@ def _normalize_node(item: Any, index: int) -> dict[str, Any]:
         node_type = item.get("type") or item.get("node_type")
         raw_x = item.get("x")
         raw_y = item.get("y")
-        fx = normalize_coordinate(raw_x)
-        fy = normalize_coordinate(raw_y)
+        fx = normalize_coordinate(raw_x, image_width)
+        fy = normalize_coordinate(raw_y, image_height)
         coord_source = "model" if fx is not None and fy is not None else "fallback"
 
         if fx is None:
@@ -539,7 +606,11 @@ def _normalize_edge(item: Any, index: int) -> dict[str, Any] | None:
     }
 
 
-def _extract_nodes_from_text(text: str) -> list[dict[str, Any]]:
+def _extract_nodes_from_text(
+    text: str,
+    *,
+    image_dims: tuple[int, int] | None = None,
+) -> list[dict[str, Any]]:
     raw = str(text or "").strip()
     if not raw:
         return []
@@ -550,7 +621,7 @@ def _extract_nodes_from_text(text: str) -> list[dict[str, Any]]:
     except ValueError:
         parsed = None
     if parsed is not None and not isinstance(parsed, str):
-        return _extract_nodes(parsed)
+        return _extract_nodes(parsed, image_dims=image_dims)
 
     lines = [line.strip() for line in raw.splitlines() if line.strip()]
     if not lines:
@@ -594,7 +665,7 @@ def _extract_nodes_from_text(text: str) -> list[dict[str, Any]]:
                 node_obj["x"] = cells[x_idx]
             if y_idx >= 0 and y_idx < len(cells):
                 node_obj["y"] = cells[y_idx]
-            normalized = _normalize_node(node_obj, len(extracted))
+            normalized = _normalize_node(node_obj, len(extracted), image_dims=image_dims)
             extracted.append(normalized)
 
         if extracted:
@@ -637,7 +708,7 @@ def _extract_nodes_from_text(text: str) -> list[dict[str, Any]]:
                 node_obj["y"] = parts[y_idx]
             if not node_obj:
                 continue
-            normalized = _normalize_node(node_obj, len(extracted))
+            normalized = _normalize_node(node_obj, len(extracted), image_dims=image_dims)
             extracted.append(normalized)
 
         if extracted:
@@ -673,7 +744,7 @@ def _extract_nodes_from_text(text: str) -> list[dict[str, Any]]:
             if y_match:
                 node_obj["y"] = y_match.group("y")
 
-            extracted.append(_normalize_node(node_obj, len(extracted)))
+            extracted.append(_normalize_node(node_obj, len(extracted), image_dims=image_dims))
 
         if extracted:
             return extracted
@@ -693,16 +764,20 @@ def _extract_nodes_from_text(text: str) -> list[dict[str, Any]]:
             continue
         seen_ids.add(node_id)
         label = (match.group("label") or "").strip() or node_id
-        normalized = _normalize_node({"id": node_id, "label": label}, len(extracted))
+        normalized = _normalize_node({"id": node_id, "label": label}, len(extracted), image_dims=image_dims)
         extracted.append(normalized)
 
     return extracted
 
 
-def _extract_nodes(payload: Any) -> list[dict[str, Any]]:
+def _extract_nodes(
+    payload: Any,
+    *,
+    image_dims: tuple[int, int] | None = None,
+) -> list[dict[str, Any]]:
     candidates: list[Any] = []
     if isinstance(payload, str):
-        return _extract_nodes_from_text(payload)
+        return _extract_nodes_from_text(payload, image_dims=image_dims)
 
     if isinstance(payload, dict):
         primary = payload.get("nodes") or payload.get("vertices") or payload.get("items")
@@ -733,7 +808,7 @@ def _extract_nodes(payload: Any) -> list[dict[str, Any]]:
 
     normalized: list[dict[str, Any]] = []
     for i, item in enumerate(candidates):
-        normalized.append(_normalize_node(item, i))
+        normalized.append(_normalize_node(item, i, image_dims=image_dims))
     return normalized
 
 
@@ -1421,6 +1496,7 @@ def run_map_extract_worker(
         edge_schema_text = _config_text(config, "edge_extraction_json_schema")
         edge_dedup_policy = _config_text(config, "edge_extraction_dedup_policy")
         edge_csv_fallback_hint = _config_text(config, "edge_extraction_csv_fallback_hint")
+        coordinate_policy = _config_text(config, "extractmap_text_coordinate_policy")
 
         emit_job_event(
             job,
@@ -1439,6 +1515,24 @@ def run_map_extract_worker(
 
         if not overview_files:
             raise ValueError("map_extract requires at least one overview map image")
+
+        primary_map = overview_files[0]
+        image_dims = _image_dimensions(primary_map.get("data") or b"")
+        if image_dims is not None:
+            logger.info(
+                "[map_extract][worker] primary_map_dimensions jobId=%s filename=%s width=%s height=%s",
+                job.job_id,
+                primary_map.get("filename"),
+                image_dims[0],
+                image_dims[1],
+            )
+        else:
+            logger.info(
+                "[map_extract][worker] primary_map_dimensions unavailable jobId=%s filename=%s mime=%s — falling back to coord heuristic",
+                job.job_id,
+                primary_map.get("filename"),
+                primary_map.get("mime_type"),
+            )
 
         map_parts: list[tuple[str, Part]] = [
             (str(file_data.get("filename") or f"map-{idx + 1}"), _make_part(file_data))
@@ -1508,6 +1602,7 @@ def run_map_extract_worker(
                         base_prompt=str(config["extractmap_text"].get("prompt") or ""),
                         extra_context=(
                             f"{node_schema_text}\n\n"
+                            f"{coordinate_policy}\n\n"
                             f"{dedup_policy_text}\n"
                             f"{exclusion_policy_text}\n"
                             f"{symbol_usage_policy}\n"
@@ -1525,7 +1620,7 @@ def run_map_extract_worker(
                         response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
                         usage_totals=usage_totals,
                     )
-                    all_nodes.extend(_extract_nodes(nodes_payload))
+                    all_nodes.extend(_extract_nodes(nodes_payload, image_dims=image_dims))
                     node_payload_types.append(type(nodes_payload).__name__)
                     _emit_stage_with_usage(
                         job=job,
@@ -1546,6 +1641,7 @@ def run_map_extract_worker(
                     base_prompt=str(config["extractmap_text"].get("prompt") or ""),
                     extra_context=(
                         f"{node_schema_text}\n\n"
+                        f"{coordinate_policy}\n\n"
                         f"{dedup_policy_text}\n"
                         f"{exclusion_policy_text}\n"
                         f"{symbol_usage_policy}\n"
@@ -1562,7 +1658,7 @@ def run_map_extract_worker(
                     response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
                     usage_totals=usage_totals,
                 )
-                all_nodes.extend(_extract_nodes(nodes_payload))
+                all_nodes.extend(_extract_nodes(nodes_payload, image_dims=image_dims))
                 node_payload_types.append(type(nodes_payload).__name__)
                 _emit_stage_with_usage(
                     job=job,
@@ -1681,6 +1777,7 @@ def run_map_extract_worker(
             extra_context=(
                 f"{normalize_context}\n"
                 f"{node_schema_text}\n"
+                f"{coordinate_policy}\n"
                 f"{dedup_policy_text}\n"
                 f"{exclusion_policy_text}\n"
                 f"{symbol_usage_policy}\n"
@@ -1696,7 +1793,7 @@ def run_map_extract_worker(
             response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
             usage_totals=usage_totals,
         )
-        support_enriched_nodes = _extract_nodes(merged_payload)
+        support_enriched_nodes = _extract_nodes(merged_payload, image_dims=image_dims)
         nodes, matched_count, ignored_non_stage2_count = _merge_stage4_completion(nodes, support_enriched_nodes)
         nodes = _apply_symbol_metadata(nodes, symbol_enum)
         _emit_stage_with_usage(
