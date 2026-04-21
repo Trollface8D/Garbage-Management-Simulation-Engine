@@ -1177,6 +1177,14 @@ def _run_stage_json(
 ) -> Any:
     prompt_payload = f"{base_prompt}\n\n{extra_context}"
     before_calls = int(usage_totals.get("call_count", 0))
+    call_started = time.perf_counter()
+    logger.info(
+        "[map_extract][worker] gemini_call_start stage=%s model=%s promptChars=%s partsCount=%s",
+        stage_name,
+        gateway.model_name,
+        len(prompt_payload),
+        len(parts or []),
+    )
     raw = gateway.generate_text(
         prompt_payload,
         parts=parts,
@@ -1184,12 +1192,27 @@ def _run_stage_json(
         response_schema=response_schema,
         usage_collector=usage_totals,
     ).strip()
+    logger.info(
+        "[map_extract][worker] gemini_call_end stage=%s model=%s elapsedMs=%s rawChars=%s",
+        stage_name,
+        gateway.model_name,
+        int((time.perf_counter() - call_started) * 1000),
+        len(raw),
+    )
 
     ensure_usage_progress(
         usage_totals=usage_totals,
         before_calls=before_calls,
         prompt_payload=prompt_payload,
         raw=raw,
+    )
+
+    logger.debug(
+        "[map_extract][worker] raw_response stage=%s model=%s rawChars=%s raw=%s",
+        stage_name,
+        gateway.model_name,
+        len(raw),
+        raw,
     )
 
     if not raw:
@@ -1219,21 +1242,45 @@ def _run_stage_text(
     extra_context: str,
     parts: list[Part] | None,
     usage_totals: dict[str, int],
+    stage_name: str | None = None,
 ) -> str:
     prompt_payload = f"{base_prompt}\n\n{extra_context}"
     before_calls = int(usage_totals.get("call_count", 0))
+    call_started = time.perf_counter()
+    logger.info(
+        "[map_extract][worker] gemini_call_start stage=%s model=%s promptChars=%s partsCount=%s",
+        stage_name or "text",
+        gateway.model_name,
+        len(prompt_payload),
+        len(parts or []),
+    )
     raw = gateway.generate_text(
         prompt_payload,
         parts=parts,
         response_json=False,
         usage_collector=usage_totals,
     ).strip()
+    logger.info(
+        "[map_extract][worker] gemini_call_end stage=%s model=%s elapsedMs=%s rawChars=%s",
+        stage_name or "text",
+        gateway.model_name,
+        int((time.perf_counter() - call_started) * 1000),
+        len(raw),
+    )
 
     ensure_usage_progress(
         usage_totals=usage_totals,
         before_calls=before_calls,
         prompt_payload=prompt_payload,
         raw=raw,
+    )
+
+    logger.debug(
+        "[map_extract][worker] raw_response stage=%s model=%s rawChars=%s raw=%s",
+        stage_name or "text",
+        gateway.model_name,
+        len(raw),
+        raw,
     )
 
     return raw
@@ -1422,6 +1469,7 @@ def run_map_extract_worker(
                 ),
                 parts=[map_part],
                 usage_totals=usage_totals,
+                stage_name="map_extract/extractmap_symbol",
             )
             if chunk:
                 symbol_chunks.append(f"## {map_name}\n{chunk}")
@@ -1576,6 +1624,7 @@ def run_map_extract_worker(
                     ),
                     parts=[support_part],
                     usage_totals=usage_totals,
+                    stage_name="map_extract/tabular_extraction",
                 )
                 if csv_text:
                     csv_chunks.append(f"# {support_name}\n{csv_text}")
@@ -1601,6 +1650,7 @@ def run_map_extract_worker(
                 ),
                 parts=[first_map_part],
                 usage_totals=usage_totals,
+                stage_name="map_extract/tabular_extraction",
             )
             if csv_text:
                 csv_chunks.append(f"# {first_map_name}\n{csv_text}")
