@@ -11,7 +11,16 @@ import {
   type SimulationComponent,
   type SimulationProject,
 } from "@/lib/simulation-components";
-import { createComponent, createProject, loadComponents, loadProjects } from "@/lib/pm-storage";
+import {
+  createComponent,
+  createProject,
+  loadComponents,
+  loadProjects,
+  saveCausalArtifactsForItem,
+  saveCausalSourceItem,
+  saveTextChunksForItem,
+  type ExtractionPayloadRecord,
+} from "@/lib/pm-storage";
 
 type UsedItem = {
   id: string;
@@ -36,6 +45,19 @@ type JsonImportItem = {
   project?: string;
   lastEdited?: string;
   category?: string;
+  sourceText?: string;
+  rawExtraction?: ExtractionPayloadRecord[];
+  extracted?: GeminiExtractedRelation[];
+  pattern_type?: string;
+  sentence_type?: string;
+  marked_type?: string;
+  explicit_type?: string;
+  marker?: string;
+  source_text?: string;
+  head?: string;
+  relationship?: string;
+  tail?: string;
+  detail?: string;
 };
 
 type JsonImportProject = {
@@ -60,6 +82,11 @@ type GeminiExtractedRelation = {
 };
 
 type GeminiRawChunkItem = {
+  pattern_type?: string;
+  sentence_type?: string;
+  marked_type?: string;
+  explicit_type?: string;
+  marker?: string;
   source_text?: string;
   extracted?: GeminiExtractedRelation[];
 };
@@ -299,62 +326,256 @@ export default function CodePage() {
   const clip = (value: string, max: number): string =>
     value.length <= max ? value : `${value.slice(0, Math.max(0, max - 3))}...`;
 
-  const normalizeGeminiTranscriptArray = (input: unknown[], sourceFileName: string): JsonImportPayload => {
-    const causalItems: JsonImportItem[] = [];
-    const cleanFileName = sourceFileName.trim() || "imported-transcript.json";
-    const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
-    let firstSourceText = "";
-
-    input.forEach((rawItem, itemIndex) => {
-      if (!isObject(rawItem)) {
-        return;
-      }
-
-      const item = rawItem as GeminiRawChunkItem;
-      const sourceText = readText(item.source_text);
-      if (!firstSourceText) {
-        firstSourceText = sourceText;
-      }
-
-      const extractedList = Array.isArray(item.extracted) ? item.extracted : [];
-
-      extractedList.forEach((rawRelation, relationIndex) => {
-        if (!isObject(rawRelation)) {
-          return;
-        }
-
-        const relation = rawRelation as GeminiExtractedRelation;
-        const head = readText(relation.head);
-        const relationship = readText(relation.relationship);
-        const tail = readText(relation.tail);
-        const detail = readText(relation.detail);
-
-        const relationText = [head, relationship, tail].filter(Boolean).join(" ");
-        const detailSuffix = detail && detail.toLowerCase() !== "null" ? ` (${detail})` : "";
-        const fallback = sourceText || `Imported causal relation ${String(itemIndex + 1)}.${String(relationIndex + 1)}`;
-        const title = clip(`${relationText || fallback}${detailSuffix}`, 180);
-
-        if (!title) {
-          return;
-        }
-
-        causalItems.push({
-          id: `causal-gemini-${sanitizeFilenameSegment(baseName.toLowerCase())}-${String(itemIndex + 1)}-${String(relationIndex + 1)}`,
-          title,
-          lastEdited: "extracted",
-        });
-      });
-    });
-
-    if (causalItems.length === 0 && firstSourceText) {
-      causalItems.push({
-        id: `causal-gemini-file-${sanitizeFilenameSegment(baseName.toLowerCase())}`,
-        title: clip(cleanFileName || firstSourceText || "imported-transcript", 180),
-        lastEdited: "extracted",
-      });
+  const normalizeChunkLabel = (label: string, index: number): string => {
+    const trimmed = label.trim();
+    const match = /chunk\s*[-_]?\s*(\d+)/i.exec(trimmed);
+    if (match) {
+      return `chunk ${String(match[1])}`;
     }
 
-    return { causalItems };
+    return `chunk ${String(index + 1)}`;
+  };
+
+  const normalizeExtractedRelation = (
+    value: unknown,
+  ): { head: string; relationship: string; tail: string; detail: string } | null => {
+    if (!isObject(value)) {
+      return null;
+    }
+
+    const head = readText(value.head);
+    const relationship = readText(value.relationship);
+    const tail = readText(value.tail);
+    const detail = readText(value.detail);
+
+    if (!head && !relationship && !tail && !detail) {
+      return null;
+    }
+
+    return {
+      head,
+      relationship,
+      tail,
+      detail,
+    };
+  };
+
+  const normalizeExtractionClass = (
+    value: unknown,
+    fallbackSourceText: string,
+  ): {
+    pattern_type: string;
+    sentence_type: string;
+    marked_type: string;
+    explicit_type: string;
+    marker: string;
+    source_text: string;
+    extracted: Array<{ head: string; relationship: string; tail: string; detail: string }>;
+  } | null => {
+    if (!isObject(value)) {
+      return null;
+    }
+
+    const extractedSource = Array.isArray(value.extracted) ? value.extracted : [value];
+    const extracted = extractedSource
+      .map((entry) => normalizeExtractedRelation(entry))
+      .filter((entry): entry is { head: string; relationship: string; tail: string; detail: string } => entry !== null);
+
+    if (extracted.length === 0) {
+      return null;
+    }
+
+    return {
+      pattern_type: readText(value.pattern_type),
+      sentence_type: readText(value.sentence_type),
+      marked_type: readText(value.marked_type),
+      explicit_type: readText(value.explicit_type),
+      marker: readText(value.marker),
+      source_text: readText(value.source_text) || fallbackSourceText || extracted[0].head || "Imported source",
+      extracted,
+    };
+  };
+
+  const normalizeExtractionPayload = (value: unknown): ExtractionPayloadRecord[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const hasChunkStructure = value.some(
+      (entry) => isObject(entry) && (Array.isArray(entry.classes) || typeof entry.chunk_label === "string"),
+    );
+
+    if (hasChunkStructure) {
+      return value
+        .map((chunkEntry, index) => {
+          if (!isObject(chunkEntry)) {
+            return null;
+          }
+
+          const classesInput = Array.isArray(chunkEntry.classes) ? chunkEntry.classes : [];
+          const classes = classesInput
+            .map((classValue) => normalizeExtractionClass(classValue, ""))
+            .filter(
+              (classValue): classValue is {
+                pattern_type: string;
+                sentence_type: string;
+                marked_type: string;
+                explicit_type: string;
+                marker: string;
+                source_text: string;
+                extracted: Array<{ head: string; relationship: string; tail: string; detail: string }>;
+              } => classValue !== null,
+            );
+
+          if (classes.length === 0) {
+            return null;
+          }
+
+          return {
+            chunk_label: normalizeChunkLabel(readText(chunkEntry.chunk_label), index),
+            classes,
+          } satisfies ExtractionPayloadRecord;
+        })
+        .filter((chunk): chunk is ExtractionPayloadRecord => chunk !== null);
+    }
+
+    return value
+      .map((classEntry, index) => {
+        const normalizedClass = normalizeExtractionClass(classEntry, "");
+        if (!normalizedClass) {
+          return null;
+        }
+
+        return {
+          chunk_label: `chunk ${String(index + 1)}`,
+          classes: [normalizedClass],
+        } satisfies ExtractionPayloadRecord;
+      })
+      .filter((chunk): chunk is ExtractionPayloadRecord => chunk !== null);
+  };
+
+  const buildChunkTextsFromRawExtraction = (rawExtraction: ExtractionPayloadRecord[]): string[] =>
+    rawExtraction.map((chunk, index) => {
+      const joined = chunk.classes
+        .map((classItem) => classItem.source_text?.trim() || "")
+        .filter(Boolean)
+        .join("\n\n")
+        .trim();
+
+      return joined || `Imported extraction chunk ${String(index + 1)}`;
+    });
+
+  const extractRawExtractionFromItem = (item: JsonImportItem): ExtractionPayloadRecord[] => {
+    const record = item as unknown as Record<string, unknown>;
+    const direct = normalizeExtractionPayload(item.rawExtraction);
+    if (direct.length > 0) {
+      return direct;
+    }
+
+    const snakeCase = normalizeExtractionPayload(record.raw_extraction);
+    if (snakeCase.length > 0) {
+      return snakeCase;
+    }
+
+    return normalizeExtractionPayload([item]);
+  };
+
+  const persistImportedCausalArtifacts = async (
+    entry: JsonImportItem,
+    component: SimulationComponent,
+    projectId: string,
+  ): Promise<void> => {
+    const rawExtraction = extractRawExtractionFromItem(entry);
+    const extractedRelationCount = rawExtraction.reduce(
+      (total, chunk) =>
+        total + chunk.classes.reduce((chunkTotal, classItem) => chunkTotal + classItem.extracted.length, 0),
+      0,
+    );
+
+    if (extractedRelationCount === 0) {
+      return;
+    }
+
+    const sourceTextFromPayload = rawExtraction
+      .flatMap((chunk) => chunk.classes.map((classItem) => classItem.source_text))
+      .filter(Boolean)
+      .join("\n\n");
+
+    const sourceText = sourceTextFromPayload || entry.sourceText?.trim() || component.title;
+    const documentId = `causal-doc-${component.id}`;
+
+    await saveCausalSourceItem({
+      id: documentId,
+      projectId,
+      componentId: component.id,
+      label: component.title,
+      fileName: `${component.title}.json`,
+      sourceType: "text",
+      status: "extracted",
+      tags: ["imported", "json"],
+      textContent: sourceText,
+    });
+
+    const chunkTexts = buildChunkTextsFromRawExtraction(rawExtraction);
+    await saveTextChunksForItem({
+      experimentItemId: documentId,
+      projectId,
+      componentId: component.id,
+      chunks: chunkTexts,
+      model: "imported-json",
+      chunkSizeWords: 20,
+      chunkOverlapWords: 0,
+    });
+
+    await saveCausalArtifactsForItem({
+      experimentItemId: documentId,
+      rawExtraction,
+      followUp: [],
+    });
+
+    await saveCausalSourceItem({
+      id: documentId,
+      projectId,
+      componentId: component.id,
+      label: component.title,
+      fileName: `${component.title}.json`,
+      sourceType: "text",
+      status: "extracted",
+      tags: ["imported", "json"],
+      textContent: sourceText,
+    });
+  };
+
+  const normalizeGeminiTranscriptArray = (input: unknown[], sourceFileName: string): JsonImportPayload => {
+    const rawExtraction = normalizeExtractionPayload(input);
+    const relationCount = rawExtraction.reduce(
+      (total, chunk) =>
+        total + chunk.classes.reduce((chunkTotal, classItem) => chunkTotal + classItem.extracted.length, 0),
+      0,
+    );
+
+    const firstSourceText = rawExtraction
+      .flatMap((chunk) => chunk.classes.map((classItem) => classItem.source_text))
+      .find((text) => readText(text)) || "";
+
+    if (relationCount === 0) {
+      return { causalItems: [] };
+    }
+    const cleanFileName = sourceFileName.trim() || "imported-transcript.json";
+    const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
+    const title = clip(cleanFileName || firstSourceText || "imported-transcript", 180);
+
+    return {
+      causalItems: [
+        {
+          id: `causal-gemini-file-${sanitizeFilenameSegment(baseName.toLowerCase())}`,
+          title,
+          lastEdited: "extracted",
+          sourceText: firstSourceText,
+          rawExtraction,
+        },
+      ],
+    };
   };
 
   const normalizeImportPayload = (value: unknown, sourceFileName: string): JsonImportPayload => {
@@ -370,6 +591,26 @@ export default function CodePage() {
     }
 
     if (isObject(value)) {
+      const record = value as Record<string, unknown>;
+      const rawExtraction = normalizeExtractionPayload(record.raw_extraction);
+
+      if (rawExtraction.length > 0) {
+        const cleanFileName = sourceFileName.trim() || "imported-causal.json";
+        const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
+
+        return {
+          projects: Array.isArray(record.projects) ? (record.projects as JsonImportProject[]) : undefined,
+          causalItems: [
+            {
+              id: `causal-file-${sanitizeFilenameSegment(baseName.toLowerCase())}`,
+              title: cleanFileName,
+              lastEdited: "extracted",
+              rawExtraction,
+            },
+          ],
+        };
+      }
+
       return value as JsonImportPayload;
     }
 
@@ -452,6 +693,11 @@ export default function CodePage() {
       };
 
       await createComponent(component);
+
+      if (category === "Causal") {
+        await persistImportedCausalArtifacts(entry, component, projectId);
+      }
+
       created.push(component);
     }
 
