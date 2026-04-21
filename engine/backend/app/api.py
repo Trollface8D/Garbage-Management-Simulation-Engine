@@ -1,3 +1,7 @@
+import logging
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import (
@@ -12,8 +16,35 @@ from .routes import (
 )
 
 
+def _configure_logging() -> None:
+    level_name = (os.getenv("LOG_LEVEL") or "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        force=True,
+    )
+    logging.getLogger().setLevel(level)
+    logging.getLogger("backend").setLevel(level)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Runs after uvicorn's own dictConfig, so our handler survives.
+    _configure_logging()
+    logging.getLogger("backend.app.api").info(
+        "[api] logging configured level=%s", logging.getLogger().level
+    )
+    yield
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Framework Simulation Engine API", version="0.1.0")
+    _configure_logging()
+    app = FastAPI(
+        title="Framework Simulation Engine API",
+        version="0.1.0",
+        lifespan=_lifespan,
+    )
 
     app.add_middleware(
         CORSMiddleware,
