@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CausalUsedCard, MapUsedCard } from "../causal_extract/used-item-cards";
@@ -12,6 +12,11 @@ import {
   type SimulationProject,
 } from "@/lib/simulation-components";
 import { loadComponents, loadProjects } from "@/lib/pm-storage";
+import BackToHome from "../components/back-to-home";
+
+const ReactWordcloud = dynamic(() => import("react-wordcloud"), {
+  ssr: false,
+});
 
 type UsedItem = {
   id: string;
@@ -32,15 +37,45 @@ const PROGRESS_TICK_MS = 240;
 const PROGRESS_STEP = 6;
 
 const INITIAL_CAUSAL_ITEMS: UsedItem[] = [
-  { id: "causal-1", title: "City Waste Flow A", project: "Bangkok Pilot", lastEdited: "2h ago" },
-  { id: "causal-2", title: "Worker Shift Constraints", project: "Bangkok Pilot", lastEdited: "5h ago" },
-  { id: "causal-3", title: "Transfer Route Causal", project: "Nonthaburi Study", lastEdited: "1d ago" },
-  { id: "causal-4", title: "Vehicle Downtime Effects", project: "Phuket Ops", lastEdited: "3d ago" },
+  {
+    id: "causal-1",
+    title: "City Waste Flow A",
+    project: "Bangkok Pilot",
+    lastEdited: "2h ago",
+  },
+  {
+    id: "causal-2",
+    title: "Worker Shift Constraints",
+    project: "Bangkok Pilot",
+    lastEdited: "5h ago",
+  },
+  {
+    id: "causal-3",
+    title: "Transfer Route Causal",
+    project: "Nonthaburi Study",
+    lastEdited: "1d ago",
+  },
+  {
+    id: "causal-4",
+    title: "Vehicle Downtime Effects",
+    project: "Phuket Ops",
+    lastEdited: "3d ago",
+  },
 ];
 
 const INITIAL_MAP_ITEMS: UsedItem[] = [
-  { id: "map-1", title: "District Collection Map", project: "Bangkok Pilot", lastEdited: "4h ago" },
-  { id: "map-2", title: "Depot Access Heatmap", project: "Phuket Ops", lastEdited: "1d ago" },
+  {
+    id: "map-1",
+    title: "District Collection Map",
+    project: "Bangkok Pilot",
+    lastEdited: "4h ago",
+  },
+  {
+    id: "map-2",
+    title: "Depot Access Heatmap",
+    project: "Phuket Ops",
+    lastEdited: "1d ago",
+  },
 ];
 
 const INITIAL_ENTITIES: GeneratedEntity[] = [
@@ -54,7 +89,8 @@ const INITIAL_ENTITIES: GeneratedEntity[] = [
 ];
 
 export default function CodePage() {
-  const [causalItems, setCausalItems] = useState<UsedItem[]>(INITIAL_CAUSAL_ITEMS);
+  const [causalItems, setCausalItems] =
+    useState<UsedItem[]>(INITIAL_CAUSAL_ITEMS);
   const [mapItems, setMapItems] = useState<UsedItem[]>(INITIAL_MAP_ITEMS);
   const [projects, setProjects] = useState<SimulationProject[]>([]);
   const [components, setComponents] = useState<SimulationComponent[]>([]);
@@ -73,6 +109,29 @@ export default function CodePage() {
     () => entities.filter((entity) => entity.selected),
     [entities],
   );
+  const wordCloudWords = useMemo(
+    () =>
+      selectedEntities.map((entity) => ({
+        text: entity.name,
+        value: entity.count,
+      })),
+    [selectedEntities],
+  );
+  const wordCloudOptions = useMemo(
+    () => ({
+      colors: ["#34d399", "#60a5fa", "#f59e0b", "#22d3ee", "#f472b6"],
+      enableTooltip: false,
+      fontFamily: "Georgia, serif",
+      fontSizes: [18, 48] as [number, number],
+      padding: 2,
+      rotations: 1,
+      rotationAngles: [0, 0] as [number, number],
+      scale: "sqrt" as const,
+      spiral: "archimedean" as const,
+      transitionDuration: 500,
+    }),
+    [],
+  );
   const totalEntityCount = useMemo(
     () => selectedEntities.reduce((sum, entity) => sum + entity.count, 0),
     [selectedEntities],
@@ -83,7 +142,10 @@ export default function CodePage() {
       return undefined;
     }
 
-    return components.find((component) => component.id === componentId) ?? findSeedComponentById(componentId);
+    return (
+      components.find((component) => component.id === componentId) ??
+      findSeedComponentById(componentId)
+    );
   }, [componentId, components]);
 
   const resolvedProjectId = useMemo(() => {
@@ -94,19 +156,28 @@ export default function CodePage() {
     return selectedComponent.projectId;
   }, [selectedComponent]);
 
-  const projectBackHref = resolvedProjectId ? `/pm/${encodeURIComponent(resolvedProjectId)}` : "/";
+  const projectBackHref = resolvedProjectId
+    ? `/pm/${encodeURIComponent(resolvedProjectId)}`
+    : "/";
 
   const selectedProjectName = useMemo(() => {
     if (!resolvedProjectId) {
       return "Unselected project";
     }
 
-    return projects.find((project) => project.id === resolvedProjectId)?.name ?? findSeedProjectById(resolvedProjectId)?.name ?? "Unselected project";
+    return (
+      projects.find((project) => project.id === resolvedProjectId)?.name ??
+      findSeedProjectById(resolvedProjectId)?.name ??
+      "Unselected project"
+    );
   }, [resolvedProjectId, projects]);
 
   useEffect(() => {
     const loadData = async () => {
-      const [nextProjects, nextComponents] = await Promise.all([loadProjects(), loadComponents()]);
+      const [nextProjects, nextComponents] = await Promise.all([
+        loadProjects(),
+        loadComponents(),
+      ]);
       setProjects(nextProjects);
       setComponents(nextComponents);
     };
@@ -198,18 +269,20 @@ export default function CodePage() {
           containerClassName="mb-8 flex flex-wrap items-center justify-between gap-4"
           titleClassName="text-3xl font-black uppercase tracking-tight text-neutral-100 md:text-4xl"
           actions={
-            <Link
+            <BackToHome
               href={projectBackHref}
-              className="rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white transition hover:border-sky-500"
-            >
-              Back to code generation home
-            </Link>
+              label="Back to project"
+              containerClassName=""
+              className="rounded-md px-3 py-2"
+            />
           }
         />
 
         <section className="space-y-8">
           <div>
-            <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">Causal used</h2>
+            <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">
+              Causal used
+            </h2>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {causalItems.map((item) => (
                 <CausalUsedCard
@@ -224,7 +297,9 @@ export default function CodePage() {
           </div>
 
           <div>
-            <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">Map used</h2>
+            <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">
+              Map used
+            </h2>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {mapItems.map((item) => (
                 <MapUsedCard
@@ -239,7 +314,9 @@ export default function CodePage() {
           </div>
 
           <div>
-            <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">Entity that will be generated</h2>
+            <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">
+              Entity that will be generated
+            </h2>
 
             <div className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-4 md:p-6">
               {!isExtracted ? (
@@ -257,7 +334,8 @@ export default function CodePage() {
 
                   <div className="flex h-full min-h-[300px] items-center justify-center text-center">
                     <p className="max-w-md text-sm text-neutral-400">
-                      Run extraction to populate entity candidates and generation controls.
+                      Run extraction to populate entity candidates and
+                      generation controls.
                     </p>
                   </div>
                 </div>
@@ -265,14 +343,24 @@ export default function CodePage() {
                 <div className="grid min-h-[360px] gap-4 lg:grid-cols-2">
                   <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-neutral-700 bg-gradient-to-br from-neutral-900 to-neutral-800 p-6">
                     <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-950/70 p-5">
-                      <div className="mb-4 h-2 w-24 rounded bg-neutral-700" />
-                      <div className="mb-2 h-20 rounded bg-sky-500/10" />
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="h-10 rounded bg-emerald-500/15" />
-                        <div className="h-10 rounded bg-sky-500/15" />
-                        <div className="h-10 rounded bg-amber-500/15" />
-                      </div>
-                      <p className="mt-4 text-center text-sm font-semibold text-neutral-300">Word Cloud Placeholder</p>
+                      {wordCloudWords.length > 0 ? (
+                        <div
+                          aria-label="Generated entity word cloud"
+                          className="h-[220px] w-full"
+                        >
+                          <ReactWordcloud
+                            minSize={[220, 220]}
+                            options={wordCloudOptions}
+                            words={wordCloudWords}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex h-[220px] items-center justify-center text-center">
+                          <p className="text-sm font-semibold text-neutral-300">
+                            Select at least one entity to render the word cloud.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -294,10 +382,14 @@ export default function CodePage() {
                               onChange={() => handleToggleEntity(entity.id)}
                               className="h-4 w-4 accent-sky-500"
                             />
-                            <span className="text-sm text-neutral-200">{entity.name}</span>
+                            <span className="text-sm text-neutral-200">
+                              {entity.name}
+                            </span>
                           </div>
 
-                          <span className="text-xs font-semibold text-neutral-400">Count: {String(entity.count)}</span>
+                          <span className="text-xs font-semibold text-neutral-400">
+                            Count: {String(entity.count)}
+                          </span>
                         </label>
                       ))}
                     </div>

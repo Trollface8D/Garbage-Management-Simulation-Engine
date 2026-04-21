@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { HorizontalChevronIcon } from "@/app/components/icons/common-icons";
 import {
   loadDeletedComponents,
   loadDeletedProjects,
@@ -97,7 +98,7 @@ export function PMSidebar() {
             isCollapsed ? "mx-auto" : ""
           }`}
         >
-          {isCollapsed ? ">" : "<"}
+          <HorizontalChevronIcon direction={isCollapsed ? "right" : "left"} className="h-4 w-4" />
         </button>
       </div>
 

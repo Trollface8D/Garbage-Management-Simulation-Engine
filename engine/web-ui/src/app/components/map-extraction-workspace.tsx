@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "@/app/components/back-to-home";
 import ModelPicker from "@/app/components/model-picker";
 import ProjectPageHeader from "@/app/components/project-page-header";
+import { CaretIcon, ExportIcon, ImportIcon, SaveIcon, TrashIcon } from "@/app/components/icons/common-icons";
 import { editMapGraph, extractMapGraph } from "@/lib/map-api-client";
 import type {
   GraphSelection,
@@ -162,48 +163,6 @@ function SelectionDetails({ selection }: { selection: GraphSelection }) {
         {JSON.stringify(selection.data, null, 2)}
       </pre>
     </div>
-  );
-}
-
-function SaveIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M5 3h12l4 4v14H3V3h2z" />
-      <path d="M7 3v6h10V3" />
-      <path d="M8 21v-7h8v7" />
-    </svg>
-  );
-}
-
-function ExportIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M12 3v12" />
-      <path d="M8 11l4 4 4-4" />
-      <path d="M4 21h16" />
-    </svg>
-  );
-}
-
-function ImportIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M12 21V9" />
-      <path d="M8 13l4-4 4 4" />
-      <path d="M4 3h16" />
-    </svg>
-  );
-}
-
-function TrashIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M3 6h18" />
-      <path d="M8 6V4h8v2" />
-      <path d="M19 6l-1 14H6L5 6" />
-      <path d="M10 11v6" />
-      <path d="M14 11v6" />
-    </svg>
   );
 }
 
@@ -472,7 +431,7 @@ function CodeExplorer({
             className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold text-neutral-100"
           >
             <span>vertices ({String(vertexEntries.length)})</span>
-            <span>{verticesOpen ? "-" : "+"}</span>
+            <CaretIcon direction={verticesOpen ? "up" : "down"} className="h-4 w-4 text-neutral-300" />
           </button>
           {verticesOpen ? (
             <div className="border-t border-neutral-700 px-2 py-2">
@@ -497,7 +456,7 @@ function CodeExplorer({
             className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold text-neutral-100"
           >
             <span>edges ({String(edgeEntries.length)})</span>
-            <span>{edgesOpen ? "-" : "+"}</span>
+            <CaretIcon direction={edgesOpen ? "up" : "down"} className="h-4 w-4 text-neutral-300" />
           </button>
           {edgesOpen ? (
             <div className="border-t border-neutral-700 px-2 py-2">
@@ -522,7 +481,7 @@ function CodeExplorer({
             className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold text-neutral-100"
           >
             <span>metadata</span>
-            <span>{metadataOpen ? "-" : "+"}</span>
+            <CaretIcon direction={metadataOpen ? "up" : "down"} className="h-4 w-4 text-neutral-300" />
           </button>
           {metadataOpen ? (
             <div className="border-t border-neutral-700 p-2">
@@ -1172,7 +1131,7 @@ export default function MapExtractionWorkspace({
                   >
                     {String(overviewDisplayNames.length)}
                   </span>
-                  <span className="text-neutral-300">{isOverviewCollapsed ? "v" : "^"}</span>
+                  <CaretIcon direction={isOverviewCollapsed ? "down" : "up"} className="h-4 w-4 text-neutral-300" />
                 </div>
               </button>
 
@@ -1257,7 +1216,7 @@ export default function MapExtractionWorkspace({
                   >
                     {String(binDisplayNames.length)}
                   </span>
-                  <span className="text-neutral-300">{isBinCollapsed ? "v" : "^"}</span>
+                  <CaretIcon direction={isBinCollapsed ? "down" : "up"} className="h-4 w-4 text-neutral-300" />
                 </div>
               </button>
 
@@ -1334,7 +1293,7 @@ export default function MapExtractionWorkspace({
                 className="flex w-full items-center justify-between text-left"
               >
                 <span className="text-lg font-bold text-neutral-100">Selection details</span>
-                <span className="text-neutral-300">{isSymbolCollapsed ? "v" : "^"}</span>
+                <CaretIcon direction={isSymbolCollapsed ? "down" : "up"} className="h-4 w-4 text-neutral-300" />
               </button>
 
               {!isSymbolCollapsed ? (
