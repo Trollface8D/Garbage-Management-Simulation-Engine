@@ -39,6 +39,8 @@ type SelectionRef = {
 type MapWorkspaceSnapshot = {
   graph: MapGraphPayload | null;
   jobId: string;
+  jobStatus?: string;
+  completedStages?: string[];
   selectedModel: string;
   overviewAdditionalInfo: string;
   binAdditionalInfo: string;
@@ -554,6 +556,10 @@ export default function MapExtractionWorkspace({
   const artifactImportInputRef = useRef<HTMLInputElement | null>(null);
   const snapshotKey = useMemo(() => `map-workspace:${componentId}`, [componentId]);
 
+  // Prevents the save-effect from overwriting the persisted snapshot with
+  // default (empty) state before the load-effect has hydrated the component.
+  const [hydrated, setHydrated] = useState(false);
+
   const [overviewFiles, setOverviewFiles] = useState<LocalUploadFile[]>([]);
   const [binFiles, setBinFiles] = useState<LocalUploadFile[]>([]);
   const [overviewStoredFileNames, setOverviewStoredFileNames] = useState<string[]>([]);
@@ -693,6 +699,9 @@ export default function MapExtractionWorkspace({
     const saved = window.localStorage.getItem(snapshotKey);
 
     if (!saved) {
+      // No prior snapshot — mark hydrated so the save-effect can start
+      // persisting changes from a clean slate.
+      setHydrated(true);
       return;
     }
 
@@ -736,18 +745,40 @@ export default function MapExtractionWorkspace({
         setEditStatus(parsed.editStatus);
       }
 
+      if (typeof parsed?.jobStatus === "string" && parsed.jobStatus) {
+        setJobStatus(parsed.jobStatus);
+      }
+
+      if (Array.isArray(parsed?.completedStages)) {
+        setCompletedStages(parsed.completedStages);
+      }
+
       if (parsed?.graph) {
         setExtractStatus("Loaded previous map extraction details.");
       }
     } catch {
       // Ignore corrupted local snapshot.
+    } finally {
+      // Always mark hydrated regardless of snapshot validity so the
+      // save-effect is unblocked and future interactions are persisted.
+      setHydrated(true);
     }
   }, [snapshotKey]);
 
   useEffect(() => {
+    // Do not save until the load-effect has finished hydrating state.
+    // Without this guard, the save-effect fires during the first render
+    // with all-default (empty) values and wipes the persisted snapshot
+    // before the restored state can propagate from the load-effect.
+    if (!hydrated) {
+      return;
+    }
+
     const snapshot: MapWorkspaceSnapshot = {
       graph: graphData,
       jobId,
+      jobStatus,
+      completedStages,
       selectedModel,
       overviewAdditionalInfo,
       binAdditionalInfo,
@@ -760,13 +791,16 @@ export default function MapExtractionWorkspace({
 
     window.localStorage.setItem(snapshotKey, JSON.stringify(snapshot));
   }, [
+    hydrated,
     overviewAdditionalInfo,
     binAdditionalInfo,
     binDisplayNames,
     changeLog,
+    completedStages,
     editStatus,
     graphData,
     jobId,
+    jobStatus,
     selectedModel,
     overviewDisplayNames,
     selection,

@@ -288,16 +288,44 @@ async def create_map_extract_job(
 def get_map_extract_job(job_id: str):
     with JOBS_LOCK:
         job = JOBS.get(job_id)
-    if job is None:
+
+    if job is not None:
+        logger.info(
+            "[map_extract] status query jobId=%s status=%s stage=%s",
+            job_id,
+            job.status,
+            job.current_stage,
+        )
+        return serialize_job(job)
+
+    # Job not in memory (backend may have restarted).  Reconstruct a
+    # best-effort status response from disk checkpoint files so the
+    # frontend can still display completed stage info.
+    disk_stages = checkpoints.list_stages(job_id)
+    if not disk_stages:
         logger.warning("[map_extract] status query job not found jobId=%s", job_id)
         return JSONResponse({"error": f"Job '{job_id}' not found."}, status_code=404)
+
+    disk_completed = [s["stage"] for s in disk_stages]
+    disk_status = "completed" if "finalize_graph" in disk_completed else "partial"
     logger.info(
-        "[map_extract] status query jobId=%s status=%s stage=%s",
+        "[map_extract] status query (from disk) jobId=%s status=%s completedStages=%s",
         job_id,
-        job.status,
-        job.current_stage,
+        disk_status,
+        disk_completed,
     )
-    return serialize_job(job)
+    return {
+        "jobId": job_id,
+        "status": disk_status,
+        "currentStage": None,
+        "stageMessage": "Restored from checkpoint files (backend was restarted).",
+        "stageHistory": [],
+        "tokenUsage": None,
+        "costEstimate": None,
+        "error": None,
+        "cancelRequested": False,
+        "completedStages": disk_completed,
+    }
 
 
 @router.get("/map_extract/jobs/{job_id}/checkpoints")
@@ -305,8 +333,21 @@ def list_map_extract_checkpoints(job_id: str):
     stages = checkpoints.list_stages(job_id)
     with JOBS_LOCK:
         job = JOBS.get(job_id)
-        completed = list(job.completed_stages) if job else []
+        in_memory_completed = list(job.completed_stages) if job else None
         status = job.status if job else None
+
+    # When the job is not in memory (e.g. backend restarted), infer which
+    # stages completed from the checkpoint files that exist on disk.
+    if in_memory_completed is not None:
+        completed = in_memory_completed
+    else:
+        completed = [s["stage"] for s in stages]
+        # If finalize_graph checkpoint exists the job ran to completion.
+        if status is None and any(s["stage"] == "finalize_graph" for s in stages):
+            status = "completed"
+        elif status is None and completed:
+            status = "partial"
+
     return {
         "jobId": job_id,
         "status": status,
