@@ -33,6 +33,7 @@ type WordCloudWord = {
 type WordCloudProps = {
     words: WordCloudWord[];
     options?: Record<string, unknown>;
+    minSize?: [number, number];
     size?: [number, number];
 };
 
@@ -395,6 +396,7 @@ export default function CodePage() {
 
     const progressTimerRef = useRef<number | null>(null);
     const importInputRef = useRef<HTMLInputElement | null>(null);
+    const wordCloudHostRef = useRef<HTMLDivElement | null>(null);
 
     const selectedEntities = useMemo(
         () => entities.filter((entity) => entity.selected),
@@ -502,6 +504,69 @@ export default function CodePage() {
             }
         };
     }, []);
+
+    useEffect(() => {
+        if (!isExtracted || wordCloudWords.length === 0) {
+            return;
+        }
+
+        const recenterWordCloud = () => {
+            const host = wordCloudHostRef.current;
+            if (!host) {
+                return;
+            }
+
+            const svg = host.querySelector("svg") as SVGSVGElement | null;
+            const group = svg?.querySelector("g") as SVGGElement | null;
+
+            if (!svg || !group) {
+                return;
+            }
+
+            const svgRect = svg.getBoundingClientRect();
+            const groupRect = group.getBoundingClientRect();
+
+            if (
+                svgRect.width === 0 ||
+                svgRect.height === 0 ||
+                groupRect.width === 0 ||
+                groupRect.height === 0
+            ) {
+                return;
+            }
+
+            const deltaPxX =
+                svgRect.left + svgRect.width / 2 - (groupRect.left + groupRect.width / 2);
+            const deltaPxY =
+                svgRect.top + svgRect.height / 2 - (groupRect.top + groupRect.height / 2);
+
+            const baseTransform = group.transform.baseVal.consolidate();
+            const currentX = baseTransform?.matrix.e ?? 0;
+            const currentY = baseTransform?.matrix.f ?? 0;
+
+            const viewBox = svg.viewBox.baseVal;
+            const unitsWidth = viewBox.width > 0 ? viewBox.width : svgRect.width;
+            const unitsHeight = viewBox.height > 0 ? viewBox.height : svgRect.height;
+            const scaleX = svgRect.width / unitsWidth || 1;
+            const scaleY = svgRect.height / unitsHeight || 1;
+
+            const nextX = currentX + deltaPxX / scaleX;
+            const nextY = currentY + deltaPxY / scaleY;
+
+            group.setAttribute("transform", `translate(${String(nextX)}, ${String(nextY)})`);
+        };
+
+        const frameId = window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(recenterWordCloud);
+        });
+
+        const timeoutId = window.setTimeout(recenterWordCloud, 620);
+
+        return () => {
+            window.cancelAnimationFrame(frameId);
+            window.clearTimeout(timeoutId);
+        };
+    }, [isExtracted, wordCloudWords]);
 
     const stopGeneration = () => {
         if (progressTimerRef.current) {
@@ -947,12 +1012,18 @@ export default function CodePage() {
                                     <div className="flex min-h-75 items-center justify-center rounded-lg border border-neutral-700 bg-linear-to-br from-neutral-900 to-neutral-800 p-6">
                                         <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-950/70 p-5">
                                             {wordCloudWords.length > 0 ? (
-                                                <div aria-label="Generated entity word cloud" className="h-55 w-full">
-                                                    <ReactWordcloud
-                                                        size={[220, 220]}
-                                                        options={wordCloudOptions}
-                                                        words={wordCloudWords}
-                                                    />
+                                                <div
+                                                    aria-label="Generated entity word cloud"
+                                                    className="flex h-55 w-full items-center justify-center"
+                                                >
+                                                    <div ref={wordCloudHostRef} className="h-55 w-55">
+                                                        <ReactWordcloud
+                                                            minSize={[220, 220]}
+                                                            size={[220, 220]}
+                                                            options={wordCloudOptions}
+                                                            words={wordCloudWords}
+                                                        />
+                                                    </div>
                                                 </div>
                                             ) : (
                                                 <div className="flex h-55 items-center justify-center text-center">
