@@ -5,7 +5,6 @@ import {
   cancelMapExtractJob,
   fetchMapExtractCheckpointDetail,
   fetchMapExtractCheckpoints,
-  resumeMapExtractJob,
   rollbackMapExtractJob,
 } from "@/lib/map-api-client";
 import type {
@@ -103,7 +102,13 @@ export type StageLogProps = {
   cancelRequested?: boolean;
   latestProgress?: MapExtractionProgress | null;
   isActive: boolean;
-  onResumeSuccess?: () => void;
+  /**
+   * Called when the user clicks Resume. The parent orchestrates the resume
+   * request so its own `isExtracting` / `graphData` / token-usage state stays
+   * in sync with the running job (so the Extract button disables, the
+   * Terminate button activates, and final results populate the workspace).
+   */
+  onResumeRequested?: () => void;
   onStatusUpdate?: (message: string) => void;
 };
 
@@ -117,11 +122,15 @@ export default function StageLogPanel(props: StageLogProps) {
     cancelRequested,
     latestProgress,
     isActive,
-    onResumeSuccess,
+    onResumeRequested,
     onStatusUpdate,
   } = props;
 
-  const [collapsed, setCollapsed] = useState(false);
+  // Collapsed-by-default; auto-expanded whenever a run is active or stage
+  // history is available.  `userToggled` lets the user override the
+  // auto-expand after the first interaction.
+  const [collapsed, setCollapsed] = useState(true);
+  const [userToggled, setUserToggled] = useState(false);
   const [remoteCompleted, setRemoteCompleted] = useState<string[]>([]);
   const [expandedStage, setExpandedStage] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState<string>("");
@@ -237,28 +246,28 @@ export default function StageLogPanel(props: StageLogProps) {
     [jobId, onStatusUpdate],
   );
 
-  const handleResume = useCallback(async () => {
+  const handleResume = useCallback(() => {
     if (!jobId) return;
-    setActionPending(true);
-    setActionStatus("Resuming job…");
-    try {
-      await resumeMapExtractJob(jobId, {
-        onProgress: (progress) => {
-          const label = shortStageName(progress.stage);
-          setActionStatus(label ? `Resume: ${label} — ${progress.message || ""}` : "Resuming…");
-        },
-      });
-      setActionStatus("Resume completed.");
-      onResumeSuccess?.();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setActionStatus(`Resume failed: ${message}`);
-    } finally {
-      setActionPending(false);
-    }
-  }, [jobId, onResumeSuccess]);
+    setActionStatus("Resume requested…");
+    onResumeRequested?.();
+  }, [jobId, onResumeRequested]);
 
-  if (!jobId) {
+  const hasHistory = completedSet.size > 0;
+
+  // Auto-expand on the first moment activity/history becomes available,
+  // unless the user has manually toggled collapse state.
+  useEffect(() => {
+    if (userToggled) return;
+    if (isActive || hasHistory) {
+      setCollapsed(false);
+    } else {
+      setCollapsed(true);
+    }
+  }, [isActive, hasHistory, userToggled]);
+
+  // If there is no job and no history yet, hide the panel entirely so it
+  // does not take up UI space with empty pending dots.
+  if (!jobId || (!isActive && !hasHistory)) {
     return null;
   }
 
@@ -297,7 +306,10 @@ export default function StageLogPanel(props: StageLogProps) {
           </button>
           <button
             type="button"
-            onClick={() => setCollapsed((prev) => !prev)}
+            onClick={() => {
+              setUserToggled(true);
+              setCollapsed((prev) => !prev);
+            }}
             aria-label={collapsed ? "Expand stage log" : "Collapse stage log"}
             className="inline-flex items-center rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-xs text-neutral-300 transition hover:border-sky-500"
           >
