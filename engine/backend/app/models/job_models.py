@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 import queue
+import time
 
 
 @dataclass
@@ -18,3 +19,6 @@ class JobRecord:
     result: dict[str, Any] | None = None
     run_dir: str | None = None
     event_queue: queue.Queue[tuple[str, Any]] = field(default_factory=queue.Queue)
+    cancel_requested: bool = False
+    last_activity_ts: float = field(default_factory=time.monotonic)
+    completed_stages: list[str] = field(default_factory=list)

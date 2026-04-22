@@ -6,19 +6,28 @@ import threading
 import time
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, Body, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
 from ...infra.io_utils import resolve_api_key
 from ...infra.paths import DEFAULT_MODEL_NAME
 from ..models.job_models import JobRecord
-from ..services.job_store import JOBS, JOBS_LOCK, emit_job_event, serialize_job, utc_now_iso
+from ..services import map_extract_checkpoints as checkpoints
+from ..services.job_store import (
+    JOBS,
+    JOBS_LOCK,
+    emit_job_event,
+    request_cancel,
+    serialize_job,
+    touch_activity,
+    utc_now_iso,
+)
 from ..services.map_extract_runner import run_map_extract_worker
 
 
 router = APIRouter(tags=["map_extract"])
 logger = logging.getLogger(__name__)
-MAP_EXTRACT_JOB_TIMEOUT_SECONDS = int(os.getenv("MAP_EXTRACT_JOB_TIMEOUT_SECONDS", "600"))
+MAP_EXTRACT_JOB_TIMEOUT_SECONDS = int(os.getenv("MAP_EXTRACT_JOB_TIMEOUT_SECONDS", "1800"))
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 PDF_EXTENSIONS = {".pdf"}
@@ -43,21 +52,36 @@ def _is_supported_aux_file(upload: UploadFile) -> bool:
 
 
 def _start_timeout_watchdog(job: JobRecord) -> None:
+    """Idle-based watchdog: terminate only if no activity for TIMEOUT seconds.
+
+    The worker calls ``touch_activity`` around every stage boundary / Gemini
+    emission, so slow-but-progressing jobs are not killed. A hung stage
+    eventually trips this after the configured idle window.
+    """
+
     def watchdog() -> None:
         if MAP_EXTRACT_JOB_TIMEOUT_SECONDS <= 0:
             return
 
-        time.sleep(MAP_EXTRACT_JOB_TIMEOUT_SECONDS)
-        with JOBS_LOCK:
-            if job.status in {"completed", "failed"}:
+        poll_interval = 5
+        while True:
+            time.sleep(poll_interval)
+            with JOBS_LOCK:
+                if job.status in {"completed", "failed", "cancelled"}:
+                    return
+                idle = time.monotonic() - job.last_activity_ts
+            if idle >= MAP_EXTRACT_JOB_TIMEOUT_SECONDS:
+                timeout_error = (
+                    f"map_extract idle for {int(idle)}s (>= {MAP_EXTRACT_JOB_TIMEOUT_SECONDS}s) — terminated."
+                )
+                logger.error(
+                    "[map_extract] timeout watchdog terminated jobId=%s idleSeconds=%s",
+                    job.job_id,
+                    int(idle),
+                )
+                emit_job_event(job, "error", {"error": timeout_error})
+                emit_job_event(job, "close", None)
                 return
-
-        timeout_error = (
-            f"map_extract timed out after {MAP_EXTRACT_JOB_TIMEOUT_SECONDS}s and was terminated."
-        )
-        logger.error("[map_extract] timeout watchdog terminated jobId=%s", job.job_id)
-        emit_job_event(job, "error", {"error": timeout_error})
-        emit_job_event(job, "close", None)
 
     threading.Thread(target=watchdog, daemon=True).start()
 
@@ -274,6 +298,124 @@ def get_map_extract_job(job_id: str):
         job.current_stage,
     )
     return serialize_job(job)
+
+
+@router.get("/map_extract/jobs/{job_id}/checkpoints")
+def list_map_extract_checkpoints(job_id: str):
+    stages = checkpoints.list_stages(job_id)
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        completed = list(job.completed_stages) if job else []
+        status = job.status if job else None
+    return {
+        "jobId": job_id,
+        "status": status,
+        "stageOrder": list(checkpoints.STAGE_ORDER),
+        "completedStages": completed,
+        "checkpoints": stages,
+    }
+
+
+@router.post("/map_extract/jobs/{job_id}/cancel")
+def cancel_map_extract_job(job_id: str):
+    ok = request_cancel(job_id)
+    if not ok:
+        with JOBS_LOCK:
+            job = JOBS.get(job_id)
+        if job is None:
+            return JSONResponse({"error": f"Job '{job_id}' not found."}, status_code=404)
+        return {"jobId": job_id, "status": job.status, "cancelRequested": job.cancel_requested}
+    with JOBS_LOCK:
+        job = JOBS[job_id]
+        status = job.status
+    return {"jobId": job_id, "status": status, "cancelRequested": True}
+
+
+@router.post("/map_extract/jobs/{job_id}/rollback")
+def rollback_map_extract_job(
+    job_id: str,
+    payload: dict = Body(default_factory=dict),
+):
+    stage = str(payload.get("stage") or payload.get("toStage") or "").strip()
+    if not stage:
+        return JSONResponse({"error": "stage is required."}, status_code=400)
+    if checkpoints.stage_index(stage) < 0:
+        return JSONResponse(
+            {"error": f"unknown stage '{stage}'; valid: {list(checkpoints.STAGE_ORDER)}"},
+            status_code=400,
+        )
+    removed = checkpoints.delete_from(job_id, stage)
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is not None:
+            job.completed_stages = [s for s in job.completed_stages if checkpoints.stage_index(s) < checkpoints.stage_index(stage)]
+            job.updated_at = utc_now_iso()
+    return {
+        "jobId": job_id,
+        "removed": removed,
+        "remaining": checkpoints.list_stages(job_id),
+    }
+
+
+@router.post("/map_extract/jobs/{job_id}/resume")
+def resume_map_extract_job(job_id: str):
+    manifest = checkpoints.load_inputs(job_id)
+    if manifest is None:
+        return JSONResponse(
+            {"error": f"No saved inputs for job '{job_id}'. Start a new job instead."},
+            status_code=404,
+        )
+
+    api_key = resolve_api_key()
+    if not api_key:
+        return JSONResponse(
+            {"error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY."},
+            status_code=500,
+        )
+
+    now = utc_now_iso()
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is None:
+            job = JobRecord(job_id=job_id, status="queued", created_at=now, updated_at=now)
+            JOBS[job_id] = job
+        else:
+            if job.status == "running":
+                return JSONResponse(
+                    {"error": "Job is already running."}, status_code=409
+                )
+            job.status = "queued"
+            job.cancel_requested = False
+            job.error = None
+            job.updated_at = now
+        touch_activity(job)
+
+    thread = threading.Thread(
+        target=run_map_extract_worker,
+        kwargs={
+            "job": job,
+            "api_key": api_key,
+            "model_name": str(manifest.get("modelName") or DEFAULT_MODEL_NAME),
+            "use_env_model_overrides": bool(manifest.get("useEnvModelOverrides")),
+            "component_id": str(manifest.get("componentId") or ""),
+            "overview_files": manifest.get("overviewFiles") or [],
+            "support_files": manifest.get("supportFiles") or [],
+            "overview_additional_information": str(manifest.get("overviewAdditionalInformation") or ""),
+            "support_additional_information": str(manifest.get("supportAdditionalInformation") or ""),
+            "resume_existing": True,
+        },
+        daemon=True,
+    )
+    thread.start()
+    _start_timeout_watchdog(job)
+
+    logger.info("[map_extract] resume triggered jobId=%s", job_id)
+    return {
+        "jobId": job_id,
+        "status": "queued",
+        "resumed": True,
+        "completedStages": list(job.completed_stages),
+    }
 
 
 @router.get("/map_extract/jobs/{job_id}/result")

@@ -1,6 +1,7 @@
 import type {
   MapEditRequest,
   MapEditResult,
+  MapExtractCheckpointList,
   MapExtractionJobStart,
   MapExtractionJobStatus,
   MapExtractionProgress,
@@ -11,6 +12,10 @@ import type {
 const DEFAULT_EXTRACT_START_ENDPOINT = "/api/map/extract/start";
 const DEFAULT_EXTRACT_STATUS_ENDPOINT = "/api/map/extract/status";
 const DEFAULT_EXTRACT_RESULT_ENDPOINT = "/api/map/extract/result";
+const DEFAULT_EXTRACT_CANCEL_ENDPOINT = "/api/map/extract/cancel";
+const DEFAULT_EXTRACT_ROLLBACK_ENDPOINT = "/api/map/extract/rollback";
+const DEFAULT_EXTRACT_RESUME_ENDPOINT = "/api/map/extract/resume";
+const DEFAULT_EXTRACT_CHECKPOINTS_ENDPOINT = "/api/map/extract/checkpoints";
 const DEFAULT_EDIT_ENDPOINT = "/api/map/edit";
 
 function getExtractStartEndpoint(): string {
@@ -126,7 +131,7 @@ export async function extractMapGraph(
   }
 
   const startedAt = Date.now();
-  const maxAttempts = 300;
+  const maxAttempts = 1500;
   const pollIntervalMs = 1200;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const status = await fetchMapExtractStatus(jobId);
@@ -145,6 +150,9 @@ export async function extractMapGraph(
     if (status.status === "failed") {
       throw new Error(status.error || "map_extract failed.");
     }
+    if (status.status === "cancelled") {
+      throw new Error("map_extract was cancelled.");
+    }
 
     if (status.status === "completed") {
       const result = await fetchMapExtractResult(jobId);
@@ -158,6 +166,91 @@ export async function extractMapGraph(
   }
 
   throw new Error("map_extract timed out while waiting for completion.");
+}
+
+export async function fetchMapExtractStatusOnce(jobId: string): Promise<MapExtractionJobStatus> {
+  return fetchMapExtractStatus(jobId);
+}
+
+export async function fetchMapExtractCheckpoints(jobId: string): Promise<MapExtractCheckpointList> {
+  const url = new URL(DEFAULT_EXTRACT_CHECKPOINTS_ENDPOINT, window.location.origin);
+  url.searchParams.set("jobId", jobId);
+  const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as MapExtractCheckpointList;
+}
+
+export async function cancelMapExtractJob(jobId: string): Promise<void> {
+  const url = new URL(DEFAULT_EXTRACT_CANCEL_ENDPOINT, window.location.origin);
+  url.searchParams.set("jobId", jobId);
+  const response = await fetch(url.toString(), { method: "POST", cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+export async function rollbackMapExtractJob(jobId: string, stage: string): Promise<void> {
+  const url = new URL(DEFAULT_EXTRACT_ROLLBACK_ENDPOINT, window.location.origin);
+  url.searchParams.set("jobId", jobId);
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stage }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+export async function resumeMapExtractJob(
+  jobId: string,
+  options?: { onProgress?: (progress: MapExtractionProgress) => void },
+): Promise<MapExtractionResult> {
+  const url = new URL(DEFAULT_EXTRACT_RESUME_ENDPOINT, window.location.origin);
+  url.searchParams.set("jobId", jobId);
+  const response = await fetch(url.toString(), { method: "POST", cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const startedAt = Date.now();
+  const maxAttempts = 1500;
+  const pollIntervalMs = 1200;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const status = await fetchMapExtractStatus(jobId);
+
+    options?.onProgress?.({
+      jobId,
+      attempt,
+      elapsedMs: Date.now() - startedAt,
+      status: status.status,
+      stage: status.currentStage,
+      message: status.stageMessage,
+      tokenUsage: status.tokenUsage,
+      costEstimate: status.costEstimate,
+    });
+
+    if (status.status === "failed") {
+      throw new Error(status.error || "map_extract failed.");
+    }
+    if (status.status === "cancelled") {
+      throw new Error("map_extract was cancelled.");
+    }
+    if (status.status === "completed") {
+      const result = await fetchMapExtractResult(jobId);
+      if (!result.jobId) {
+        result.jobId = jobId;
+      }
+      return result;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  throw new Error("map_extract resume timed out while waiting for completion.");
 }
 
 export async function editMapGraph(input: MapEditRequest): Promise<MapEditResult> {

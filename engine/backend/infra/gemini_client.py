@@ -61,11 +61,45 @@ class GeminiGateway:
             if response_schema is not None:
                 config_kwargs["response_schema"] = response_schema
 
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=content_parts,
-            config=GenerateContentConfig(**config_kwargs),
-        )
+        max_attempts = _safe_int_env("GEMINI_MAX_ATTEMPTS", 4, minimum=1, maximum=10)
+        base_delay = 1.5
+        max_delay = 30.0
+
+        response = None
+        last_exc: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=content_parts,
+                    config=GenerateContentConfig(**config_kwargs),
+                )
+                break
+            except Exception as exc:  # pragma: no cover - network path
+                last_exc = exc
+                if attempt >= max_attempts or not self._is_retryable_transient_error(exc):
+                    logger.error(
+                        "[gemini] generate_content failed attempt=%s/%s error=%s",
+                        attempt,
+                        max_attempts,
+                        exc,
+                    )
+                    raise
+                delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
+                delay += random.uniform(0, delay * 0.25)
+                logger.warning(
+                    "[gemini] transient error attempt=%s/%s sleeping=%.2fs error=%s",
+                    attempt,
+                    max_attempts,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+
+        if response is None:
+            # Should be unreachable — either break or raise above.
+            raise last_exc if last_exc else RuntimeError("generate_content returned no response")
+
         response_text = (response.text or "").strip()
 
         if usage_collector is not None:
@@ -145,26 +179,6 @@ class GeminiGateway:
             "provider_total_tokens": provider_total_tokens,
             "hidden_tokens": hidden_tokens,
         }
-
-    @staticmethod
-    def _is_retryable_transient_error(exc: Exception) -> bool:
-        if isinstance(exc, genai_errors.ServerError):
-            return True
-
-        message = str(exc).lower()
-        transient_tokens = (
-            "503",
-            "unavailable",
-            "high demand",
-            "resource exhausted",
-            "temporarily",
-            "timeout",
-            "timed out",
-            "connection reset",
-            "connection aborted",
-            "network",
-        )
-        return any(token in message for token in transient_tokens)
 
     @staticmethod
     def _is_retryable_transient_error(exc: Exception) -> bool:
