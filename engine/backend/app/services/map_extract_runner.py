@@ -15,7 +15,16 @@ from ...infra.gemini_client import GeminiGateway
 from ...infra.io_utils import read_text
 from ...infra.paths import DEFAULT_MAP_BUFFER_TRAIT_TABLE, DEFAULT_MAP_EXTRACT_PROMPT_CONFIG
 from ..models.job_models import JobRecord
-from .job_store import emit_job_event
+from . import map_extract_checkpoints as checkpoints
+from .job_store import (
+    JOBS,
+    JOBS_LOCK,
+    JobCancelledError,
+    emit_job_event,
+    is_cancel_requested,
+    mark_cancelled,
+    touch_activity,
+)
 from .usage_utils import ensure_usage_progress
 
 
@@ -40,6 +49,18 @@ def _resolve_stage_models(default_model: str, *, use_env_overrides: bool) -> dic
         "tabular_extraction": (os.getenv("GEMINI_MAP_EXTRACT_MODEL_TABULAR") or "").strip() or resolved_default,
         "edge_extraction": (os.getenv("GEMINI_MAP_EXTRACT_MODEL_EDGE") or "").strip() or resolved_default,
     }
+
+
+def _raise_if_cancelled(job: JobRecord) -> None:
+    if is_cancel_requested(job.job_id):
+        raise JobCancelledError(f"job cancelled jobId={job.job_id}")
+
+
+def _mark_stage_completed(job: JobRecord, stage: str) -> None:
+    with JOBS_LOCK:
+        if stage not in job.completed_stages:
+            job.completed_stages.append(stage)
+    touch_activity(job)
 
 
 def _stage_begin(job_id: str, stage: str) -> float:
@@ -1194,6 +1215,7 @@ def _emit_stage_with_usage(
             "costEstimate": usage["costEstimate"],
         },
     )
+    touch_activity(job)
 
 
 def _merge_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1444,9 +1466,23 @@ def run_map_extract_worker(
     support_files: list[dict[str, Any]],
     overview_additional_information: str,
     support_additional_information: str,
+    resume_existing: bool = False,
 ) -> None:
     try:
         run_started = time.perf_counter()
+        touch_activity(job)
+
+        if not resume_existing:
+            checkpoints.save_inputs(
+                job.job_id,
+                overview_files=overview_files,
+                support_files=support_files,
+                component_id=component_id,
+                overview_additional_information=overview_additional_information,
+                support_additional_information=support_additional_information,
+                model_name=model_name,
+                use_env_model_overrides=use_env_model_overrides,
+            )
         usage_totals: dict[str, int] = {
             "prompt_tokens": 0,
             "output_tokens": 0,
@@ -1543,55 +1579,104 @@ def run_map_extract_worker(
             for idx, file_data in enumerate(support_files)
         ]
 
-        _emit_stage_with_usage(
-            job=job,
-            stage="map_extract/extractmap_symbol",
-            message="Extracting map symbols and notations.",
-            model_name=model_name,
-            token_usage=usage_totals,
-        )
-        symbol_started = _stage_begin(job.job_id, "extractmap_symbol")
-        symbol_chunks: list[str] = []
-        for map_name, map_part in map_parts:
-            chunk = _run_stage_text(
-                stage_gateway("extractmap_symbol"),
-                base_prompt=str(config["extractmap_symbol"].get("prompt") or ""),
-                extra_context=(
-                    f"{symbol_output_hint}\n"
-                    f"{compact_output_policy}\n"
-                    f"source_map={map_name}"
-                ),
-                parts=[map_part],
-                usage_totals=usage_totals,
-                stage_name="map_extract/extractmap_symbol",
+        _raise_if_cancelled(job)
+        stage1_cached = checkpoints.load_stage(job.job_id, "extractmap_symbol") if resume_existing else None
+        if stage1_cached is not None:
+            symbol_markdown = str(stage1_cached.get("symbolMarkdown") or "")
+            symbol_legend = list(stage1_cached.get("symbolLegend") or [])
+            symbol_enum = list(stage1_cached.get("symbolEnum") or [])
+            symbol_context_payload = json.dumps(
+                {"symbolEnum": symbol_enum, "symbolLegend": symbol_legend}, ensure_ascii=False
             )
-            if chunk:
-                symbol_chunks.append(f"## {map_name}\n{chunk}")
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/extractmap_symbol",
+                message="Resumed from checkpoint (symbols).",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+        else:
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/extractmap_symbol",
+                message="Extracting map symbols and notations.",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+            symbol_started = _stage_begin(job.job_id, "extractmap_symbol")
+            symbol_chunks: list[str] = []
+            for map_name, map_part in map_parts:
+                _raise_if_cancelled(job)
+                chunk = _run_stage_text(
+                    stage_gateway("extractmap_symbol"),
+                    base_prompt=str(config["extractmap_symbol"].get("prompt") or ""),
+                    extra_context=(
+                        f"{symbol_output_hint}\n"
+                        f"{compact_output_policy}\n"
+                        f"source_map={map_name}"
+                    ),
+                    parts=[map_part],
+                    usage_totals=usage_totals,
+                    stage_name="map_extract/extractmap_symbol",
+                )
+                if chunk:
+                    symbol_chunks.append(f"## {map_name}\n{chunk}")
+                touch_activity(job)
 
-        symbol_markdown = "\n\n".join(symbol_chunks)
-        symbol_legend = _extract_symbol_legend(symbol_markdown)
-        symbol_enum = [entry["symbol"] for entry in symbol_legend if entry.get("symbol")]
-        symbol_context_payload = json.dumps(
-            {
-                "symbolEnum": symbol_enum,
-                "symbolLegend": symbol_legend,
-            },
-            ensure_ascii=False,
-        )
-        _stage_end(job.job_id, "extractmap_symbol", symbol_started, markdownLen=len(symbol_markdown))
+            symbol_markdown = "\n\n".join(symbol_chunks)
+            symbol_legend = _extract_symbol_legend(symbol_markdown)
+            symbol_enum = [entry["symbol"] for entry in symbol_legend if entry.get("symbol")]
+            symbol_context_payload = json.dumps(
+                {
+                    "symbolEnum": symbol_enum,
+                    "symbolLegend": symbol_legend,
+                },
+                ensure_ascii=False,
+            )
+            _stage_end(job.job_id, "extractmap_symbol", symbol_started, markdownLen=len(symbol_markdown))
+            checkpoints.save_stage(
+                job.job_id,
+                "extractmap_symbol",
+                {
+                    "symbolMarkdown": symbol_markdown,
+                    "symbolLegend": symbol_legend,
+                    "symbolEnum": symbol_enum,
+                },
+            )
+        _mark_stage_completed(job, "extractmap_symbol")
 
-        _emit_stage_with_usage(
-            job=job,
-            stage="map_extract/extractmap_text",
-            message="Extracting nodes and metadata from map with static buffer trait table.",
-            model_name=model_name,
-            token_usage=usage_totals,
-        )
-        node_started = _stage_begin(job.job_id, "extractmap_text")
-        all_nodes: list[dict[str, Any]] = []
-        node_payload_types: list[str] = []
+        _raise_if_cancelled(job)
+        stage2_cached = checkpoints.load_stage(job.job_id, "extractmap_text") if resume_existing else None
+        if stage2_cached is not None:
+            nodes = list(stage2_cached.get("nodes") or [])
+            node_payload_types = list(stage2_cached.get("payloadTypes") or [])
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/extractmap_text",
+                message=f"Resumed from checkpoint (nodes={len(nodes)}).",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+            _mark_stage_completed(job, "extractmap_text")
+            # Jump to stage 3 via a guarded block — the existing stage 2 body
+            # is wrapped in `if True:` only when no checkpoint exists.
+            _stage2_run = False
+        else:
+            _stage2_run = True
 
-        if support_parts:
+        if _stage2_run:
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/extractmap_text",
+                message="Extracting nodes and metadata from map with static buffer trait table.",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+            node_started = _stage_begin(job.job_id, "extractmap_text")
+            all_nodes: list[dict[str, Any]] = []
+            node_payload_types = []
+
+        if _stage2_run and support_parts:
             total_maps = len(map_parts)
             total_support = len(support_parts)
             for map_name, map_part in map_parts:
@@ -1632,9 +1717,10 @@ def run_map_extract_worker(
                         model_name=model_name,
                         token_usage=usage_totals,
                     )
-        else:
+        elif _stage2_run:
             total_maps = len(map_parts)
             for map_name, map_part in map_parts:
+                _raise_if_cancelled(job)
                 nodes_payload = _run_stage_json(
                     stage_gateway("extractmap_text"),
                     stage_name="map_extract/extractmap_text",
@@ -1670,34 +1756,61 @@ def run_map_extract_worker(
                     model_name=model_name,
                     token_usage=usage_totals,
                 )
+                touch_activity(job)
 
-        nodes = _merge_nodes(_filter_active_nodes(all_nodes))
-        nodes = _apply_symbol_metadata(nodes, symbol_enum)
+        if _stage2_run:
+            nodes = _merge_nodes(_filter_active_nodes(all_nodes))
+            nodes = _apply_symbol_metadata(nodes, symbol_enum)
 
-        if len(nodes) < 2:
-            raise ValueError(
-                "map_extract failed: insufficient nodes extracted in stage 2 "
-                f"(nodeCount={len(nodes)}, payloadTypes={node_payload_types})."
+            if len(nodes) < 2:
+                raise ValueError(
+                    "map_extract failed: insufficient nodes extracted in stage 2 "
+                    f"(nodeCount={len(nodes)}, payloadTypes={node_payload_types})."
+                )
+
+            _stage_end(
+                job.job_id,
+                "extractmap_text",
+                node_started,
+                nodeCount=len(nodes),
+                payloadTypes=node_payload_types,
             )
+            checkpoints.save_stage(
+                job.job_id,
+                "extractmap_text",
+                {
+                    "nodes": nodes,
+                    "payloadTypes": node_payload_types,
+                },
+            )
+            _mark_stage_completed(job, "extractmap_text")
 
-        _stage_end(
-            job.job_id,
-            "extractmap_text",
-            node_started,
-            nodeCount=len(nodes),
-            payloadTypes=node_payload_types,
-        )
+        _raise_if_cancelled(job)
+        stage3_cached = checkpoints.load_stage(job.job_id, "tabular_extraction") if resume_existing else None
+        if stage3_cached is not None:
+            tabular_csv = str(stage3_cached.get("tabularCsv") or "")
+            csv_chunks = list(stage3_cached.get("csvChunks") or [])
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/tabular_extraction",
+                message=f"Resumed from checkpoint (csvLen={len(tabular_csv)}).",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+            _stage3_run = False
+        else:
+            _stage3_run = True
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/tabular_extraction",
+                message="Extracting tabular data from support images/PDFs.",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+            table_started = _stage_begin(job.job_id, "tabular_extraction")
+            csv_chunks = []
 
-        _emit_stage_with_usage(
-            job=job,
-            stage="map_extract/tabular_extraction",
-            message="Extracting tabular data from support images/PDFs.",
-            model_name=model_name,
-            token_usage=usage_totals,
-        )
-        table_started = _stage_begin(job.job_id, "tabular_extraction")
-        csv_chunks: list[str] = []
-        if support_parts:
+        if _stage3_run and support_parts:
             total_support = len(support_parts)
             for support_idx, (support_name, support_part) in enumerate(support_parts, start=1):
                 emit_job_event(
@@ -1731,7 +1844,7 @@ def run_map_extract_worker(
                     model_name=model_name,
                     token_usage=usage_totals,
                 )
-        else:
+        elif _stage3_run:
             first_map_name, first_map_part = map_parts[0]
             csv_text = _run_stage_text(
                 stage_gateway("tabular_extraction"),
@@ -1758,62 +1871,103 @@ def run_map_extract_worker(
                 token_usage=usage_totals,
             )
 
-        tabular_csv = "\n\n".join(csv_chunks)
+        if _stage3_run:
+            tabular_csv = "\n\n".join(csv_chunks)
+            checkpoints.save_stage(
+                job.job_id,
+                "tabular_extraction",
+                {
+                    "tabularCsv": tabular_csv,
+                    "csvChunks": csv_chunks,
+                },
+            )
+            _mark_stage_completed(job, "tabular_extraction")
         # Keep full stage-3 output for stage-4 merging; do not truncate context.
         stage4_tabular_csv_context = "\n\n".join(csv_chunks)
 
-        # Stage 4: always let Gemini map stage-3 text into the stage-2 JSON.
-        _emit_stage_with_usage(
-            job=job,
-            stage="map_extract/support_enrichment",
-            message="Applying Gemini mapping from stage-3 outputs into stage-2 nodes.",
-            model_name=model_name,
-            token_usage=usage_totals,
-        )
-        merged_payload = _run_stage_json(
-            stage_gateway("extractmap_text"),
-            stage_name="map_extract/support_enrichment",
-            base_prompt=normalize_prompt,
-            extra_context=(
-                f"{normalize_context}\n"
-                f"{node_schema_text}\n"
-                f"{coordinate_policy}\n"
-                f"{dedup_policy_text}\n"
-                f"{exclusion_policy_text}\n"
-                f"{symbol_usage_policy}\n"
-                f"{compact_output_policy}\n"
-                "CRITICAL: existing_nodes is the stage-2 seed JSON. Complete/fill it from source_text. "
-                "Do not invent map-root placeholders. Keep existing IDs.\n"
-                f"symbol_legend_json={symbol_context_payload}\n"
-                f"existing_nodes={json.dumps({'nodes': nodes}, ensure_ascii=False)}\n"
-                f"extractmap_symbol_markdown={symbol_markdown}\n"
-                f"source_text={stage4_tabular_csv_context}"
-            ),
-            parts=None,
-            response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
-            usage_totals=usage_totals,
-        )
-        support_enriched_nodes = _extract_nodes(merged_payload, image_dims=image_dims)
-        nodes, matched_count, ignored_non_stage2_count = _merge_stage4_completion(nodes, support_enriched_nodes)
-        nodes = _apply_symbol_metadata(nodes, symbol_enum)
-        _emit_stage_with_usage(
-            job=job,
-            stage="map_extract/support_enrichment",
-            message=(
-                f"Gemini completion merged into stage-2 nodes: "
-                f"matched={matched_count}, ignoredNonStage2={ignored_non_stage2_count}."
-            ),
-            model_name=model_name,
-            token_usage=usage_totals,
-        )
-        logger.info(
-            "[map_extract][worker] support enrichment mapped jobId=%s supportNodeCount=%s matched=%s ignoredNonStage2=%s finalNodeCount=%s",
-            job.job_id,
-            len(support_enriched_nodes),
-            matched_count,
-            ignored_non_stage2_count,
-            len(nodes),
-        )
+        _raise_if_cancelled(job)
+        stage4_cached = checkpoints.load_stage(job.job_id, "support_enrichment") if resume_existing else None
+        if stage4_cached is not None:
+            nodes = list(stage4_cached.get("nodes") or [])
+            support_enriched_nodes = list(stage4_cached.get("supportEnrichedNodes") or [])
+            matched_count = int(stage4_cached.get("matchedCount") or 0)
+            ignored_non_stage2_count = int(stage4_cached.get("ignoredNonStage2Count") or 0)
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/support_enrichment",
+                message=f"Resumed from checkpoint (nodes={len(nodes)}).",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+            _mark_stage_completed(job, "support_enrichment")
+            _stage4_run = False
+        else:
+            _stage4_run = True
+
+        if _stage4_run:
+            # Stage 4: always let Gemini map stage-3 text into the stage-2 JSON.
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/support_enrichment",
+                message="Applying Gemini mapping from stage-3 outputs into stage-2 nodes.",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+            merged_payload = _run_stage_json(
+                stage_gateway("extractmap_text"),
+                stage_name="map_extract/support_enrichment",
+                base_prompt=normalize_prompt,
+                extra_context=(
+                    f"{normalize_context}\n"
+                    f"{node_schema_text}\n"
+                    f"{coordinate_policy}\n"
+                    f"{dedup_policy_text}\n"
+                    f"{exclusion_policy_text}\n"
+                    f"{symbol_usage_policy}\n"
+                    f"{compact_output_policy}\n"
+                    "CRITICAL: existing_nodes is the stage-2 seed JSON. Complete/fill it from source_text. "
+                    "Do not invent map-root placeholders. Keep existing IDs.\n"
+                    f"symbol_legend_json={symbol_context_payload}\n"
+                    f"existing_nodes={json.dumps({'nodes': nodes}, ensure_ascii=False)}\n"
+                    f"extractmap_symbol_markdown={symbol_markdown}\n"
+                    f"source_text={stage4_tabular_csv_context}"
+                ),
+                parts=None,
+                response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
+                usage_totals=usage_totals,
+            )
+            support_enriched_nodes = _extract_nodes(merged_payload, image_dims=image_dims)
+            nodes, matched_count, ignored_non_stage2_count = _merge_stage4_completion(nodes, support_enriched_nodes)
+            nodes = _apply_symbol_metadata(nodes, symbol_enum)
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/support_enrichment",
+                message=(
+                    f"Gemini completion merged into stage-2 nodes: "
+                    f"matched={matched_count}, ignoredNonStage2={ignored_non_stage2_count}."
+                ),
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+            logger.info(
+                "[map_extract][worker] support enrichment mapped jobId=%s supportNodeCount=%s matched=%s ignoredNonStage2=%s finalNodeCount=%s",
+                job.job_id,
+                len(support_enriched_nodes),
+                matched_count,
+                ignored_non_stage2_count,
+                len(nodes),
+            )
+            checkpoints.save_stage(
+                job.job_id,
+                "support_enrichment",
+                {
+                    "nodes": nodes,
+                    "supportEnrichedNodes": support_enriched_nodes,
+                    "matchedCount": matched_count,
+                    "ignoredNonStage2Count": ignored_non_stage2_count,
+                },
+            )
+            _mark_stage_completed(job, "support_enrichment")
 
         if len(nodes) < 2:
             raise ValueError(
@@ -1821,20 +1975,40 @@ def run_map_extract_worker(
                 f"(nodeCount={len(nodes)})."
             )
 
-        _stage_end(job.job_id, "tabular_extraction", table_started, csvLen=len(tabular_csv))
+        if _stage3_run:
+            _stage_end(job.job_id, "tabular_extraction", table_started, csvLen=len(tabular_csv))
 
-        _emit_stage_with_usage(
-            job=job,
-            stage="map_extract/edge_extraction",
-            message="Generating traversal edges with approximate costs.",
-            model_name=model_name,
-            token_usage=usage_totals,
-        )
-        edge_started = _stage_begin(job.job_id, "edge_extraction")
-        all_edges: list[dict[str, Any]] = []
-        edge_payload_types: list[str] = []
-        total_maps_for_edge = len(map_parts)
-        for edge_index, (map_name, map_part) in enumerate(map_parts, start=1):
+        _raise_if_cancelled(job)
+        stage5_cached = checkpoints.load_stage(job.job_id, "edge_extraction") if resume_existing else None
+        if stage5_cached is not None:
+            edges = list(stage5_cached.get("edges") or [])
+            edge_payload_types = list(stage5_cached.get("payloadTypes") or [])
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/edge_extraction",
+                message=f"Resumed from checkpoint (edges={len(edges)}).",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+            _mark_stage_completed(job, "edge_extraction")
+            _stage5_run = False
+        else:
+            _stage5_run = True
+
+        if _stage5_run:
+            _emit_stage_with_usage(
+                job=job,
+                stage="map_extract/edge_extraction",
+                message="Generating traversal edges with approximate costs.",
+                model_name=model_name,
+                token_usage=usage_totals,
+            )
+            edge_started = _stage_begin(job.job_id, "edge_extraction")
+            all_edges: list[dict[str, Any]] = []
+            edge_payload_types = []
+            total_maps_for_edge = len(map_parts)
+        for edge_index, (map_name, map_part) in enumerate(map_parts if _stage5_run else [], start=1):
+            _raise_if_cancelled(job)
             edges_payload = _run_stage_json(
                 stage_gateway("edge_extraction"),
                 stage_name="map_extract/edge_extraction",
@@ -1862,18 +2036,30 @@ def run_map_extract_worker(
                 model_name=model_name,
                 token_usage=usage_totals,
             )
+            touch_activity(job)
 
-        edges = _merge_edges(all_edges)
-        edges = _filter_edges_by_nodes(edges, nodes)
+        if _stage5_run:
+            edges = _merge_edges(all_edges)
+            edges = _filter_edges_by_nodes(edges, nodes)
 
-        _stage_end(
-            job.job_id,
-            "edge_extraction",
-            edge_started,
-            edgeCount=len(edges),
-            payloadTypes=edge_payload_types,
-        )
+            _stage_end(
+                job.job_id,
+                "edge_extraction",
+                edge_started,
+                edgeCount=len(edges),
+                payloadTypes=edge_payload_types,
+            )
+            checkpoints.save_stage(
+                job.job_id,
+                "edge_extraction",
+                {
+                    "edges": edges,
+                    "payloadTypes": edge_payload_types,
+                },
+            )
+            _mark_stage_completed(job, "edge_extraction")
 
+        _raise_if_cancelled(job)
         _emit_stage_with_usage(
             job=job,
             stage="map_extract/finalize_graph",
@@ -1910,6 +2096,8 @@ def run_map_extract_worker(
             vertexCount=len(result["graph"]["vertices"]),
             edgeCount=len(result["graph"]["edges"]),
         )
+        checkpoints.save_stage(job.job_id, "finalize_graph", result)
+        _mark_stage_completed(job, "finalize_graph")
         emit_job_event(job, "result", result)
         emit_job_event(job, "done", {"status": "completed"})
         logger.info(
@@ -1925,6 +2113,12 @@ def run_map_extract_worker(
                 "callCount": int(usage_totals.get("call_count", 0)),
             },
         )
+    except JobCancelledError:
+        logger.warning("[map_extract][worker] cancelled jobId=%s", job.job_id)
+        mark_cancelled(job.job_id)
+        emit_job_event(job, "stage", {"stage": "map_extract/cancelled", "message": "Cancelled by user."})
+        emit_job_event(job, "close", None)
+        return
     except Exception as exc:  # pragma: no cover - defensive worker safety
         logger.exception("[map_extract][worker] failed jobId=%s", job.job_id)
         emit_job_event(job, "error", {"error": f"map_extract worker failed: {exc}"})
