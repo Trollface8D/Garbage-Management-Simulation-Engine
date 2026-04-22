@@ -4,10 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "@/app/components/back-to-home";
 import ModelPicker from "@/app/components/model-picker";
 import ProjectPageHeader from "@/app/components/project-page-header";
-import { editMapGraph, extractMapGraph } from "@/lib/map-api-client";
+import StageLogPanel from "@/app/components/stage-log-panel";
+import {
+  editMapGraph,
+  extractMapGraph,
+  fetchMapExtractStatusOnce,
+} from "@/lib/map-api-client";
 import type {
   GraphSelection,
   MapEdge,
+  MapExtractionProgress,
   MapGraphPayload,
   MapVertex,
 } from "@/lib/map-types";
@@ -572,6 +578,18 @@ export default function MapExtractionWorkspace({
     costEstimate?: Record<string, unknown>;
   } | null>(null);
 
+  // Stage-log / checkpoint-aware state.
+  const [jobStatus, setJobStatus] = useState<string>("");
+  const [currentStage, setCurrentStage] = useState<string | null>(null);
+  const [stageMessage, setStageMessage] = useState<string>("");
+  const [completedStages, setCompletedStages] = useState<string[]>([]);
+  const [cancelRequested, setCancelRequested] = useState<boolean>(false);
+  const [latestProgress, setLatestProgress] = useState<MapExtractionProgress | null>(null);
+
+  // Layout collapse state for the 3-zone grid (left rail / right rail).
+  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+
   const [chatPrompt, setChatPrompt] = useState("");
   const [isApplyingEdit, setIsApplyingEdit] = useState(false);
   const [editStatus, setEditStatus] = useState("");
@@ -824,6 +842,12 @@ export default function MapExtractionWorkspace({
     setIsExtracting(true);
     setExtractStatus("Running map extraction...");
     setEditStatus("");
+    setJobStatus("running");
+    setCurrentStage(null);
+    setStageMessage("");
+    setCompletedStages([]);
+    setCancelRequested(false);
+    setLatestProgress(null);
     setLiveUsage({
       tokenUsage: {
         promptTokens: 0,
@@ -853,6 +877,10 @@ export default function MapExtractionWorkspace({
           const seconds = Math.max(0, Math.floor(progress.elapsedMs / 1000));
           setExtractStatus(`Running ${stage}: ${message} (${String(seconds)}s)`);
           setJobId(progress.jobId);
+          setJobStatus(progress.status);
+          setCurrentStage(progress.stage ?? null);
+          setStageMessage(progress.message ?? "");
+          setLatestProgress(progress);
           if (progress.tokenUsage || progress.costEstimate) {
             setLiveUsage((prev) => ({
               tokenUsage: (progress.tokenUsage as Record<string, unknown> | undefined) || prev?.tokenUsage,
@@ -875,14 +903,42 @@ export default function MapExtractionWorkspace({
       setIsBinCollapsed(true);
       setIsSymbolCollapsed(false);
 
+      setJobStatus("completed");
+      setCurrentStage(null);
+      setStageMessage("");
       setExtractStatus("Map extraction completed.");
       setLiveUsage(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Map extraction failed.";
       setExtractStatus(message);
+      setJobStatus((prev) => (prev === "cancelled" ? "cancelled" : "failed"));
     } finally {
       setIsExtracting(false);
     }
+  };
+
+  const refreshJobStatus = async () => {
+    if (!jobId) {
+      return;
+    }
+    try {
+      const status = await fetchMapExtractStatusOnce(jobId);
+      setJobStatus(status.status);
+      setCurrentStage(status.currentStage ?? null);
+      setStageMessage(status.stageMessage ?? "");
+      setCompletedStages(status.completedStages ?? []);
+      setCancelRequested(Boolean(status.cancelRequested));
+    } catch {
+      // Ignore stale jobs etc.
+    }
+  };
+
+  const handleResumeSuccess = async () => {
+    setExtractStatus("Resume completed. Refreshing graph...");
+    await refreshJobStatus();
+    // Force workspace to reload graph via snapshot key; resume persisted final graph as checkpoint.
+    // Since we don't cache the result here, simply inform user to re-run or use checkpoints endpoint.
+    setExtractStatus("Resume completed. Re-open this page to load the resumed graph.");
   };
 
   const handleApplyEdit = async () => {
@@ -1069,7 +1125,7 @@ export default function MapExtractionWorkspace({
 
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
-      <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
+      <main className="mx-auto w-full max-w-[1600px] px-4 py-6 md:px-6 md:py-8 lg:px-8">
         <ProjectPageHeader
           title="Map Extraction Section"
           projectName={projectName}
@@ -1152,11 +1208,51 @@ export default function MapExtractionWorkspace({
                 job: {jobId}
               </span>
             ) : null}
+            <button
+              type="button"
+              onClick={() => setIsLeftPanelCollapsed((prev) => !prev)}
+              aria-label={isLeftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={isLeftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className="inline-flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-2 text-xs text-neutral-300 transition hover:border-sky-500"
+            >
+              {isLeftPanelCollapsed ? "⟩ Left" : "⟨ Left"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsRightPanelCollapsed((prev) => !prev)}
+              aria-label={isRightPanelCollapsed ? "Expand stage log" : "Collapse stage log"}
+              title={isRightPanelCollapsed ? "Expand stage log" : "Collapse stage log"}
+              className="inline-flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-2 text-xs text-neutral-300 transition hover:border-sky-500"
+            >
+              {isRightPanelCollapsed ? "⟨ Log" : "⟩ Log"}
+            </button>
           </div>
         </header>
 
-        <section className="grid gap-6 lg:grid-cols-[320px_1fr]">
-          <aside className="space-y-4">
+        <section
+          className="grid gap-4"
+          style={{
+            gridTemplateColumns: `${isLeftPanelCollapsed ? "48px" : "320px"} minmax(0, 1fr) ${isRightPanelCollapsed ? "40px" : "360px"}`,
+          }}
+        >
+          <aside className="flex min-w-0 flex-col gap-3">
+            {isLeftPanelCollapsed ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/60 p-2">
+                <button
+                  type="button"
+                  onClick={() => setIsLeftPanelCollapsed(false)}
+                  title="Expand sidebar"
+                  aria-label="Expand sidebar"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-200 transition hover:border-sky-500"
+                >
+                  ⟩
+                </button>
+                <span className="[writing-mode:vertical-rl] rotate-180 text-[10px] uppercase tracking-widest text-neutral-500">
+                  files · inspector
+                </span>
+              </div>
+            ) : (
+            <>
             <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
               <button
                 type="button"
@@ -1327,6 +1423,10 @@ export default function MapExtractionWorkspace({
               ) : null}
             </article>
 
+            <div className="mt-auto space-y-3 border-t border-neutral-800 pt-3">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                Node data inspection
+              </p>
             <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
               <button
                 type="button"
@@ -1356,6 +1456,9 @@ export default function MapExtractionWorkspace({
                 </ul>
               )}
             </article>
+            </div>
+            </>
+            )}
           </aside>
 
           <section className="min-w-0 space-y-4">
@@ -1496,6 +1599,41 @@ export default function MapExtractionWorkspace({
               <p className="mt-2 text-xs text-neutral-400">{editStatus}</p>
             </div>
           </section>
+
+          <aside className="flex min-w-0 flex-col gap-3">
+            {isRightPanelCollapsed ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/60 p-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRightPanelCollapsed(false)}
+                  title="Expand stage log"
+                  aria-label="Expand stage log"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-200 transition hover:border-sky-500"
+                >
+                  ⟨
+                </button>
+                <span className="[writing-mode:vertical-rl] rotate-180 text-[10px] uppercase tracking-widest text-neutral-500">
+                  stage log
+                </span>
+                {isExtracting ? (
+                  <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-sky-500" />
+                ) : null}
+              </div>
+            ) : (
+              <StageLogPanel
+                jobId={jobId}
+                jobStatus={jobStatus}
+                currentStage={currentStage}
+                stageMessage={stageMessage}
+                completedStages={completedStages}
+                cancelRequested={cancelRequested}
+                latestProgress={latestProgress}
+                isActive={isExtracting}
+                onResumeSuccess={() => void handleResumeSuccess()}
+                onStatusUpdate={(message) => setExtractStatus(message)}
+              />
+            )}
+          </aside>
         </section>
       </main>
     </div>
