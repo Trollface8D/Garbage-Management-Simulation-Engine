@@ -1775,11 +1775,14 @@ def run_map_extract_worker(
 
         if _stage3_run and support_parts:
             total_support = len(support_parts)
-            # Stage 3 ("Tables") extracts per-node metadata. It needs:
-            #  - support artifacts (primary source of truth for metadata)
-            #  - the primary map image (so Gemini can cross-reference labels)
-            #  - stage-2 node list (so every metadata row is keyed to an existing node)
-            stage3_primary_map_name, stage3_primary_map_part = map_parts[0]
+            # Stage 3 ("Tables") processes each support file individually.
+            # Inputs per iteration:
+            #   - ONE support artifact (the only binary part sent to Gemini)
+            #   - stage_2_nodes JSON (reference only — keys metadata rows to
+            #     existing node ids so stage 4 can merge them back in)
+            # The map image is NOT passed here; it belongs to stage 2 (node
+            # discovery) and stage 5 (edge / traversal cost). Stage 4 performs
+            # the actual merge of these CSV chunks into the stage-2 nodes.
             stage3_nodes_json = json.dumps({"nodes": nodes}, ensure_ascii=False)
             for support_idx, (support_name, support_part) in enumerate(support_parts, start=1):
                 emit_job_event(
@@ -1797,13 +1800,14 @@ def run_map_extract_worker(
                         f"{tabular_output_hint}\n"
                         f"{compact_output_policy}\n"
                         f"prior_table={trait_table_raw}\n"
-                        "Produce metadata rows keyed by node id from stage_2_nodes. "
-                        "Use support artifact as primary source; use the map image only to disambiguate labels.\n"
+                        "Process only the single support artifact attached. "
+                        "Produce structured rows whose identifiers align with stage_2_nodes "
+                        "(use the node id/label from stage_2_nodes as the join key). "
+                        "Do NOT invent nodes that are not present in stage_2_nodes.\n"
                         f"stage_2_nodes={stage3_nodes_json}\n"
-                        f"source_artifact={support_name}\n"
-                        f"source_map={stage3_primary_map_name}"
+                        f"source_artifact={support_name}"
                     ),
-                    parts=[support_part, stage3_primary_map_part],
+                    parts=[support_part],
                     usage_totals=usage_totals,
                     stage_name="map_extract/tabular_extraction",
                 )
