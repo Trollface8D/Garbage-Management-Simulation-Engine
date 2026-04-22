@@ -1676,48 +1676,11 @@ def run_map_extract_worker(
             all_nodes: list[dict[str, Any]] = []
             node_payload_types = []
 
-        if _stage2_run and support_parts:
-            total_maps = len(map_parts)
-            total_support = len(support_parts)
-            for map_name, map_part in map_parts:
-                for support_name, support_part in support_parts:
-                    nodes_payload = _run_stage_json(
-                        stage_gateway("extractmap_text"),
-                        stage_name="map_extract/extractmap_text",
-                        base_prompt=str(config["extractmap_text"].get("prompt") or ""),
-                        extra_context=(
-                            f"{node_schema_text}\n\n"
-                            f"{coordinate_policy}\n\n"
-                            f"{dedup_policy_text}\n"
-                            f"{exclusion_policy_text}\n"
-                            f"{symbol_usage_policy}\n"
-                            f"{compact_output_policy}\n"
-                            f"incomplete_json={{\"nodes\": []}}\n"
-                            f"buffer_trait_table={trait_table_raw}\n"
-                            f"symbol_legend_json={symbol_context_payload}\n"
-                            f"overviewAdditionalInformation={overview_additional_information}\n"
-                            f"binAdditionalInformation={support_additional_information}\n"
-                            f"extractmap_symbol_markdown={symbol_markdown}\n"
-                            f"source_map={map_name}\n"
-                            f"source_bin_data={support_name}"
-                        ),
-                        parts=[map_part, support_part],
-                        response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
-                        usage_totals=usage_totals,
-                    )
-                    all_nodes.extend(_extract_nodes(nodes_payload, image_dims=image_dims))
-                    node_payload_types.append(type(nodes_payload).__name__)
-                    _emit_stage_with_usage(
-                        job=job,
-                        stage="map_extract/extractmap_text",
-                        message=(
-                            f"Processed map '{map_name}' with support '{support_name}' "
-                            f"({len(node_payload_types)}/{total_maps * total_support})."
-                        ),
-                        model_name=model_name,
-                        token_usage=usage_totals,
-                    )
-        elif _stage2_run:
+        # Stage 2 ("Nodes") intentionally consumes ONLY the map image(s).
+        # Support documents are reserved for stage 3 (metadata extraction) and
+        # stage 4 (support enrichment). Mixing support into stage 2 was causing
+        # hallucinated nodes sourced from bin tables rather than the map itself.
+        if _stage2_run:
             total_maps = len(map_parts)
             for map_name, map_part in map_parts:
                 _raise_if_cancelled(job)
@@ -1812,6 +1775,12 @@ def run_map_extract_worker(
 
         if _stage3_run and support_parts:
             total_support = len(support_parts)
+            # Stage 3 ("Tables") extracts per-node metadata. It needs:
+            #  - support artifacts (primary source of truth for metadata)
+            #  - the primary map image (so Gemini can cross-reference labels)
+            #  - stage-2 node list (so every metadata row is keyed to an existing node)
+            stage3_primary_map_name, stage3_primary_map_part = map_parts[0]
+            stage3_nodes_json = json.dumps({"nodes": nodes}, ensure_ascii=False)
             for support_idx, (support_name, support_part) in enumerate(support_parts, start=1):
                 emit_job_event(
                     job,
@@ -1828,10 +1797,13 @@ def run_map_extract_worker(
                         f"{tabular_output_hint}\n"
                         f"{compact_output_policy}\n"
                         f"prior_table={trait_table_raw}\n"
-                        "Process only the provided single artifact.\n"
-                        f"source_artifact={support_name}"
+                        "Produce metadata rows keyed by node id from stage_2_nodes. "
+                        "Use support artifact as primary source; use the map image only to disambiguate labels.\n"
+                        f"stage_2_nodes={stage3_nodes_json}\n"
+                        f"source_artifact={support_name}\n"
+                        f"source_map={stage3_primary_map_name}"
                     ),
-                    parts=[support_part],
+                    parts=[support_part, stage3_primary_map_part],
                     usage_totals=usage_totals,
                     stage_name="map_extract/tabular_extraction",
                 )

@@ -1,6 +1,7 @@
 import type {
   MapEditRequest,
   MapEditResult,
+  MapExtractCheckpointDetail,
   MapExtractCheckpointList,
   MapExtractionJobStart,
   MapExtractionJobStatus,
@@ -180,6 +181,20 @@ export async function fetchMapExtractCheckpoints(jobId: string): Promise<MapExtr
     throw new Error(await parseErrorMessage(response));
   }
   return (await response.json()) as MapExtractCheckpointList;
+}
+
+export async function fetchMapExtractCheckpointDetail(
+  jobId: string,
+  stage: string,
+): Promise<MapExtractCheckpointDetail> {
+  const url = new URL("/api/map/extract/checkpoint", window.location.origin);
+  url.searchParams.set("jobId", jobId);
+  url.searchParams.set("stage", stage);
+  const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as MapExtractCheckpointDetail;
 }
 
 export async function cancelMapExtractJob(jobId: string): Promise<void> {

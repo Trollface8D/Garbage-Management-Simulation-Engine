@@ -114,6 +114,19 @@ export type MapExtractCheckpointList = {
   checkpoints: MapExtractCheckpoint[];
 };
 
+export type MapExtractCheckpointDetail = {
+  jobId: string;
+  stage: string;
+  summary?: Record<string, unknown>;
+  preview?: unknown;
+  tokenUsage?: {
+    promptTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    callCount?: number;
+  } | null;
+};
+
 export type MapExtractionProgress = {
   jobId: string;
   attempt: number;

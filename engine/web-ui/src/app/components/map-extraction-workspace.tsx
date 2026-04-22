@@ -1549,7 +1549,7 @@ export default function MapExtractionWorkspace({
               )}
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs text-neutral-400">{extractStatus}</div>
+                <div className="min-w-0 flex-1 break-words text-xs text-neutral-400">{extractStatus}</div>
                 <div className="ml-auto flex items-end gap-3">
                   <div className="text-right text-[11px] text-neutral-400">
                     <div>
@@ -1596,7 +1596,7 @@ export default function MapExtractionWorkspace({
                   </button>
                 </div>
               </div>
-              <p className="mt-2 text-xs text-neutral-400">{editStatus}</p>
+              <p className="mt-2 break-words text-xs text-neutral-400">{editStatus}</p>
             </div>
           </section>
 

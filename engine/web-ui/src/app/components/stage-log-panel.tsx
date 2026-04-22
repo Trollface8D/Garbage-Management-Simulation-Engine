@@ -3,11 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   cancelMapExtractJob,
+  fetchMapExtractCheckpointDetail,
   fetchMapExtractCheckpoints,
   resumeMapExtractJob,
   rollbackMapExtractJob,
 } from "@/lib/map-api-client";
-import type { MapExtractionProgress } from "@/lib/map-types";
+import type {
+  MapExtractCheckpointDetail,
+  MapExtractionProgress,
+} from "@/lib/map-types";
 
 type StageEntry = {
   key: string;
@@ -122,6 +126,9 @@ export default function StageLogPanel(props: StageLogProps) {
   const [expandedStage, setExpandedStage] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState<string>("");
   const [actionPending, setActionPending] = useState<boolean>(false);
+  const [stageDetails, setStageDetails] = useState<Record<string, MapExtractCheckpointDetail>>({});
+  const [detailLoading, setDetailLoading] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string>("");
 
   const completedSet = useMemo(() => {
     const merged = new Set<string>();
@@ -160,6 +167,40 @@ export default function StageLogPanel(props: StageLogProps) {
       window.clearInterval(handle);
     };
   }, [jobId, isActive]);
+
+  useEffect(() => {
+    if (!jobId || !expandedStage) {
+      setDetailError("");
+      return;
+    }
+    if (!completedSet.has(expandedStage)) {
+      setDetailError("");
+      return;
+    }
+    if (stageDetails[expandedStage]) {
+      setDetailError("");
+      return;
+    }
+    let cancelledLoad = false;
+    setDetailLoading(expandedStage);
+    setDetailError("");
+    fetchMapExtractCheckpointDetail(jobId, expandedStage)
+      .then((detail) => {
+        if (cancelledLoad) return;
+        setStageDetails((prev) => ({ ...prev, [expandedStage]: detail }));
+      })
+      .catch((error: unknown) => {
+        if (cancelledLoad) return;
+        setDetailError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (cancelledLoad) return;
+        setDetailLoading(null);
+      });
+    return () => {
+      cancelledLoad = true;
+    };
+  }, [jobId, expandedStage, completedSet, stageDetails]);
 
   const handleCancel = useCallback(async () => {
     if (!jobId) return;
@@ -302,9 +343,9 @@ export default function StageLogPanel(props: StageLogProps) {
                     >
                       {dot.label}
                     </span>
-                    <span className="flex-1">
-                      <span className="text-sm font-semibold text-neutral-100">{entry.label}</span>
-                      <span className="block truncate text-[11px] text-neutral-400">
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-neutral-100">{entry.label}</span>
+                      <span className="block break-words text-[11px] text-neutral-400">
                         {progressMsg || entry.description}
                       </span>
                     </span>
@@ -312,15 +353,26 @@ export default function StageLogPanel(props: StageLogProps) {
                   </button>
 
                   {isExpanded ? (
-                    <div className="border-t border-neutral-800 px-3 py-2 text-[12px] text-neutral-300">
-                      <p className="text-neutral-400">Stage key: <span className="text-neutral-200">{entry.key}</span></p>
-                      <p className="mt-1 text-neutral-400">
+                    <div className="space-y-2 border-t border-neutral-800 px-3 py-2 text-[12px] text-neutral-300">
+                      <p className="break-words text-neutral-400">
+                        Stage key: <span className="text-neutral-200">{entry.key}</span>
+                      </p>
+                      <p className="text-neutral-400">
                         Status: <span className="text-neutral-200">{status}</span>
                       </p>
                       {progressMsg ? (
-                        <p className="mt-1 text-neutral-300">{progressMsg}</p>
+                        <p className="break-words text-neutral-300">{progressMsg}</p>
                       ) : null}
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
+
+                      {status === "done" ? (
+                        <StageDetailBlock
+                          detail={stageDetails[entry.key]}
+                          loading={detailLoading === entry.key}
+                          error={detailLoading === entry.key ? "" : detailError}
+                        />
+                      ) : null}
+
+                      <div className="flex flex-wrap items-center gap-2">
                         {status === "done" ? (
                           <button
                             type="button"
@@ -351,18 +403,86 @@ export default function StageLogPanel(props: StageLogProps) {
           </ol>
 
           {latestProgress?.message ? (
-            <p className="rounded-md border border-neutral-800 bg-neutral-950/60 p-2 text-[11px] text-neutral-400">
+            <p className="break-words rounded-md border border-neutral-800 bg-neutral-950/60 p-2 text-[11px] text-neutral-400">
               <span className="font-semibold text-neutral-300">Live:</span>{" "}
               {latestProgress.message}
             </p>
           ) : null}
 
           {actionStatus ? (
-            <p className="text-[11px] text-neutral-400">{actionStatus}</p>
+            <p className="break-words text-[11px] text-neutral-400">{actionStatus}</p>
           ) : null}
         </div>
       ) : null}
     </section>
+  );
+}
+
+function StageDetailBlock({
+  detail,
+  loading,
+  error,
+}: {
+  detail: MapExtractCheckpointDetail | undefined;
+  loading: boolean;
+  error: string;
+}) {
+  if (loading) {
+    return <p className="text-[11px] text-neutral-500">Loading checkpoint…</p>;
+  }
+  if (error) {
+    return <p className="break-words text-[11px] text-red-300">Failed to load: {error}</p>;
+  }
+  if (!detail) {
+    return null;
+  }
+
+  const summary = detail.summary || {};
+  const summaryEntries = Object.entries(summary);
+  const token = detail.tokenUsage || undefined;
+  const previewJson = (() => {
+    try {
+      return JSON.stringify(detail.preview ?? null, null, 2);
+    } catch {
+      return "<unserializable>";
+    }
+  })();
+  const trimmedPreview =
+    previewJson.length > 4000 ? `${previewJson.slice(0, 4000)}\n/* … truncated */` : previewJson;
+
+  return (
+    <div className="space-y-2 rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
+      {summaryEntries.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {summaryEntries.map(([key, value]) => (
+            <span
+              key={`summary-${key}`}
+              className="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-300"
+            >
+              {key}: <span className="text-neutral-100">{String(value)}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {token ? (
+        <div className="text-[10px] text-neutral-400">
+          tokens: in {String(token.promptTokens ?? 0)} / out {String(token.outputTokens ?? 0)} /
+          total {String(token.totalTokens ?? 0)} · calls {String(token.callCount ?? 0)}
+        </div>
+      ) : (
+        <div className="text-[10px] text-neutral-500">No token usage recorded for this stage.</div>
+      )}
+
+      <details className="rounded border border-neutral-800 bg-neutral-900/60">
+        <summary className="cursor-pointer px-2 py-1 text-[11px] text-neutral-300 hover:text-neutral-100">
+          Output preview
+        </summary>
+        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words px-2 py-1 text-[10px] text-neutral-300">
+          {trimmedPreview}
+        </pre>
+      </details>
+    </div>
   );
 }
 

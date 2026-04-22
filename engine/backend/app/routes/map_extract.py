@@ -316,6 +316,87 @@ def list_map_extract_checkpoints(job_id: str):
     }
 
 
+def _summarize_stage_payload(stage: str, payload: dict) -> dict:
+    """Compute a compact summary + bounded preview for the UI dropdown."""
+    summary: dict = {}
+    preview: object = None
+    try:
+        if stage == "extractmap_symbol":
+            summary["symbolLegendCount"] = len(payload.get("symbolLegend") or [])
+            summary["symbolEnumCount"] = len(payload.get("symbolEnum") or [])
+            preview = {
+                "symbolLegend": (payload.get("symbolLegend") or [])[:8],
+                "symbolEnum": (payload.get("symbolEnum") or [])[:16],
+            }
+        elif stage == "extractmap_text":
+            nodes = payload.get("nodes") or []
+            summary["nodeCount"] = len(nodes)
+            preview = {"nodes": nodes[:6]}
+        elif stage == "tabular_extraction":
+            csv = str(payload.get("tabularCsv") or "")
+            summary["csvLen"] = len(csv)
+            summary["csvChunks"] = len(payload.get("csvChunks") or [])
+            preview = {"tabularCsvHead": csv[:2000]}
+        elif stage == "support_enrichment":
+            nodes = payload.get("nodes") or []
+            summary["nodeCount"] = len(nodes)
+            summary["matchedCount"] = int(payload.get("matchedCount") or 0)
+            summary["ignoredNonStage2Count"] = int(payload.get("ignoredNonStage2Count") or 0)
+            preview = {"nodes": nodes[:6]}
+        elif stage == "edge_extraction":
+            edges = payload.get("edges") or []
+            summary["edgeCount"] = len(edges)
+            preview = {"edges": edges[:8]}
+        elif stage == "finalize_graph":
+            graph = (payload.get("graph") or {}) if isinstance(payload.get("graph"), dict) else {}
+            summary["vertexCount"] = len(graph.get("vertices") or [])
+            summary["edgeCount"] = len(graph.get("edges") or [])
+            preview = {
+                "vertices": (graph.get("vertices") or [])[:4],
+                "edges": (graph.get("edges") or [])[:4],
+            }
+        else:
+            preview = payload
+    except Exception:  # noqa: BLE001 — summary is best-effort.
+        preview = None
+    return {"summary": summary, "preview": preview}
+
+
+def _stage_token_usage(job: JobRecord | None, stage: str) -> dict | None:
+    """Return the latest tokenUsage recorded for `stage` from stage_history."""
+    if job is None:
+        return None
+    last: dict | None = None
+    short = stage
+    prefixed = f"map_extract/{stage}"
+    for entry in job.stage_history:
+        entry_stage = str(entry.get("stage") or "")
+        if entry_stage == short or entry_stage == prefixed:
+            usage = entry.get("tokenUsage")
+            if isinstance(usage, dict):
+                last = usage
+    return last
+
+
+@router.get("/map_extract/jobs/{job_id}/checkpoints/{stage}")
+def get_map_extract_checkpoint(job_id: str, stage: str):
+    if stage not in checkpoints.STAGE_ORDER:
+        return JSONResponse({"error": f"Unknown stage '{stage}'."}, status_code=400)
+    payload = checkpoints.load_stage(job_id, stage)
+    if payload is None:
+        return JSONResponse({"error": f"No checkpoint for stage '{stage}'."}, status_code=404)
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+    summarized = _summarize_stage_payload(stage, payload)
+    return {
+        "jobId": job_id,
+        "stage": stage,
+        "summary": summarized["summary"],
+        "preview": summarized["preview"],
+        "tokenUsage": _stage_token_usage(job, stage),
+    }
+
+
 @router.post("/map_extract/jobs/{job_id}/cancel")
 def cancel_map_extract_job(job_id: str):
     ok = request_cancel(job_id)
