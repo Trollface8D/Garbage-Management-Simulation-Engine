@@ -15,7 +15,6 @@ import {
   resumeMapExtractJob,
 } from "@/lib/map-api-client";
 import { CaretIcon, ExportIcon, ImportIcon, SaveIcon, TrashIcon } from "@/app/components/icons/common-icons";
-import { editMapGraph, extractMapGraph } from "@/lib/map-api-client";
 import type {
   GraphSelection,
   MapEdge,
