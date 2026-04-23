@@ -7,8 +7,8 @@ Each job gets its own directory under ``CHECKPOINT_ROOT/<job_id>/`` containing:
   - ``<stage>.json``: serialized output of each stage.
 
 The pipeline worker calls ``load_stage``/``save_stage`` at each stage boundary.
-Rollback simply deletes the target stage file plus all later ones; the next
-resume re-runs only the missing stages.
+Rollback can either delete from a stage (legacy) or delete only stages after
+the selected baseline so resume continues from the next unfinished stage.
 """
 
 from __future__ import annotations
@@ -114,6 +114,29 @@ def list_stages(job_id: str) -> list[dict[str, Any]]:
     return out
 
 
+def latest_usage_totals(job_id: str) -> dict[str, int] | None:
+    """Return the usage_totals snapshot embedded in the latest checkpoint.
+
+    Scans stage files in reverse STAGE_ORDER and returns the first
+    ``_usageTotalsAtCompletion`` snapshot it finds.  This lets the
+    status endpoint surface accurate cumulative tokens even after a
+    backend restart, before any resume has been triggered.
+    """
+    for stage in reversed(STAGE_ORDER):
+        payload = load_stage(job_id, stage)
+        if not isinstance(payload, dict):
+            continue
+        snapshot = payload.get("_usageTotalsAtCompletion")
+        if isinstance(snapshot, dict):
+            return {
+                "promptTokens": int(snapshot.get("prompt_tokens", 0)),
+                "outputTokens": int(snapshot.get("output_tokens", 0)),
+                "totalTokens": int(snapshot.get("total_tokens", 0)),
+                "callCount": int(snapshot.get("call_count", 0)),
+            }
+    return None
+
+
 def delete_from(job_id: str, stage: str) -> list[str]:
     """Delete the checkpoint for ``stage`` and every stage after it.
 
@@ -138,6 +161,38 @@ def delete_from(job_id: str, stage: str) -> list[str]:
                 )
     logger.info(
         "[map_extract][checkpoint] rollback jobId=%s fromStage=%s removed=%s",
+        job_id,
+        stage,
+        removed,
+    )
+    return removed
+
+
+def delete_after(job_id: str, stage: str) -> list[str]:
+    """Delete checkpoint files strictly after ``stage``.
+
+    Used by user-facing rollback semantics where rolling back *to* stage N means
+    stage N remains completed and resume should start at stage N+1.
+    """
+    idx = stage_index(stage)
+    if idx < 0:
+        return []
+    removed: list[str] = []
+    for later in STAGE_ORDER[idx + 1 :]:
+        path = stage_file(job_id, later)
+        if path.exists():
+            try:
+                path.unlink()
+                removed.append(later)
+            except OSError as exc:
+                logger.warning(
+                    "[map_extract][checkpoint] delete_after failed jobId=%s stage=%s error=%s",
+                    job_id,
+                    later,
+                    exc,
+                )
+    logger.info(
+        "[map_extract][checkpoint] rollback jobId=%s afterStage=%s removed=%s",
         job_id,
         stage,
         removed,

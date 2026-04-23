@@ -44,4 +44,4 @@ next-env.d.ts
 # local database
 /local.db
 /local.db-shm
-/local.db-wal
+/local.db-wal.claude/
