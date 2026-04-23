@@ -109,6 +109,20 @@ export type StageLogProps = {
    * Terminate button activates, and final results populate the workspace).
    */
   onResumeRequested?: () => void;
+  /**
+   * Called when the user clicks the "Extract" CTA surfaced inside the stage
+   * log panel in the empty-slate view (no job started yet).  Typically wired
+   * to the same handler the main canvas uses for its big Extract button so
+   * both entry points behave identically.
+   */
+  onExtractRequested?: () => void;
+  /**
+   * When true, the Extract CTA inside the empty-slate view is disabled — used
+   * by the parent to block starting a new run (missing files, validation
+   * failure, etc.) and to show a hint in place of the CTA button.
+   */
+  extractDisabled?: boolean;
+  extractDisabledReason?: string;
   onStatusUpdate?: (message: string) => void;
 };
 
@@ -123,6 +137,9 @@ export default function StageLogPanel(props: StageLogProps) {
     latestProgress,
     isActive,
     onResumeRequested,
+    onExtractRequested,
+    extractDisabled,
+    extractDisabledReason,
     onStatusUpdate,
   } = props;
 
@@ -265,11 +282,7 @@ export default function StageLogPanel(props: StageLogProps) {
     }
   }, [isActive, hasHistory, userToggled]);
 
-  // If there is no job and no history yet, hide the panel entirely so it
-  // does not take up UI space with empty pending dots.
-  if (!jobId || (!isActive && !hasHistory)) {
-    return null;
-  }
+  const isEmptySlate = !jobId && !isActive;
 
   return (
     <section className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4 text-sm text-neutral-200">
@@ -286,15 +299,37 @@ export default function StageLogPanel(props: StageLogProps) {
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleResume}
-            disabled={actionPending || isActive}
-            title={isActive ? "Job already running." : "Resume from last completed stage."}
-            className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Resume
-          </button>
+          {isEmptySlate ? (
+            <button
+              type="button"
+              onClick={() => onExtractRequested?.()}
+              disabled={actionPending || Boolean(extractDisabled)}
+              title={
+                extractDisabled
+                  ? extractDisabledReason || "Extract is not available yet."
+                  : "Start a new map extraction."
+              }
+              className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Extract
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleResume}
+              disabled={actionPending || isActive || !jobId}
+              title={
+                !jobId
+                  ? "No prior job to resume."
+                  : isActive
+                  ? "Job already running."
+                  : "Resume from last completed stage."
+              }
+              className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Resume
+            </button>
+          )}
           <button
             type="button"
             onClick={handleCancel}

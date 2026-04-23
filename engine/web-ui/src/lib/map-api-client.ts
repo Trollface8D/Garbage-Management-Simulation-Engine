@@ -173,6 +173,63 @@ export async function fetchMapExtractStatusOnce(jobId: string): Promise<MapExtra
   return fetchMapExtractStatus(jobId);
 }
 
+export type MapExtractInputsManifest = {
+  jobId: string;
+  componentId?: string;
+  overviewAdditionalInformation?: string;
+  supportAdditionalInformation?: string;
+  modelName?: string;
+  overviewFiles: {
+    index: number;
+    filename: string;
+    mimeType: string;
+    size: number;
+    downloadUrl: string;
+  }[];
+  supportFiles: {
+    index: number;
+    filename: string;
+    mimeType: string;
+    size: number;
+    downloadUrl: string;
+  }[];
+};
+
+export async function fetchMapExtractInputs(jobId: string): Promise<MapExtractInputsManifest | null> {
+  const url = new URL("/api/map/extract/inputs", window.location.origin);
+  url.searchParams.set("jobId", jobId);
+  const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  return (await response.json()) as MapExtractInputsManifest;
+}
+
+export async function fetchMapExtractInputFile(
+  jobId: string,
+  kind: "overview" | "support",
+  index: number,
+  filename: string,
+  mimeType: string,
+): Promise<File | null> {
+  const url = new URL(`/api/map/extract/inputs/${kind}/${index}`, window.location.origin);
+  url.searchParams.set("jobId", jobId);
+  const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  const blob = await response.blob();
+  return new File([blob], filename, {
+    type: mimeType || blob.type || "application/octet-stream",
+  });
+}
+
 export async function fetchMapExtractCheckpoints(jobId: string): Promise<MapExtractCheckpointList> {
   const url = new URL(DEFAULT_EXTRACT_CHECKPOINTS_ENDPOINT, window.location.origin);
   url.searchParams.set("jobId", jobId);

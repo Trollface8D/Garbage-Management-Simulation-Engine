@@ -8,6 +8,8 @@ import StageLogPanel from "@/app/components/stage-log-panel";
 import {
   editMapGraph,
   extractMapGraph,
+  fetchMapExtractInputFile,
+  fetchMapExtractInputs,
   fetchMapExtractStatusOnce,
   resumeMapExtractJob,
 } from "@/lib/map-api-client";
@@ -50,6 +52,8 @@ type MapWorkspaceSnapshot = {
   changeLog: string[];
   editStatus: string;
   selection: SelectionRef;
+  lastTokenUsage?: Record<string, unknown> | null;
+  lastCostEstimate?: Record<string, unknown> | null;
 };
 
 type MapArtifactBundle = {
@@ -565,6 +569,10 @@ export default function MapExtractionWorkspace({
   const [binFiles, setBinFiles] = useState<LocalUploadFile[]>([]);
   const [overviewStoredFileNames, setOverviewStoredFileNames] = useState<string[]>([]);
   const [binStoredFileNames, setBinStoredFileNames] = useState<string[]>([]);
+  // Set to true once saved inputs have been pulled back from the
+  // backend, so the "please re-upload" banner can stop pestering the
+  // user on reload.
+  const [inputsRehydrated, setInputsRehydrated] = useState(false);
   const [overviewAdditionalInfo, setOverviewAdditionalInfo] = useState("");
   const [binAdditionalInfo, setBinAdditionalInfo] = useState("");
 
@@ -647,15 +655,29 @@ export default function MapExtractionWorkspace({
 
   const usageStats = useMemo(() => {
     const meta = graphData?.metadata;
-    const inFlightTokenUsage = isExtracting ? (liveUsage?.tokenUsage || {}) : undefined;
-    const inFlightCostEstimate = isExtracting ? liveUsage?.costEstimate : undefined;
+    // Any in-flight run (extract OR resume) should surface live usage from
+    // the worker's incremental updates instead of the persisted graph's
+    // snapshot totals.
+    const inFlight = isExtracting || isResuming;
+    const inFlightTokenUsage = inFlight ? (liveUsage?.tokenUsage || {}) : undefined;
+    const inFlightCostEstimate = inFlight ? liveUsage?.costEstimate : undefined;
+    // When the run is not in-flight, prefer the persisted graph's usage
+    // (if the job completed) but fall back to the last-known liveUsage
+    // so a rollback/reload keeps the counter instead of collapsing to 0.
+    const persistedTokenUsage = !inFlight
+      ? (liveUsage?.tokenUsage as Record<string, unknown> | undefined)
+      : undefined;
+    const persistedCostEstimate = !inFlight
+      ? (liveUsage?.costEstimate as Record<string, unknown> | undefined)
+      : undefined;
     const tokenUsageRaw =
       inFlightTokenUsage ||
       (meta?.tokenUsage as Record<string, unknown> | undefined) ||
       (meta?.token_usage as Record<string, unknown> | undefined) ||
       (meta?.usage as Record<string, unknown> | undefined) ||
+      persistedTokenUsage ||
       undefined;
-    const costEstimate = inFlightCostEstimate || meta?.costEstimate;
+    const costEstimate = inFlightCostEstimate || meta?.costEstimate || persistedCostEstimate;
 
     const num = (value: unknown): number => {
       if (typeof value === "number" && Number.isFinite(value)) {
@@ -683,13 +705,21 @@ export default function MapExtractionWorkspace({
       currency: String(costEstimate?.currency || "USD"),
       costSource: String(costEstimate?.source || "unknown"),
     };
-  }, [graphData, isExtracting, liveUsage]);
+  }, [graphData, isExtracting, isResuming, liveUsage]);
 
   // Whether there is anything worth showing in the stage-log rail.  This is
-  // used both to suppress the rail entirely on a fresh slate and to auto-
-  // expand it when a prior run's history is restored from the snapshot.
+  // used both to auto-expand it when a prior run's history is restored from
+  // the snapshot and to lock upload/extract controls below.
   const hasStageHistory = completedStages.length > 0 || Boolean(jobStatus);
-  const showRightRail = Boolean(jobId) && (isJobActive || hasStageHistory);
+  // True once the user has *anything* tracked on this component: completed
+  // stages, a live job, or a persisted graph.  When true, input + Extract
+  // controls lock so the user cannot accidentally mutate inputs mid-session
+  // or launch a duplicate run; they must explicitly Reset to start over.
+  const hasAnyActivity = hasStageHistory || isJobActive || Boolean(graphData);
+  const inputsLocked = hasAnyActivity;
+  const inputsLockReason = isJobActive
+    ? "Inputs are locked while the job is running."
+    : "Inputs are locked — click Reset to start a new extraction.";
 
   useEffect(() => {
     if (rightPanelUserToggled) return;
@@ -778,6 +808,14 @@ export default function MapExtractionWorkspace({
         setCompletedStages(parsed.completedStages);
       }
 
+      if (parsed?.lastTokenUsage && typeof parsed.lastTokenUsage === "object") {
+        setLiveUsage({
+          tokenUsage: parsed.lastTokenUsage as Record<string, unknown>,
+          costEstimate:
+            (parsed.lastCostEstimate as Record<string, unknown> | undefined) || undefined,
+        });
+      }
+
       if (parsed?.graph) {
         setExtractStatus("Loaded previous map extraction details.");
       }
@@ -812,6 +850,8 @@ export default function MapExtractionWorkspace({
       changeLog,
       editStatus,
       selection: graphData ? selectionToRef(selection) : null,
+      lastTokenUsage: liveUsage?.tokenUsage ?? null,
+      lastCostEstimate: liveUsage?.costEstimate ?? null,
     };
 
     window.localStorage.setItem(snapshotKey, JSON.stringify(snapshot));
@@ -826,11 +866,123 @@ export default function MapExtractionWorkspace({
     graphData,
     jobId,
     jobStatus,
+    liveUsage,
     selectedModel,
     overviewDisplayNames,
     selection,
     snapshotKey,
   ]);
+
+  // After hydration, ask the backend for the authoritative job state so
+  // the UI can reflect actual checkpoints / token usage / cancel state
+  // (protecting against stale localStorage and surviving backend restarts).
+  useEffect(() => {
+    if (!hydrated || !jobId) {
+      return;
+    }
+    void refreshJobStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, jobId]);
+
+  // Reset rehydration guard when the job identity changes so the next
+  // jobId can pull its own inputs.
+  useEffect(() => {
+    setInputsRehydrated(false);
+  }, [jobId]);
+
+  // Pull the previously-uploaded files back from the backend so a
+  // reload keeps the upload section populated (problem #1: snapshots
+  // only persisted filenames; the blobs lived server-side on disk but
+  // were never exposed).  Runs once per jobId after hydrate.
+  useEffect(() => {
+    if (!hydrated || !jobId || inputsRehydrated) {
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const manifest = await fetchMapExtractInputs(jobId);
+        if (!manifest || cancelled) {
+          return;
+        }
+
+        const hydrate = async (
+          entries: typeof manifest.overviewFiles,
+          kind: "overview" | "support",
+        ) => {
+          const files: File[] = [];
+          for (const entry of entries) {
+            try {
+              const file = await fetchMapExtractInputFile(
+                jobId,
+                kind,
+                entry.index,
+                entry.filename,
+                entry.mimeType,
+              );
+              if (file) {
+                files.push(file);
+              }
+            } catch {
+              // Ignore individual file failures — keep hydrating others.
+            }
+            if (cancelled) {
+              return files;
+            }
+          }
+          return files;
+        };
+
+        const overviewHydrated = await hydrate(manifest.overviewFiles, "overview");
+        const supportHydrated = await hydrate(manifest.supportFiles, "support");
+        if (cancelled) {
+          return;
+        }
+        if (overviewHydrated.length > 0) {
+          setOverviewFiles((prev) => {
+            const existingNames = new Set(prev.map((entry) => entry.file.name));
+            const incoming = overviewHydrated
+              .filter((file) => !existingNames.has(file.name))
+              .map(toUploadEntry);
+            return [...prev, ...incoming];
+          });
+          setOverviewStoredFileNames((prev) =>
+            dedupeNames([...prev, ...overviewHydrated.map((file) => file.name)]),
+          );
+        }
+        if (supportHydrated.length > 0) {
+          setBinFiles((prev) => {
+            const existingNames = new Set(prev.map((entry) => entry.file.name));
+            const incoming = supportHydrated
+              .filter((file) => !existingNames.has(file.name))
+              .map(toUploadEntry);
+            return [...prev, ...incoming];
+          });
+          setBinStoredFileNames((prev) =>
+            dedupeNames([...prev, ...supportHydrated.map((file) => file.name)]),
+          );
+        }
+        if (typeof manifest.overviewAdditionalInformation === "string") {
+          setOverviewAdditionalInfo((prev) =>
+            prev || (manifest.overviewAdditionalInformation as string),
+          );
+        }
+        if (typeof manifest.supportAdditionalInformation === "string") {
+          setBinAdditionalInfo((prev) =>
+            prev || (manifest.supportAdditionalInformation as string),
+          );
+        }
+        setInputsRehydrated(true);
+      } catch {
+        // Silently ignore — the user can re-upload if needed.
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, jobId]);
 
   const onPickOverviewFiles = (files: FileList | null) => {
     const picked = Array.from(files || []);
@@ -987,6 +1139,19 @@ export default function MapExtractionWorkspace({
       setStageMessage(status.stageMessage ?? "");
       setCompletedStages(status.completedStages ?? []);
       setCancelRequested(Boolean(status.cancelRequested));
+      // Surface backend-known usage totals so a rollback/reload keeps
+      // the counter accurate without a running worker.
+      const statusTokenUsage = (status as { tokenUsage?: Record<string, unknown> | null })
+        .tokenUsage;
+      const statusCostEstimate = (status as { costEstimate?: Record<string, unknown> | null })
+        .costEstimate;
+      if (statusTokenUsage || statusCostEstimate) {
+        setLiveUsage((prev) => ({
+          tokenUsage: (statusTokenUsage as Record<string, unknown> | undefined) || prev?.tokenUsage,
+          costEstimate:
+            (statusCostEstimate as Record<string, unknown> | undefined) || prev?.costEstimate,
+        }));
+      }
     } catch {
       // Ignore stale jobs etc.
     }
@@ -1104,6 +1269,58 @@ export default function MapExtractionWorkspace({
       setEditStatus(message);
     } finally {
       setIsApplyingEdit(false);
+    }
+  };
+
+  /**
+   * Wipe everything tied to the current (or prior) extraction so the user can
+   * start fresh.  Only clears *client-side* state; backend checkpoints under
+   * `jobId` remain on disk so nothing becomes irrecoverable — the user can
+   * still Resume via the stage log if they change their mind before running a
+   * new job.  The persisted localStorage snapshot is also cleared.
+   */
+  const handleReset = () => {
+    if (isJobActive) {
+      setEditStatus("Cannot reset while a job is running. Terminate first.");
+      return;
+    }
+
+    setOverviewFiles((prev) => {
+      prev.forEach(revokeFilePreview);
+      return [];
+    });
+    setBinFiles((prev) => {
+      prev.forEach(revokeFilePreview);
+      return [];
+    });
+    setOverviewStoredFileNames([]);
+    setBinStoredFileNames([]);
+    setOverviewAdditionalInfo("");
+    setBinAdditionalInfo("");
+    setGraphData(null);
+    setSelection({ kind: "none" });
+    setJobId("");
+    setJobStatus("");
+    setCurrentStage(null);
+    setStageMessage("");
+    setCompletedStages([]);
+    setCancelRequested(false);
+    setLatestProgress(null);
+    setLiveUsage(null);
+    setInputsRehydrated(false);
+    setHistory([]);
+    setChangeLog([]);
+    setEditStatus("");
+    setChatPrompt("");
+    setViewMode("graph");
+    setExtractStatus("Workspace reset. Ready for a new extraction.");
+    setIsOverviewCollapsed(false);
+    setIsBinCollapsed(false);
+    setRightPanelUserToggled(false);
+    try {
+      window.localStorage.removeItem(snapshotKey);
+    } catch {
+      // ignore storage errors
     }
   };
 
@@ -1322,6 +1539,23 @@ export default function MapExtractionWorkspace({
                 event.currentTarget.value = "";
               }}
             />
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={isJobActive || !hasAnyActivity}
+              aria-label="Reset workspace"
+              title={
+                isJobActive
+                  ? "Terminate the running job before resetting."
+                  : !hasAnyActivity
+                  ? "Nothing to reset yet."
+                  : "Reset workspace: clear graph, inputs, and local snapshot."
+              }
+              className="inline-flex items-center gap-2 rounded-md border border-amber-700 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <TrashIcon className="h-4 w-4" />
+              <span>Reset</span>
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -1345,28 +1579,26 @@ export default function MapExtractionWorkspace({
             >
               {isLeftPanelCollapsed ? "⟩ Left" : "⟨ Left"}
             </button>
-            {showRightRail ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setRightPanelUserToggled(true);
-                  setIsRightPanelCollapsed((prev) => !prev);
-                }}
-                aria-label={isRightPanelCollapsed ? "Expand stage log" : "Collapse stage log"}
-                title={isRightPanelCollapsed ? "Expand stage log" : "Collapse stage log"}
-                className="inline-flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-2 text-xs text-neutral-300 transition hover:border-sky-500"
-              >
-                {isRightPanelCollapsed ? "⟨ Log" : "⟩ Log"}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                setRightPanelUserToggled(true);
+                setIsRightPanelCollapsed((prev) => !prev);
+              }}
+              aria-label={isRightPanelCollapsed ? "Expand stage log" : "Collapse stage log"}
+              title={isRightPanelCollapsed ? "Expand stage log" : "Collapse stage log"}
+              className="inline-flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-2 text-xs text-neutral-300 transition hover:border-sky-500"
+            >
+              {isRightPanelCollapsed ? "⟨ Log" : "⟩ Log"}
+            </button>
           </div>
         </header>
 
         <section
           className="grid gap-4"
           style={{
-            gridTemplateColumns: `${isLeftPanelCollapsed ? "48px" : "320px"} minmax(0, 1fr)${
-              showRightRail ? ` ${isRightPanelCollapsed ? "40px" : "360px"}` : ""
+            gridTemplateColumns: `${isLeftPanelCollapsed ? "48px" : "320px"} minmax(0, 1fr) ${
+              isRightPanelCollapsed ? "40px" : "360px"
             }`,
           }}
         >
@@ -1414,8 +1646,8 @@ export default function MapExtractionWorkspace({
                   <button
                     type="button"
                     onClick={() => overviewInputRef.current?.click()}
-                    disabled={isJobActive}
-                    title={isJobActive ? "Inputs are locked while the job is running." : "Choose files"}
+                    disabled={inputsLocked}
+                    title={inputsLocked ? inputsLockReason : "Choose files"}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-4 py-3 text-sm font-semibold text-neutral-100 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     + Choose files
@@ -1426,7 +1658,7 @@ export default function MapExtractionWorkspace({
                     multiple
                     accept="image/*"
                     className="hidden"
-                    disabled={isJobActive}
+                    disabled={inputsLocked}
                     onChange={(event) => {
                       onPickOverviewFiles(event.target.files);
                       event.currentTarget.value = "";
@@ -1436,7 +1668,9 @@ export default function MapExtractionWorkspace({
                     <p className="text-xs text-neutral-500">
                       {overviewDisplayNames.length > 0 ? `${String(overviewDisplayNames.length)} file(s)` : "No files selected yet"}
                     </p>
-                    {overviewFiles.length === 0 && overviewStoredFileNames.length > 0 ? (
+                    {overviewFiles.length === 0 &&
+                    overviewStoredFileNames.length > 0 &&
+                    !inputsRehydrated ? (
                       <p className="text-xs text-amber-300">
                         Previous file names restored. Re-upload files to run extraction again.
                       </p>
@@ -1449,9 +1683,9 @@ export default function MapExtractionWorkspace({
                             <button
                               type="button"
                               onClick={() => handleRemoveOverviewFile(name)}
-                              disabled={isJobActive}
+                              disabled={inputsLocked}
                               aria-label={`Remove ${name}`}
-                              title={isJobActive ? "Inputs are locked while the job is running." : "Remove file"}
+                              title={inputsLocked ? inputsLockReason : "Remove file"}
                               className="inline-flex h-6 w-6 items-center justify-center rounded border border-red-800 bg-red-500/10 text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <TrashIcon className="h-3.5 w-3.5" />
@@ -1471,7 +1705,7 @@ export default function MapExtractionWorkspace({
                     value={overviewAdditionalInfo}
                     onChange={(event) => setOverviewAdditionalInfo(event.target.value)}
                     placeholder="input text here"
-                    disabled={isJobActive}
+                    disabled={inputsLocked}
                     className="min-h-24 w-full rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
@@ -1504,8 +1738,8 @@ export default function MapExtractionWorkspace({
                   <button
                     type="button"
                     onClick={() => binInputRef.current?.click()}
-                    disabled={isJobActive}
-                    title={isJobActive ? "Inputs are locked while the job is running." : "Choose files"}
+                    disabled={inputsLocked}
+                    title={inputsLocked ? inputsLockReason : "Choose files"}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-4 py-3 text-sm font-semibold text-neutral-100 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     + Choose files
@@ -1515,7 +1749,7 @@ export default function MapExtractionWorkspace({
                     type="file"
                     multiple
                     className="hidden"
-                    disabled={isJobActive}
+                    disabled={inputsLocked}
                     onChange={(event) => {
                       onPickBinFiles(event.target.files);
                       event.currentTarget.value = "";
@@ -1526,7 +1760,9 @@ export default function MapExtractionWorkspace({
                     <p className="text-xs text-neutral-500">
                       {binDisplayNames.length > 0 ? `${String(binDisplayNames.length)} file(s)` : "No files selected yet"}
                     </p>
-                    {binFiles.length === 0 && binStoredFileNames.length > 0 ? (
+                    {binFiles.length === 0 &&
+                    binStoredFileNames.length > 0 &&
+                    !inputsRehydrated ? (
                       <p className="text-xs text-amber-300">
                         Previous file names restored. Re-upload files to run extraction again.
                       </p>
@@ -1539,9 +1775,9 @@ export default function MapExtractionWorkspace({
                             <button
                               type="button"
                               onClick={() => handleRemoveBinFile(name)}
-                              disabled={isJobActive}
+                              disabled={inputsLocked}
                               aria-label={`Remove ${name}`}
-                              title={isJobActive ? "Inputs are locked while the job is running." : "Remove file"}
+                              title={inputsLocked ? inputsLockReason : "Remove file"}
                               className="inline-flex h-6 w-6 items-center justify-center rounded border border-red-800 bg-red-500/10 text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <TrashIcon className="h-3.5 w-3.5" />
@@ -1561,7 +1797,7 @@ export default function MapExtractionWorkspace({
                     value={binAdditionalInfo}
                     onChange={(event) => setBinAdditionalInfo(event.target.value)}
                     placeholder="input text here"
-                    disabled={isJobActive}
+                    disabled={inputsLocked}
                     className="min-h-24 w-full rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
@@ -1636,7 +1872,12 @@ export default function MapExtractionWorkspace({
                   <button
                     type="button"
                     onClick={() => void handleExtract()}
-                    disabled={isJobActive}
+                    disabled={isJobActive || hasStageHistory}
+                    title={
+                      hasStageHistory && !isJobActive
+                        ? "A previous extraction is still in state. Resume it from the stage log or click Reset to start over."
+                        : undefined
+                    }
                     className="rounded-lg border border-neutral-700 bg-neutral-800 px-8 py-3 text-base font-semibold text-neutral-100 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {isExtracting ? "Extracting..." : isResuming ? "Resuming..." : "Extract"}
@@ -1745,7 +1986,6 @@ export default function MapExtractionWorkspace({
             </div>
           </section>
 
-          {showRightRail ? (
           <aside className="flex min-w-0 flex-col gap-3">
             {isRightPanelCollapsed ? (
               <div className="flex flex-col items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/60 p-2">
@@ -1779,11 +2019,17 @@ export default function MapExtractionWorkspace({
                 latestProgress={latestProgress}
                 isActive={isJobActive}
                 onResumeRequested={() => void handleResume()}
+                onExtractRequested={() => void handleExtract()}
+                extractDisabled={isJobActive || overviewFiles.length === 0}
+                extractDisabledReason={
+                  overviewFiles.length === 0
+                    ? "Upload at least one overview map image first."
+                    : "Extraction is already running."
+                }
                 onStatusUpdate={(message) => setExtractStatus(message)}
               />
             )}
           </aside>
-          ) : null}
         </section>
       </main>
     </div>

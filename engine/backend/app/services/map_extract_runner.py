@@ -56,6 +56,51 @@ def _raise_if_cancelled(job: JobRecord) -> None:
         raise JobCancelledError(f"job cancelled jobId={job.job_id}")
 
 
+def _usage_totals_snapshot(usage_totals: dict[str, int]) -> dict[str, int]:
+    """Shallow copy of the running usage_totals dict at a checkpoint boundary.
+
+    Embedded into every stage checkpoint so that a resume can restore the
+    cumulative token counters earned by stages that are being skipped.
+    Without this, cached stages emit "0 tokens" back to the UI and the bottom
+    counter collapses to zero until the remaining stages add more.
+    """
+    return {
+        "prompt_tokens": int(usage_totals.get("prompt_tokens", 0)),
+        "output_tokens": int(usage_totals.get("output_tokens", 0)),
+        "total_tokens": int(usage_totals.get("total_tokens", 0)),
+        "call_count": int(usage_totals.get("call_count", 0)),
+    }
+
+
+def _restore_usage_totals_from_cache(
+    cached: dict[str, Any] | None,
+    usage_totals: dict[str, int],
+) -> None:
+    """If the cached checkpoint embeds a usage snapshot, replace the running
+    totals in place.  No-op when the snapshot is absent (old checkpoints)."""
+    if not cached:
+        return
+    snapshot = cached.get("_usageTotalsAtCompletion")
+    if not isinstance(snapshot, dict):
+        return
+    for key in ("prompt_tokens", "output_tokens", "total_tokens", "call_count"):
+        value = snapshot.get(key)
+        if isinstance(value, int) and value > usage_totals.get(key, 0):
+            usage_totals[key] = value
+
+
+def _save_stage_with_usage(
+    job_id: str,
+    stage: str,
+    payload: dict[str, Any],
+    usage_totals: dict[str, int],
+) -> None:
+    """Wrapper around checkpoints.save_stage that embeds a usage snapshot."""
+    payload = dict(payload)
+    payload["_usageTotalsAtCompletion"] = _usage_totals_snapshot(usage_totals)
+    checkpoints.save_stage(job_id, stage, payload)
+
+
 def _mark_stage_completed(job: JobRecord, stage: str) -> None:
     with JOBS_LOCK:
         if stage not in job.completed_stages:
@@ -1582,6 +1627,7 @@ def run_map_extract_worker(
         _raise_if_cancelled(job)
         stage1_cached = checkpoints.load_stage(job.job_id, "extractmap_symbol") if resume_existing else None
         if stage1_cached is not None:
+            _restore_usage_totals_from_cache(stage1_cached, usage_totals)
             symbol_markdown = str(stage1_cached.get("symbolMarkdown") or "")
             symbol_legend = list(stage1_cached.get("symbolLegend") or [])
             symbol_enum = list(stage1_cached.get("symbolEnum") or [])
@@ -1634,7 +1680,7 @@ def run_map_extract_worker(
                 ensure_ascii=False,
             )
             _stage_end(job.job_id, "extractmap_symbol", symbol_started, markdownLen=len(symbol_markdown))
-            checkpoints.save_stage(
+            _save_stage_with_usage(
                 job.job_id,
                 "extractmap_symbol",
                 {
@@ -1642,12 +1688,14 @@ def run_map_extract_worker(
                     "symbolLegend": symbol_legend,
                     "symbolEnum": symbol_enum,
                 },
+                usage_totals,
             )
         _mark_stage_completed(job, "extractmap_symbol")
 
         _raise_if_cancelled(job)
         stage2_cached = checkpoints.load_stage(job.job_id, "extractmap_text") if resume_existing else None
         if stage2_cached is not None:
+            _restore_usage_totals_from_cache(stage2_cached, usage_totals)
             nodes = list(stage2_cached.get("nodes") or [])
             node_payload_types = list(stage2_cached.get("payloadTypes") or [])
             _emit_stage_with_usage(
@@ -1738,19 +1786,21 @@ def run_map_extract_worker(
                 nodeCount=len(nodes),
                 payloadTypes=node_payload_types,
             )
-            checkpoints.save_stage(
+            _save_stage_with_usage(
                 job.job_id,
                 "extractmap_text",
                 {
                     "nodes": nodes,
                     "payloadTypes": node_payload_types,
                 },
+                usage_totals,
             )
             _mark_stage_completed(job, "extractmap_text")
 
         _raise_if_cancelled(job)
         stage3_cached = checkpoints.load_stage(job.job_id, "tabular_extraction") if resume_existing else None
         if stage3_cached is not None:
+            _restore_usage_totals_from_cache(stage3_cached, usage_totals)
             tabular_csv = str(stage3_cached.get("tabularCsv") or "")
             csv_chunks = list(stage3_cached.get("csvChunks") or [])
             _emit_stage_with_usage(
@@ -1849,13 +1899,14 @@ def run_map_extract_worker(
 
         if _stage3_run:
             tabular_csv = "\n\n".join(csv_chunks)
-            checkpoints.save_stage(
+            _save_stage_with_usage(
                 job.job_id,
                 "tabular_extraction",
                 {
                     "tabularCsv": tabular_csv,
                     "csvChunks": csv_chunks,
                 },
+                usage_totals,
             )
             _mark_stage_completed(job, "tabular_extraction")
         # Keep full stage-3 output for stage-4 merging; do not truncate context.
@@ -1864,6 +1915,7 @@ def run_map_extract_worker(
         _raise_if_cancelled(job)
         stage4_cached = checkpoints.load_stage(job.job_id, "support_enrichment") if resume_existing else None
         if stage4_cached is not None:
+            _restore_usage_totals_from_cache(stage4_cached, usage_totals)
             nodes = list(stage4_cached.get("nodes") or [])
             support_enriched_nodes = list(stage4_cached.get("supportEnrichedNodes") or [])
             matched_count = int(stage4_cached.get("matchedCount") or 0)
@@ -1933,7 +1985,7 @@ def run_map_extract_worker(
                 ignored_non_stage2_count,
                 len(nodes),
             )
-            checkpoints.save_stage(
+            _save_stage_with_usage(
                 job.job_id,
                 "support_enrichment",
                 {
@@ -1942,6 +1994,7 @@ def run_map_extract_worker(
                     "matchedCount": matched_count,
                     "ignoredNonStage2Count": ignored_non_stage2_count,
                 },
+                usage_totals,
             )
             _mark_stage_completed(job, "support_enrichment")
 
@@ -1957,6 +2010,7 @@ def run_map_extract_worker(
         _raise_if_cancelled(job)
         stage5_cached = checkpoints.load_stage(job.job_id, "edge_extraction") if resume_existing else None
         if stage5_cached is not None:
+            _restore_usage_totals_from_cache(stage5_cached, usage_totals)
             edges = list(stage5_cached.get("edges") or [])
             edge_payload_types = list(stage5_cached.get("payloadTypes") or [])
             _emit_stage_with_usage(
@@ -2025,13 +2079,14 @@ def run_map_extract_worker(
                 edgeCount=len(edges),
                 payloadTypes=edge_payload_types,
             )
-            checkpoints.save_stage(
+            _save_stage_with_usage(
                 job.job_id,
                 "edge_extraction",
                 {
                     "edges": edges,
                     "payloadTypes": edge_payload_types,
                 },
+                usage_totals,
             )
             _mark_stage_completed(job, "edge_extraction")
 
@@ -2072,7 +2127,7 @@ def run_map_extract_worker(
             vertexCount=len(result["graph"]["vertices"]),
             edgeCount=len(result["graph"]["edges"]),
         )
-        checkpoints.save_stage(job.job_id, "finalize_graph", result)
+        _save_stage_with_usage(job.job_id, "finalize_graph", result, usage_totals)
         _mark_stage_completed(job, "finalize_graph")
         emit_job_event(job, "result", result)
         emit_job_event(job, "done", {"status": "completed"})
@@ -2090,6 +2145,44 @@ def run_map_extract_worker(
             },
         )
     except JobCancelledError:
+        # Roll back the stage that was mid-flight when cancel fired so a
+        # later resume will re-run it instead of treating a partial (or
+        # already-saved but undesired) checkpoint as completed.  Without
+        # this the resume silently skips the cancelled stage, which
+        # contradicts the user-visible "terminate" semantics.
+        cancelled_stage = str(job.current_stage or "")
+        if cancelled_stage.startswith("map_extract/"):
+            cancelled_stage = cancelled_stage[len("map_extract/"):]
+        # Only roll back the mid-flight stage.  If the stage is already in
+        # completed_stages the cancel fired at a between-stage boundary —
+        # keep every completed checkpoint so resume picks up where we
+        # actually were (the next pending stage), not one stage earlier.
+        should_rollback = (
+            cancelled_stage
+            and cancelled_stage in checkpoints.STAGE_ORDER
+            and cancelled_stage not in job.completed_stages
+        )
+        if should_rollback:
+            removed = checkpoints.delete_from(job.job_id, cancelled_stage)
+            cutoff = checkpoints.stage_index(cancelled_stage)
+            with JOBS_LOCK:
+                job.completed_stages = [
+                    s for s in job.completed_stages
+                    if checkpoints.stage_index(s) < cutoff
+                ]
+            logger.info(
+                "[map_extract][worker] cancel rolled back jobId=%s fromStage=%s removed=%s",
+                job.job_id,
+                cancelled_stage,
+                removed,
+            )
+        else:
+            logger.info(
+                "[map_extract][worker] cancel at stage boundary jobId=%s stage=%s completed=%s",
+                job.job_id,
+                cancelled_stage,
+                list(job.completed_stages),
+            )
         logger.warning("[map_extract][worker] cancelled jobId=%s", job.job_id)
         mark_cancelled(job.job_id)
         emit_job_event(job, "stage", {"stage": "map_extract/cancelled", "message": "Cancelled by user."})

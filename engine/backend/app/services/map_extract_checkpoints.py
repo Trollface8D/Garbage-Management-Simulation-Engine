@@ -114,6 +114,29 @@ def list_stages(job_id: str) -> list[dict[str, Any]]:
     return out
 
 
+def latest_usage_totals(job_id: str) -> dict[str, int] | None:
+    """Return the usage_totals snapshot embedded in the latest checkpoint.
+
+    Scans stage files in reverse STAGE_ORDER and returns the first
+    ``_usageTotalsAtCompletion`` snapshot it finds.  This lets the
+    status endpoint surface accurate cumulative tokens even after a
+    backend restart, before any resume has been triggered.
+    """
+    for stage in reversed(STAGE_ORDER):
+        payload = load_stage(job_id, stage)
+        if not isinstance(payload, dict):
+            continue
+        snapshot = payload.get("_usageTotalsAtCompletion")
+        if isinstance(snapshot, dict):
+            return {
+                "promptTokens": int(snapshot.get("prompt_tokens", 0)),
+                "outputTokens": int(snapshot.get("output_tokens", 0)),
+                "totalTokens": int(snapshot.get("total_tokens", 0)),
+                "callCount": int(snapshot.get("call_count", 0)),
+            }
+    return None
+
+
 def delete_from(job_id: str, stage: str) -> list[str]:
     """Delete the checkpoint for ``stage`` and every stage after it.
 

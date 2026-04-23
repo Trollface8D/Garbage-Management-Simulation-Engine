@@ -7,7 +7,7 @@ import time
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, File, Form, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from ...infra.io_utils import resolve_api_key
 from ...infra.paths import DEFAULT_MODEL_NAME
@@ -308,6 +308,7 @@ def get_map_extract_job(job_id: str):
 
     disk_completed = [s["stage"] for s in disk_stages]
     disk_status = "completed" if "finalize_graph" in disk_completed else "partial"
+    disk_token_usage = checkpoints.latest_usage_totals(job_id)
     logger.info(
         "[map_extract] status query (from disk) jobId=%s status=%s completedStages=%s",
         job_id,
@@ -320,7 +321,7 @@ def get_map_extract_job(job_id: str):
         "currentStage": None,
         "stageMessage": "Restored from checkpoint files (backend was restarted).",
         "stageHistory": [],
-        "tokenUsage": None,
+        "tokenUsage": disk_token_usage,
         "costEstimate": None,
         "error": None,
         "cancelRequested": False,
@@ -436,6 +437,95 @@ def get_map_extract_checkpoint(job_id: str, stage: str):
         "preview": summarized["preview"],
         "tokenUsage": _stage_token_usage(job, stage),
     }
+
+
+@router.get("/map_extract/jobs/{job_id}/inputs")
+def list_map_extract_inputs(job_id: str):
+    """Return the saved inputs manifest (no file bytes) so the UI can
+    rebuild the upload list on reload without forcing the user to
+    re-select every file."""
+    base = checkpoints.job_dir(job_id)
+    manifest_path = base / "inputs.json"
+    if not manifest_path.exists():
+        return JSONResponse({"error": f"No saved inputs for job '{job_id}'."}, status_code=404)
+    try:
+        import json as _json
+
+        manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:  # noqa: BLE001
+        logger.warning(
+            "[map_extract] inputs manifest unreadable jobId=%s error=%s", job_id, exc
+        )
+        return JSONResponse(
+            {"error": "Failed to read inputs manifest."}, status_code=500
+        )
+
+    def _describe(entries, kind):
+        out = []
+        for idx, entry in enumerate(entries or []):
+            rel = str(entry.get("path") or "").strip()
+            if not rel:
+                continue
+            file_path = base / "inputs" / rel
+            if not file_path.exists():
+                continue
+            stat = file_path.stat()
+            out.append(
+                {
+                    "index": idx,
+                    "filename": str(entry.get("filename") or rel),
+                    "mimeType": str(entry.get("mime_type") or "application/octet-stream"),
+                    "size": stat.st_size,
+                    "downloadUrl": f"/map_extract/jobs/{job_id}/inputs/{kind}/{idx}",
+                }
+            )
+        return out
+
+    return {
+        "jobId": job_id,
+        "componentId": str(manifest.get("componentId") or ""),
+        "overviewAdditionalInformation": str(
+            manifest.get("overviewAdditionalInformation") or ""
+        ),
+        "supportAdditionalInformation": str(
+            manifest.get("supportAdditionalInformation") or ""
+        ),
+        "modelName": str(manifest.get("modelName") or ""),
+        "overviewFiles": _describe(manifest.get("overviewFiles") or [], "overview"),
+        "supportFiles": _describe(manifest.get("supportFiles") or [], "support"),
+    }
+
+
+@router.get("/map_extract/jobs/{job_id}/inputs/{kind}/{index}")
+def download_map_extract_input(job_id: str, kind: str, index: int):
+    if kind not in {"overview", "support"}:
+        return JSONResponse({"error": f"Unknown input kind '{kind}'."}, status_code=400)
+    base = checkpoints.job_dir(job_id)
+    manifest_path = base / "inputs.json"
+    if not manifest_path.exists():
+        return JSONResponse({"error": f"No saved inputs for job '{job_id}'."}, status_code=404)
+    try:
+        import json as _json
+
+        manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return JSONResponse({"error": "Failed to read inputs manifest."}, status_code=500)
+    key = "overviewFiles" if kind == "overview" else "supportFiles"
+    entries = manifest.get(key) or []
+    if index < 0 or index >= len(entries):
+        return JSONResponse({"error": f"Input index {index} out of range."}, status_code=404)
+    entry = entries[index]
+    rel = str(entry.get("path") or "").strip()
+    if not rel:
+        return JSONResponse({"error": "Input has no stored path."}, status_code=404)
+    file_path = base / "inputs" / rel
+    if not file_path.exists():
+        return JSONResponse({"error": "Input file missing on disk."}, status_code=404)
+    return FileResponse(
+        str(file_path),
+        media_type=str(entry.get("mime_type") or "application/octet-stream"),
+        filename=str(entry.get("filename") or rel),
+    )
 
 
 @router.post("/map_extract/jobs/{job_id}/cancel")
