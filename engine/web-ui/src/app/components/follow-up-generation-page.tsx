@@ -40,6 +40,7 @@ type FollowUpGenerationPageProps = {
   experimentItemId?: string;
   initialFollowUpRecords?: FollowUpRecord[];
   model?: string;
+  runFilterInternetAnswerable?: boolean;
 };
 
 type AnswerFilterMode = "all" | "unanswered" | "answered";
@@ -688,6 +689,7 @@ export default function FollowUpGenerationPage({
   experimentItemId,
   initialFollowUpRecords = [],
   model = "",
+  runFilterInternetAnswerable = false,
 }: FollowUpGenerationPageProps) {
   const [generatedResults, setGeneratedResults] = useState<GeneratedQuestionsData[]>(() => toGeneratedResults(initialFollowUpRecords));
   const [questionIdsBySource, setQuestionIdsBySource] = useState<Record<string, Record<string, string>>>(() =>
@@ -698,7 +700,6 @@ export default function FollowUpGenerationPage({
   );
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [generatingSources, setGeneratingSources] = useState<Set<string>>(() => new Set());
-  const [isFiltering, setIsFiltering] = useState(false);
   const [answersBySource, setAnswersBySource] = useState<Record<string, Record<string, string>>>(() =>
     toAnswersMap(initialFollowUpRecords),
   );
@@ -779,6 +780,18 @@ export default function FollowUpGenerationPage({
   const generatedBySourceText = useMemo(() => {
     return new Map(generatedResults.map((result) => [result.source_text, result]));
   }, [generatedResults]);
+
+  const visibleGeneratedQuestionsBySource = useMemo(() => {
+    const bySource: Record<string, string[]> = {};
+
+    for (const result of generatedResults) {
+      bySource[result.source_text] = runFilterInternetAnswerable
+        ? result.generated_questions.filter((question) => !isLikelyInternetAnswerable(question))
+        : result.generated_questions;
+    }
+
+    return bySource;
+  }, [generatedResults, runFilterInternetAnswerable]);
 
   const ensureExperimentItemId = (): string => {
     const itemId = (experimentItemId || "").trim();
@@ -1149,39 +1162,6 @@ export default function FollowUpGenerationPage({
     });
   };
 
-  const handleRunFilter = async () => {
-    if (!hasGenerated) {
-      return;
-    }
-
-    setIsFiltering(true);
-    await new Promise((resolve) => setTimeout(resolve, 650));
-
-    let removedCount = 0;
-    let keptCount = 0;
-
-    const filtered = generatedResults.map((result) => {
-      const keptQuestions = result.generated_questions.filter((question) => {
-        const shouldFilterOut = isLikelyInternetAnswerable(question);
-        if (shouldFilterOut) {
-          removedCount += 1;
-          return false;
-        }
-        keptCount += 1;
-        return true;
-      });
-
-      return {
-        ...result,
-        generated_questions: keptQuestions,
-      };
-    });
-
-    setGeneratedResults(filtered);
-    setGenerationStatus(`Filter completed: removed ${String(removedCount)} internet-answerable question(s), kept ${String(keptCount)} context-specific question(s).`);
-    setIsFiltering(false);
-  };
-
   const ensureQuestionIdsForSource = async (
     itemId: string,
     sourceText: string,
@@ -1383,7 +1363,8 @@ export default function FollowUpGenerationPage({
 
     for (const result of generatedResults) {
       const sourceAnswers = filterBasisAnswersBySource[result.source_text] ?? {};
-      for (const question of result.generated_questions) {
+      const visibleQuestions = visibleGeneratedQuestionsBySource[result.source_text] ?? result.generated_questions;
+      for (const question of visibleQuestions) {
         if ((sourceAnswers[question] ?? "").trim()) {
           answered += 1;
         } else {
@@ -1393,7 +1374,7 @@ export default function FollowUpGenerationPage({
     }
 
     return { answered, unanswered };
-  }, [filterBasisAnswersBySource, generatedResults]);
+  }, [filterBasisAnswersBySource, generatedResults, visibleGeneratedQuestionsBySource]);
 
   return (
     <section className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 backdrop-blur-sm md:p-6">
@@ -1414,17 +1395,6 @@ export default function FollowUpGenerationPage({
             className="rounded-lg border border-emerald-500 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
           >
             {isGeneratingAll ? "Generating..." : "Generate all questions"}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleRunFilter}
-            disabled={isFiltering || !hasGenerated || generatedResults.length === 0}
-            title="Filter out questions that can be answered on the internet."
-            aria-label="Filter out questions that can be answered on the internet"
-            className="rounded-lg border border-sky-500 bg-sky-500/20 px-4 py-2 text-sm font-bold text-sky-200 transition hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
-          >
-            {isFiltering ? "RUNNING FILTER..." : "Run filter"}
           </button>
 
           <div className="inline-flex overflow-hidden rounded-lg border border-neutral-700">
@@ -1486,9 +1456,11 @@ export default function FollowUpGenerationPage({
         For better performance and reliability, submit in batches (for example one causal group at a time). You can continue drafting unanswered items and submit them later.
       </div>
 
-      <p className="mt-2 text-xs text-neutral-400">
-        Run filter will filter out questions that can be answered on the internet.
-      </p>
+      {runFilterInternetAnswerable ? (
+        <p className="mt-2 text-xs text-sky-300">
+          Internet-answerable question filter is ON.
+        </p>
+      ) : null}
 
       {generationStatus ? <p className="mt-3 text-sm text-neutral-300">{generationStatus}</p> : null}
       {draftSyncStatus ? <p className="mt-2 text-xs text-neutral-400">{draftSyncStatus}</p> : null}
@@ -1500,7 +1472,7 @@ export default function FollowUpGenerationPage({
           <div className="space-y-3">
             {visibleCausalItems.map((causal, index) => {
               const generated = generatedBySourceText.get(causal.source_text);
-              const sourceQuestions = generated?.generated_questions ?? [];
+              const sourceQuestions = visibleGeneratedQuestionsBySource[causal.source_text] ?? generated?.generated_questions ?? [];
               const sourceAnswers = answersBySource[causal.source_text] ?? {};
               const sourceFilterAnswers = filterBasisAnswersBySource[causal.source_text] ?? {};
               const sourceAnsweredCount = sourceQuestions.filter((question) => (sourceFilterAnswers[question] ?? "").trim().length > 0).length;

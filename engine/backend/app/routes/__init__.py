@@ -1,4 +1,5 @@
 from .compat import router as compat_router
+from .codegen_analytics import router as codegen_analytics_router
 from .extract import router as extract_router
 from .health import router as health_router
 from .jobs_artifacts import router as jobs_artifacts_router
@@ -9,6 +10,7 @@ from .map_extract import router as map_extract_router
 
 __all__ = [
 	"compat_router",
+	"codegen_analytics_router",
 	"extract_router",
 	"health_router",
 	"jobs_artifacts_router",

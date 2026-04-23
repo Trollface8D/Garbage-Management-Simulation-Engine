@@ -9,6 +9,7 @@ import {
     type SimulationProject,
 } from "@/lib/simulation-components";
 import { loadCausalSourceItem, loadComponents, loadProjects, loadTextChunksForItem, saveTextChunksForItem } from "@/lib/pm-storage";
+import { SaveIcon } from "@/app/components/icons/common-icons";
 import CausalWorkflowHeader from "../workflow-header";
 
 type TextBlock = {
@@ -90,16 +91,6 @@ function AiToolIcon({ className }: { className?: string }) {
             <path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z" />
             <path d="M19 14l1 2 2 1-2 1-1 2-1-2-2-1 2-1z" />
             <path d="M5 14l.8 1.6L7.5 16l-1.7.4L5 18l-.8-1.6L2.5 16l1.7-.4z" />
-        </svg>
-    );
-}
-
-function SaveIcon({ className }: { className?: string }) {
-    return (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
-            <path d="M5 3h12l4 4v14H3V3h2z" />
-            <path d="M7 3v6h10V3" />
-            <path d="M8 21v-7h8v7" />
         </svg>
     );
 }
@@ -456,6 +447,9 @@ function CausalExtractChunkingContent() {
                             {blocks.map((block, index) => {
                                 const isActive = index === activeIndex;
                                 const isJoinSelected = selectedForJoin.includes(index);
+                                const textareaMinHeightClass = blocks.length === 1
+                                    ? "min-h-[35rem]"
+                                    : "min-h-32";
 
                                 return (
                                     <div
@@ -483,7 +477,7 @@ function CausalExtractChunkingContent() {
                                             onChange={(event) => handleEdit(index, event.target.value)}
                                             onFocus={() => setActiveIndex(index)}
                                             onMouseUp={(event) => handleTextareaMouseUp(index, event.currentTarget.selectionStart)}
-                                            className="min-h-28 w-full resize-y rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
+                                            className={`${textareaMinHeightClass} w-full resize-y rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500`}
                                             placeholder="Type block text"
                                         />
                                     </div>

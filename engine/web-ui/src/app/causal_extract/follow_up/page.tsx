@@ -28,6 +28,7 @@ function CausalFollowUpPageContent() {
   const [artifactLoadStatus, setArtifactLoadStatus] = useState<string>("");
   const [loadedItemId, setLoadedItemId] = useState<string>("");
   const [selectedModel, setSelectedModel] = useState<string>("");
+  const [internetFilterEnabled, setInternetFilterEnabled] = useState<boolean>(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -175,20 +176,35 @@ function CausalFollowUpPageContent() {
           experimentItemId={itemId}
           initialFollowUpRecords={loadedItemId === itemId ? followUpRecords : []}
           model={selectedModel}
+          runFilterInternetAnswerable={internetFilterEnabled}
         />
       </main>
 
-      <label className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-800/95 px-3 py-2 text-sm text-neutral-200 shadow-lg backdrop-blur-sm">
-        <span>Toggle implicit causal</span>
-        <button
-          type="button"
-          onClick={() => setIncludeImplicit((prev) => !prev)}
-          className={`rounded px-3 py-1 text-xs font-bold ${includeImplicit ? "bg-emerald-500/25 text-emerald-200" : "bg-neutral-700 text-neutral-200"
-            }`}
-        >
-          {includeImplicit ? "ON" : "OFF"}
-        </button>
-      </label>
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
+        <label className="inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-800/95 px-3 py-2 text-sm text-neutral-200 shadow-lg backdrop-blur-sm">
+          <span>Toggle implicit causal</span>
+          <button
+            type="button"
+            onClick={() => setIncludeImplicit((prev) => !prev)}
+            className={`rounded px-3 py-1 text-xs font-bold ${includeImplicit ? "bg-emerald-500/25 text-emerald-200" : "bg-neutral-700 text-neutral-200"
+              }`}
+          >
+            {includeImplicit ? "ON" : "OFF"}
+          </button>
+        </label>
+
+        <label className="inline-flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-800/95 px-3 py-2 text-sm text-neutral-200 shadow-lg backdrop-blur-sm">
+          <span>Run filter (internet-answerable)</span>
+          <button
+            type="button"
+            onClick={() => setInternetFilterEnabled((prev) => !prev)}
+            className={`rounded px-3 py-1 text-xs font-bold ${internetFilterEnabled ? "bg-sky-500/25 text-sky-200" : "bg-neutral-700 text-neutral-200"
+              }`}
+          >
+            {internetFilterEnabled ? "ON" : "OFF"}
+          </button>
+        </label>
+      </div>
     </div>
   );
 }
