@@ -1884,8 +1884,8 @@ export default function MapExtractionWorkspace({
           </aside>
 
           <section className="min-w-0 space-y-4">
-            <div className="flex justify-end">
-              <article className="w-full max-w-md rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
+            {selection.kind !== "none" ? (
+              <article className="fixed right-4 top-4 z-40 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl border border-neutral-800 bg-neutral-900/95 p-4 shadow-2xl backdrop-blur">
                 <button
                   type="button"
                   onClick={() => setIsSymbolCollapsed((prev) => !prev)}
@@ -1896,12 +1896,12 @@ export default function MapExtractionWorkspace({
                 </button>
 
                 {!isSymbolCollapsed ? (
-                  <div className="mt-4">
+                  <div className="mt-4 max-h-[70vh] overflow-auto">
                     <SelectionDetails selection={selection} />
                   </div>
                 ) : null}
               </article>
-            </div>
+            ) : null}
 
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
               <div className="mb-3 flex items-center justify-end">

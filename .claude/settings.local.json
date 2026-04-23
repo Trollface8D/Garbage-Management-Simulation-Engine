@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(npx tsc *)",
+      "Bash(grep -E \"^tsc$|^next$\")",
+      "Bash(./node_modules/.bin/eslint src/app/components/map-extraction-workspace.tsx src/app/components/stage-log-panel.tsx)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git apply *)"
+    ]
+  }
+}
