@@ -603,6 +603,10 @@ export default function MapExtractionWorkspace({
   const [currentStage, setCurrentStage] = useState<string | null>(null);
   const [stageMessage, setStageMessage] = useState<string>("");
   const [completedStages, setCompletedStages] = useState<string[]>([]);
+  const [canResume, setCanResume] = useState<boolean>(false);
+  const [remainingStages, setRemainingStages] = useState<number | null>(null);
+  const [nextStage, setNextStage] = useState<string | null>(null);
+  const [resumeDisabledReason, setResumeDisabledReason] = useState<string>("");
   const [cancelRequested, setCancelRequested] = useState<boolean>(false);
   const [latestProgress, setLatestProgress] = useState<MapExtractionProgress | null>(null);
 
@@ -1057,6 +1061,10 @@ export default function MapExtractionWorkspace({
     setCurrentStage(null);
     setStageMessage("");
     setCompletedStages([]);
+    setCanResume(false);
+    setRemainingStages(null);
+    setNextStage(null);
+    setResumeDisabledReason("");
     setCancelRequested(false);
     setLatestProgress(null);
     setLiveUsage({
@@ -1092,6 +1100,22 @@ export default function MapExtractionWorkspace({
           setCurrentStage(progress.stage ?? null);
           setStageMessage(progress.message ?? "");
           setLatestProgress(progress);
+          if (typeof progress.canResume === "boolean") {
+            setCanResume(progress.canResume);
+          }
+          if (typeof progress.remainingStages === "number") {
+            setRemainingStages(progress.remainingStages);
+          }
+          if (typeof progress.nextStage === "string") {
+            setNextStage(progress.nextStage);
+          } else if (progress.nextStage === null) {
+            setNextStage(null);
+          }
+          if (typeof progress.resumeDisabledReason === "string") {
+            setResumeDisabledReason(progress.resumeDisabledReason);
+          } else if (progress.resumeDisabledReason === null) {
+            setResumeDisabledReason("");
+          }
           if (progress.tokenUsage || progress.costEstimate) {
             setLiveUsage((prev) => ({
               tokenUsage: (progress.tokenUsage as Record<string, unknown> | undefined) || prev?.tokenUsage,
@@ -1117,6 +1141,10 @@ export default function MapExtractionWorkspace({
       setJobStatus("completed");
       setCurrentStage(null);
       setStageMessage("");
+      setCanResume(false);
+      setRemainingStages(0);
+      setNextStage(null);
+      setResumeDisabledReason("No stages left to run.");
       setExtractStatus("Map extraction completed.");
       setLiveUsage(null);
     } catch (error) {
@@ -1138,6 +1166,12 @@ export default function MapExtractionWorkspace({
       setCurrentStage(status.currentStage ?? null);
       setStageMessage(status.stageMessage ?? "");
       setCompletedStages(status.completedStages ?? []);
+      setCanResume(Boolean(status.canResume));
+      setRemainingStages(
+        typeof status.remainingStages === "number" ? status.remainingStages : null,
+      );
+      setNextStage(status.nextStage ?? null);
+      setResumeDisabledReason(status.resumeDisabledReason ?? "");
       setCancelRequested(Boolean(status.cancelRequested));
       // Surface backend-known usage totals so a rollback/reload keeps
       // the counter accurate without a running worker.
@@ -1200,6 +1234,22 @@ export default function MapExtractionWorkspace({
           setCurrentStage(progress.stage ?? null);
           setStageMessage(progress.message ?? "");
           setLatestProgress(progress);
+          if (typeof progress.canResume === "boolean") {
+            setCanResume(progress.canResume);
+          }
+          if (typeof progress.remainingStages === "number") {
+            setRemainingStages(progress.remainingStages);
+          }
+          if (typeof progress.nextStage === "string") {
+            setNextStage(progress.nextStage);
+          } else if (progress.nextStage === null) {
+            setNextStage(null);
+          }
+          if (typeof progress.resumeDisabledReason === "string") {
+            setResumeDisabledReason(progress.resumeDisabledReason);
+          } else if (progress.resumeDisabledReason === null) {
+            setResumeDisabledReason("");
+          }
           if (progress.tokenUsage || progress.costEstimate) {
             setLiveUsage((prev) => ({
               tokenUsage:
@@ -1220,6 +1270,10 @@ export default function MapExtractionWorkspace({
       setJobStatus("completed");
       setCurrentStage(null);
       setStageMessage("");
+      setCanResume(false);
+      setRemainingStages(0);
+      setNextStage(null);
+      setResumeDisabledReason("No stages left to run.");
       setExtractStatus("Resume completed.");
       setLiveUsage(null);
       // Refresh stage history from backend (remote checkpoints) so the
@@ -1304,6 +1358,10 @@ export default function MapExtractionWorkspace({
     setCurrentStage(null);
     setStageMessage("");
     setCompletedStages([]);
+    setCanResume(false);
+    setRemainingStages(null);
+    setNextStage(null);
+    setResumeDisabledReason("");
     setCancelRequested(false);
     setLatestProgress(null);
     setLiveUsage(null);
@@ -1806,25 +1864,8 @@ export default function MapExtractionWorkspace({
 
             <div className="mt-auto space-y-3 border-t border-neutral-800 pt-3">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                Node data inspection
+                Session details
               </p>
-            <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
-              <button
-                type="button"
-                onClick={() => setIsSymbolCollapsed((prev) => !prev)}
-                className="flex w-full items-center justify-between text-left"
-              >
-                <span className="text-lg font-bold text-neutral-100">Selection details</span>
-                <span className="text-neutral-300">{isSymbolCollapsed ? "v" : "^"}</span>
-              </button>
-
-              {!isSymbolCollapsed ? (
-                <div className="mt-4">
-                  <SelectionDetails selection={selection} />
-                </div>
-              ) : null}
-            </article>
-
             <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
               <p className="text-lg font-bold text-neutral-100">Change details</p>
               {changeLog.length === 0 ? (
@@ -1843,6 +1884,25 @@ export default function MapExtractionWorkspace({
           </aside>
 
           <section className="min-w-0 space-y-4">
+            <div className="flex justify-end">
+              <article className="w-full max-w-md rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
+                <button
+                  type="button"
+                  onClick={() => setIsSymbolCollapsed((prev) => !prev)}
+                  className="flex w-full items-center justify-between text-left"
+                >
+                  <span className="text-lg font-bold text-neutral-100">Selection details</span>
+                  <span className="text-neutral-300">{isSymbolCollapsed ? "v" : "^"}</span>
+                </button>
+
+                {!isSymbolCollapsed ? (
+                  <div className="mt-4">
+                    <SelectionDetails selection={selection} />
+                  </div>
+                ) : null}
+              </article>
+            </div>
+
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
               <div className="mb-3 flex items-center justify-end">
                 <div className="inline-flex rounded-full border border-neutral-700 bg-neutral-800 p-1 text-sm">
@@ -2015,6 +2075,10 @@ export default function MapExtractionWorkspace({
                 currentStage={currentStage}
                 stageMessage={stageMessage}
                 completedStages={completedStages}
+                canResume={canResume}
+                remainingStages={remainingStages ?? undefined}
+                nextStage={nextStage}
+                resumeDisabledReason={resumeDisabledReason || undefined}
                 cancelRequested={cancelRequested}
                 latestProgress={latestProgress}
                 isActive={isJobActive}

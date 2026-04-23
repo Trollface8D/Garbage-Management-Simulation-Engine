@@ -4,6 +4,7 @@ import logging
 import os
 import threading
 import time
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, File, Form, UploadFile
@@ -32,6 +33,41 @@ MAP_EXTRACT_JOB_TIMEOUT_SECONDS = int(os.getenv("MAP_EXTRACT_JOB_TIMEOUT_SECONDS
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 PDF_EXTENSIONS = {".pdf"}
 TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".log", ".tsv", ".yaml", ".yml"}
+
+
+def _ordered_completed_stages(stages: list[str] | None) -> list[str]:
+    stage_set = {str(stage or "").strip() for stage in (stages or [])}
+    return [stage for stage in checkpoints.STAGE_ORDER if stage in stage_set]
+
+
+def _resume_state_payload(
+    *,
+    status: str,
+    completed_stages: list[str] | None,
+    current_stage: str | None = None,
+) -> dict[str, Any]:
+    completed = _ordered_completed_stages(completed_stages)
+    completed_set = set(completed)
+    remaining = [stage for stage in checkpoints.STAGE_ORDER if stage not in completed_set]
+    next_stage = remaining[0] if remaining else None
+
+    can_resume = bool(remaining) and status not in {"running", "queued"}
+    reason: str | None = None
+    if not remaining:
+        reason = "No stages left to run."
+    elif status == "running":
+        reason = "Job already running."
+    elif status == "queued":
+        reason = "Job already queued."
+
+    return {
+        "completedStages": completed,
+        "remainingStages": len(remaining),
+        "nextStage": next_stage,
+        "canResume": can_resume,
+        "resumeDisabledReason": None if can_resume else reason,
+        "activeStage": current_stage,
+    }
 
 
 def _suffix(filename: str | None) -> str:
@@ -290,13 +326,23 @@ def get_map_extract_job(job_id: str):
         job = JOBS.get(job_id)
 
     if job is not None:
-        logger.info(
-            "[map_extract] status query jobId=%s status=%s stage=%s",
-            job_id,
-            job.status,
-            job.current_stage,
+        payload = serialize_job(job)
+        payload.update(
+            _resume_state_payload(
+                status=str(payload.get("status") or ""),
+                completed_stages=list(payload.get("completedStages") or []),
+                current_stage=str(payload.get("currentStage") or "") or None,
+            )
         )
-        return serialize_job(job)
+        logger.info(
+            "[map_extract] status query jobId=%s status=%s stage=%s canResume=%s remainingStages=%s",
+            job_id,
+            payload.get("status"),
+            payload.get("currentStage"),
+            payload.get("canResume"),
+            payload.get("remainingStages"),
+        )
+        return payload
 
     # Job not in memory (backend may have restarted).  Reconstruct a
     # best-effort status response from disk checkpoint files so the
@@ -315,7 +361,7 @@ def get_map_extract_job(job_id: str):
         disk_status,
         disk_completed,
     )
-    return {
+    payload = {
         "jobId": job_id,
         "status": disk_status,
         "currentStage": None,
@@ -327,6 +373,14 @@ def get_map_extract_job(job_id: str):
         "cancelRequested": False,
         "completedStages": disk_completed,
     }
+    payload.update(
+        _resume_state_payload(
+            status=disk_status,
+            completed_stages=disk_completed,
+            current_stage=None,
+        )
+    )
+    return payload
 
 
 @router.get("/map_extract/jobs/{job_id}/checkpoints")
@@ -556,16 +610,45 @@ def rollback_map_extract_job(
             {"error": f"unknown stage '{stage}'; valid: {list(checkpoints.STAGE_ORDER)}"},
             status_code=400,
         )
-    removed = checkpoints.delete_from(job_id, stage)
+    with JOBS_LOCK:
+        existing = JOBS.get(job_id)
+        if existing is not None and existing.status == "running":
+            return JSONResponse({"error": "Job is running; terminate first before rollback."}, status_code=409)
+
+    removed = checkpoints.delete_after(job_id, stage)
+    persisted_completed = [entry["stage"] for entry in checkpoints.list_stages(job_id)]
+    resume_state = _resume_state_payload(
+        status="partial" if "finalize_graph" not in persisted_completed else "completed",
+        completed_stages=persisted_completed,
+        current_stage=None,
+    )
+
     with JOBS_LOCK:
         job = JOBS.get(job_id)
         if job is not None:
-            job.completed_stages = [s for s in job.completed_stages if checkpoints.stage_index(s) < checkpoints.stage_index(stage)]
+            job.completed_stages = resume_state["completedStages"]
+            if resume_state["remainingStages"] == 0:
+                job.status = "completed"
+            else:
+                job.status = "partial"
+            job.cancel_requested = False
+            job.error = None
+            job.current_stage = None
             job.updated_at = utc_now_iso()
+
+    logger.info(
+        "[map_extract] rollback applied jobId=%s stage=%s removed=%s nextStage=%s remainingStages=%s",
+        job_id,
+        stage,
+        removed,
+        resume_state.get("nextStage"),
+        resume_state.get("remainingStages"),
+    )
     return {
         "jobId": job_id,
         "removed": removed,
         "remaining": checkpoints.list_stages(job_id),
+        **resume_state,
     }
 
 
@@ -576,6 +659,22 @@ def resume_map_extract_job(job_id: str):
         return JSONResponse(
             {"error": f"No saved inputs for job '{job_id}'. Start a new job instead."},
             status_code=404,
+        )
+
+    disk_completed = [entry["stage"] for entry in checkpoints.list_stages(job_id)]
+    preflight_resume = _resume_state_payload(
+        status="partial" if "finalize_graph" not in disk_completed else "completed",
+        completed_stages=disk_completed,
+        current_stage=None,
+    )
+    if not preflight_resume["canResume"]:
+        return JSONResponse(
+            {
+                "jobId": job_id,
+                "error": preflight_resume["resumeDisabledReason"] or "Nothing to resume.",
+                **preflight_resume,
+            },
+            status_code=409,
         )
 
     api_key = resolve_api_key()
@@ -600,6 +699,7 @@ def resume_map_extract_job(job_id: str):
             job.cancel_requested = False
             job.error = None
             job.updated_at = now
+        job.completed_stages = preflight_resume["completedStages"]
         touch_activity(job)
 
     thread = threading.Thread(
@@ -621,12 +721,17 @@ def resume_map_extract_job(job_id: str):
     thread.start()
     _start_timeout_watchdog(job)
 
-    logger.info("[map_extract] resume triggered jobId=%s", job_id)
+    logger.info(
+        "[map_extract] resume triggered jobId=%s nextStage=%s remainingStages=%s",
+        job_id,
+        preflight_resume.get("nextStage"),
+        preflight_resume.get("remainingStages"),
+    )
     return {
         "jobId": job_id,
         "status": "queued",
         "resumed": True,
-        "completedStages": list(job.completed_stages),
+        **preflight_resume,
     }
 
 

@@ -7,8 +7,8 @@ Each job gets its own directory under ``CHECKPOINT_ROOT/<job_id>/`` containing:
   - ``<stage>.json``: serialized output of each stage.
 
 The pipeline worker calls ``load_stage``/``save_stage`` at each stage boundary.
-Rollback simply deletes the target stage file plus all later ones; the next
-resume re-runs only the missing stages.
+Rollback can either delete from a stage (legacy) or delete only stages after
+the selected baseline so resume continues from the next unfinished stage.
 """
 
 from __future__ import annotations
@@ -161,6 +161,38 @@ def delete_from(job_id: str, stage: str) -> list[str]:
                 )
     logger.info(
         "[map_extract][checkpoint] rollback jobId=%s fromStage=%s removed=%s",
+        job_id,
+        stage,
+        removed,
+    )
+    return removed
+
+
+def delete_after(job_id: str, stage: str) -> list[str]:
+    """Delete checkpoint files strictly after ``stage``.
+
+    Used by user-facing rollback semantics where rolling back *to* stage N means
+    stage N remains completed and resume should start at stage N+1.
+    """
+    idx = stage_index(stage)
+    if idx < 0:
+        return []
+    removed: list[str] = []
+    for later in STAGE_ORDER[idx + 1 :]:
+        path = stage_file(job_id, later)
+        if path.exists():
+            try:
+                path.unlink()
+                removed.append(later)
+            except OSError as exc:
+                logger.warning(
+                    "[map_extract][checkpoint] delete_after failed jobId=%s stage=%s error=%s",
+                    job_id,
+                    later,
+                    exc,
+                )
+    logger.info(
+        "[map_extract][checkpoint] rollback jobId=%s afterStage=%s removed=%s",
         job_id,
         stage,
         removed,

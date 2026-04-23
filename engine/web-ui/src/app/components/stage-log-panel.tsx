@@ -99,6 +99,10 @@ export type StageLogProps = {
   currentStage: string | null | undefined;
   stageMessage: string | undefined;
   completedStages?: string[];
+  canResume?: boolean;
+  remainingStages?: number;
+  nextStage?: string | null;
+  resumeDisabledReason?: string | null;
   cancelRequested?: boolean;
   latestProgress?: MapExtractionProgress | null;
   isActive: boolean;
@@ -133,6 +137,10 @@ export default function StageLogPanel(props: StageLogProps) {
     currentStage,
     stageMessage,
     completedStages,
+    canResume,
+    remainingStages,
+    nextStage,
+    resumeDisabledReason,
     cancelRequested,
     latestProgress,
     isActive,
@@ -270,6 +278,18 @@ export default function StageLogPanel(props: StageLogProps) {
   }, [jobId, onResumeRequested]);
 
   const hasHistory = completedSet.size > 0;
+  const noRemainingStages = typeof remainingStages === "number" && remainingStages <= 0;
+  const resumeEnabled = Boolean(jobId) && !actionPending && !isActive && !!canResume && !noRemainingStages;
+  const resumeTitle = !jobId
+    ? "No prior job to resume."
+    : isActive
+    ? "Job already running."
+    : resumeDisabledReason ||
+      (noRemainingStages
+        ? "No stages left to run."
+        : nextStage
+        ? `Resume from next stage: ${nextStage}.`
+        : "Resume from last completed stage.");
 
   // Auto-expand on the first moment activity/history becomes available,
   // unless the user has manually toggled collapse state.
@@ -317,14 +337,8 @@ export default function StageLogPanel(props: StageLogProps) {
             <button
               type="button"
               onClick={handleResume}
-              disabled={actionPending || isActive || !jobId}
-              title={
-                !jobId
-                  ? "No prior job to resume."
-                  : isActive
-                  ? "Job already running."
-                  : "Resume from last completed stage."
-              }
+              disabled={!resumeEnabled}
+              title={resumeTitle}
               className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Resume

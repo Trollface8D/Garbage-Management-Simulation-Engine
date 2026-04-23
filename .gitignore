@@ -32,3 +32,4 @@ build/
 .venv*
 resources/
 /.DS_Store
+data/

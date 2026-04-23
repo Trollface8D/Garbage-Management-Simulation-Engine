@@ -146,6 +146,10 @@ export async function extractMapGraph(
       message: status.stageMessage,
       tokenUsage: status.tokenUsage,
       costEstimate: status.costEstimate,
+      canResume: status.canResume,
+      remainingStages: status.remainingStages,
+      nextStage: status.nextStage,
+      resumeDisabledReason: status.resumeDisabledReason,
     });
 
     if (status.status === "failed") {
@@ -303,6 +307,10 @@ export async function resumeMapExtractJob(
       message: status.stageMessage,
       tokenUsage: status.tokenUsage,
       costEstimate: status.costEstimate,
+      canResume: status.canResume,
+      remainingStages: status.remainingStages,
+      nextStage: status.nextStage,
+      resumeDisabledReason: status.resumeDisabledReason,
     });
 
     if (status.status === "failed") {

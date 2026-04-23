@@ -77,6 +77,7 @@ export type MapExtractionJobStatus = {
   jobId: string;
   status: "queued" | "running" | "completed" | "failed" | "cancelled" | string;
   currentStage?: string | null;
+  activeStage?: string | null;
   stageMessage?: string;
   stageHistory?: Array<{
     stage: string;
@@ -98,6 +99,10 @@ export type MapExtractionJobStatus = {
   error?: string | null;
   cancelRequested?: boolean;
   completedStages?: string[];
+  canResume?: boolean;
+  remainingStages?: number;
+  nextStage?: string | null;
+  resumeDisabledReason?: string | null;
 };
 
 export type MapExtractCheckpoint = {
@@ -145,6 +150,10 @@ export type MapExtractionProgress = {
     estimatedCost?: number | null;
     source?: string;
   };
+  canResume?: boolean;
+  remainingStages?: number;
+  nextStage?: string | null;
+  resumeDisabledReason?: string | null;
 };
 
 export type MapEditRequest = {

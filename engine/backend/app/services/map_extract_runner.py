@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import os
@@ -17,7 +18,6 @@ from ...infra.paths import DEFAULT_MAP_BUFFER_TRAIT_TABLE, DEFAULT_MAP_EXTRACT_P
 from ..models.job_models import JobRecord
 from . import map_extract_checkpoints as checkpoints
 from .job_store import (
-    JOBS,
     JOBS_LOCK,
     JobCancelledError,
     emit_job_event,
@@ -318,7 +318,7 @@ def _apply_symbol_metadata(nodes: list[dict[str, Any]], symbol_enum: list[str]) 
             if symbol not in normalized:
                 normalized.append(symbol)
 
-        if not normalized and allowed:
+        if raw_symbols and not normalized and allowed:
             normalized = ["UNKNOWN"]
 
         if normalized:
@@ -923,6 +923,11 @@ def _merge_stage4_completion(
         incoming_meta = incoming.get("metadata")
         if isinstance(incoming_meta, dict):
             for key, value in incoming_meta.items():
+                if _is_empty_metadata_value(value):
+                    continue
+                existing = base_meta.get(key)
+                if not _is_empty_metadata_value(existing):
+                    continue
                 base_meta[key] = value
 
         node["metadata"] = base_meta
@@ -930,6 +935,200 @@ def _merge_stage4_completion(
 
     unmatched = ignored_non_stage2
     return merged, matched, unmatched
+
+
+def _is_empty_metadata_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    if isinstance(value, (list, dict, tuple, set)):
+        return len(value) == 0
+    return False
+
+
+def _split_tabular_row(line: str) -> list[str]:
+    row = str(line or "").strip()
+    if not row:
+        return []
+
+    if row.startswith("|") and row.endswith("|"):
+        return [cell.strip() for cell in row.strip("|").split("|")]
+
+    delimiter = ","
+    if "\t" in row:
+        delimiter = "\t"
+    elif row.count(";") > row.count(","):
+        delimiter = ";"
+
+    try:
+        return [cell.strip() for cell in next(csv.reader([row], delimiter=delimiter))]
+    except Exception:
+        return [cell.strip() for cell in re.split(r",|\t|;|\|", row) if cell.strip()]
+
+
+def _extract_stage4_tabular_candidates(
+    tabular_text: str,
+    known_node_ids: set[str],
+) -> list[dict[str, Any]]:
+    lines = [line.strip() for line in str(tabular_text or "").splitlines() if line.strip()]
+    if not lines or not known_node_ids:
+        return []
+
+    header_tokens: list[str] | None = None
+    candidates: list[dict[str, Any]] = []
+    for line in lines:
+        if line.startswith("#"):
+            continue
+        cells = _split_tabular_row(line)
+        if len(cells) < 2:
+            continue
+
+        resolved: list[tuple[int, str]] = []
+        for idx, cell in enumerate(cells):
+            node_id = _resolve_node_id(cell, known_node_ids)
+            if node_id in known_node_ids:
+                resolved.append((idx, node_id))
+
+        if not resolved:
+            alpha_like = sum(1 for cell in cells if re.search(r"[^\d\s.,;:()\[\]{}]+", cell))
+            if alpha_like >= max(1, len(cells) // 2):
+                header_tokens = cells
+            continue
+
+        id_idx, node_id = resolved[0]
+        metadata: dict[str, Any] = {}
+        for idx, cell in enumerate(cells):
+            if idx == id_idx:
+                continue
+            value = cell.strip()
+            if _is_empty_metadata_value(value):
+                continue
+
+            key = f"col_{idx + 1}"
+            if header_tokens and idx < len(header_tokens):
+                raw_key = str(header_tokens[idx]).strip()
+                key_candidate = re.sub(r"\s+", "_", raw_key, flags=re.UNICODE)
+                key_candidate = re.sub(r"[^\w]+", "_", key_candidate, flags=re.UNICODE).strip("_").lower()
+                if key_candidate:
+                    key = key_candidate
+
+            if key == "id":
+                key = f"{key}_{idx + 1}"
+
+            if key in metadata and metadata[key] != value:
+                existing = metadata[key]
+                if isinstance(existing, list):
+                    if value not in existing:
+                        existing.append(value)
+                else:
+                    metadata[key] = [existing, value]
+            else:
+                metadata[key] = value
+
+        if metadata:
+            candidates.append(
+                {
+                    "id": node_id,
+                    "metadata": metadata,
+                    "rawRow": line,
+                }
+            )
+
+    return candidates
+
+
+def _apply_stage4_tabular_overlay(
+    nodes: list[dict[str, Any]],
+    tabular_candidates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    by_id: dict[str, dict[str, Any]] = {}
+    for candidate in tabular_candidates:
+        node_id = str(candidate.get("id") or "").strip()
+        if not node_id:
+            continue
+        metadata = candidate.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        row_text = str(candidate.get("rawRow") or "").strip()
+
+        slot = by_id.setdefault(node_id, {"metadata": {}, "rows": []})
+        slot_meta = slot["metadata"]
+        if isinstance(slot_meta, dict):
+            for key, value in metadata.items():
+                if _is_empty_metadata_value(value):
+                    continue
+                if key in slot_meta and slot_meta[key] != value:
+                    existing = slot_meta[key]
+                    if isinstance(existing, list):
+                        if value not in existing:
+                            existing.append(value)
+                    else:
+                        slot_meta[key] = [existing, value]
+                else:
+                    slot_meta[key] = value
+
+        rows = slot.get("rows")
+        if isinstance(rows, list) and row_text and row_text not in rows:
+            rows.append(row_text)
+
+    enriched_count = 0
+    merged: list[dict[str, Any]] = []
+    for node in nodes:
+        next_node = dict(node)
+        node_id = str(next_node.get("id") or "").strip()
+        candidate = by_id.get(node_id)
+        if not candidate:
+            merged.append(next_node)
+            continue
+
+        base_meta = next_node.get("metadata")
+        if not isinstance(base_meta, dict):
+            base_meta = {"raw": base_meta} if base_meta is not None else {}
+
+        candidate_meta = candidate.get("metadata")
+        changed = False
+        if isinstance(candidate_meta, dict):
+            for key, value in candidate_meta.items():
+                existing = base_meta.get(key)
+                if _is_empty_metadata_value(existing) and not _is_empty_metadata_value(value):
+                    base_meta[key] = value
+                    changed = True
+
+        candidate_rows = candidate.get("rows")
+        if isinstance(candidate_rows, list) and candidate_rows:
+            existing_rows = base_meta.get("stage3Rows")
+            if not isinstance(existing_rows, list):
+                existing_rows = []
+            for row_text in candidate_rows:
+                if row_text not in existing_rows:
+                    existing_rows.append(row_text)
+                    changed = True
+            base_meta["stage3Rows"] = existing_rows[:16]
+
+        if changed:
+            enriched_count += 1
+        next_node["metadata"] = base_meta
+        merged.append(next_node)
+
+    return merged, enriched_count
+
+
+def _count_enriched_nodes(nodes: list[dict[str, Any]]) -> int:
+    count = 0
+    for node in nodes:
+        metadata = node.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        meaningful = [
+            key
+            for key, value in metadata.items()
+            if key not in {"id", "label", "x", "y", "type", "node_id"}
+            and not _is_empty_metadata_value(value)
+        ]
+        if meaningful:
+            count += 1
+    return count
 
 
 def _extract_edges_from_text(text: str, known_node_ids: set[str] | None = None) -> list[dict[str, Any]]:
@@ -1934,6 +2133,11 @@ def run_map_extract_worker(
 
         if _stage4_run:
             # Stage 4: always let Gemini map stage-3 text into the stage-2 JSON.
+            known_node_ids_for_stage4 = {str(node.get("id") or "").strip() for node in nodes if str(node.get("id") or "").strip()}
+            tabular_row_candidates = _extract_stage4_tabular_candidates(
+                stage4_tabular_csv_context,
+                known_node_ids_for_stage4,
+            )
             _emit_stage_with_usage(
                 job=job,
                 stage="map_extract/support_enrichment",
@@ -1953,10 +2157,13 @@ def run_map_extract_worker(
                     f"{exclusion_policy_text}\n"
                     f"{symbol_usage_policy}\n"
                     f"{compact_output_policy}\n"
+                    "Use tabular_row_candidates_json as header-agnostic normalized rows. Headers may be inconsistent or missing.\n"
+                    "Map candidate rows into existing_nodes by exact id and transfer tabular fields into metadata keys.\n"
                     "CRITICAL: existing_nodes is the stage-2 seed JSON. Complete/fill it from source_text. "
                     "Do not invent map-root placeholders. Keep existing IDs.\n"
                     f"symbol_legend_json={symbol_context_payload}\n"
                     f"existing_nodes={json.dumps({'nodes': nodes}, ensure_ascii=False)}\n"
+                    f"tabular_row_candidates_json={json.dumps(tabular_row_candidates, ensure_ascii=False)}\n"
                     f"extractmap_symbol_markdown={symbol_markdown}\n"
                     f"source_text={stage4_tabular_csv_context}"
                 ),
@@ -1967,24 +2174,45 @@ def run_map_extract_worker(
             support_enriched_nodes = _extract_nodes(merged_payload, image_dims=image_dims)
             nodes, matched_count, ignored_non_stage2_count = _merge_stage4_completion(nodes, support_enriched_nodes)
             nodes = _apply_symbol_metadata(nodes, symbol_enum)
+            model_enriched_count = _count_enriched_nodes(nodes)
+            overlay_enriched_count = 0
+            if tabular_row_candidates:
+                # Overlay only fills empty metadata slots, so it's safe to run
+                # unconditionally as a deterministic backstop against sparse
+                # Gemini output on stage-4.
+                nodes, overlay_enriched_count = _apply_stage4_tabular_overlay(nodes, tabular_row_candidates)
+                nodes = _apply_symbol_metadata(nodes, symbol_enum)
+            final_enriched_count = _count_enriched_nodes(nodes)
             _emit_stage_with_usage(
                 job=job,
                 stage="map_extract/support_enrichment",
                 message=(
                     f"Gemini completion merged into stage-2 nodes: "
-                    f"matched={matched_count}, ignoredNonStage2={ignored_non_stage2_count}."
+                    f"matched={matched_count}, ignoredNonStage2={ignored_non_stage2_count}, "
+                    f"enriched={final_enriched_count}/{len(nodes)}, overlay={overlay_enriched_count}."
                 ),
                 model_name=model_name,
                 token_usage=usage_totals,
             )
             logger.info(
-                "[map_extract][worker] support enrichment mapped jobId=%s supportNodeCount=%s matched=%s ignoredNonStage2=%s finalNodeCount=%s",
+                "[map_extract][worker] support enrichment mapped jobId=%s supportNodeCount=%s matched=%s ignoredNonStage2=%s tabularCandidates=%s modelEnriched=%s finalEnriched=%s overlayEnriched=%s finalNodeCount=%s",
                 job.job_id,
                 len(support_enriched_nodes),
                 matched_count,
                 ignored_non_stage2_count,
+                len(tabular_row_candidates),
+                model_enriched_count,
+                final_enriched_count,
+                overlay_enriched_count,
                 len(nodes),
             )
+            if final_enriched_count < max(1, int(len(nodes) * 0.25)):
+                logger.warning(
+                    "[map_extract][worker] support enrichment sparse jobId=%s enriched=%s/%s",
+                    job.job_id,
+                    final_enriched_count,
+                    len(nodes),
+                )
             _save_stage_with_usage(
                 job.job_id,
                 "support_enrichment",
@@ -1993,6 +2221,10 @@ def run_map_extract_worker(
                     "supportEnrichedNodes": support_enriched_nodes,
                     "matchedCount": matched_count,
                     "ignoredNonStage2Count": ignored_non_stage2_count,
+                    "tabularCandidateCount": len(tabular_row_candidates),
+                    "modelEnrichedCount": model_enriched_count,
+                    "finalEnrichedCount": final_enriched_count,
+                    "overlayEnrichedCount": overlay_enriched_count,
                 },
                 usage_totals,
             )
