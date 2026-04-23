@@ -242,8 +242,13 @@ export default function StageLogPanel(props: StageLogProps) {
     setActionStatus("Requesting cancel…");
     try {
       await cancelMapExtractJob(jobId);
-      setActionStatus("Cancel requested. Worker will stop at the next stage boundary.");
-      onStatusUpdate?.("Cancel requested; current stage will complete before the worker stops.");
+      setActionStatus(
+        "Cancel requested. Any in-flight Gemini retry/backoff stops immediately; " +
+          "an in-progress request finishes but further retries and stages are skipped.",
+      );
+      onStatusUpdate?.(
+        "Cancel requested; pending retries are aborted and the worker stops at the next safe boundary.",
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setActionStatus(`Cancel failed: ${message}`);
@@ -348,7 +353,11 @@ export default function StageLogPanel(props: StageLogProps) {
             type="button"
             onClick={handleCancel}
             disabled={actionPending || !isActive}
-            title={isActive ? "Terminate current stage at next boundary." : "Job is not running."}
+            title={
+              isActive
+                ? "Terminate: aborts pending Gemini retries and skips remaining stages. Any in-flight request finishes first."
+                : "Job is not running."
+            }
             className="inline-flex items-center gap-2 rounded-md border border-red-700 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Terminate

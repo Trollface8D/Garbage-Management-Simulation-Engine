@@ -12,7 +12,7 @@ from typing import Any
 from google.genai.types import Part
 
 from ..response_schema.map_extract import MAP_EXTRACT_EDGE_RESPONSE_SCHEMA, MAP_EXTRACT_NODE_RESPONSE_SCHEMA
-from ...infra.gemini_client import GeminiGateway
+from ...infra.gemini_client import GeminiCancelledError, GeminiGateway
 from ...infra.io_utils import read_text
 from ...infra.paths import DEFAULT_MAP_BUFFER_TRAIT_TABLE, DEFAULT_MAP_EXTRACT_PROMPT_CONFIG
 from ..models.job_models import JobRecord
@@ -54,6 +54,42 @@ def _resolve_stage_models(default_model: str, *, use_env_overrides: bool) -> dic
 def _raise_if_cancelled(job: JobRecord) -> None:
     if is_cancel_requested(job.job_id):
         raise JobCancelledError(f"job cancelled jobId={job.job_id}")
+
+
+def _gemini_retry_callback(job: JobRecord, stage_name: str):
+    """Build an on_retry callback that surfaces Gemini transient errors to the UI.
+
+    Emits a lightweight stage event each time the Gemini client backs off, so
+    the polling frontend can show *why* a stage is taking longer than expected
+    (503 / UNAVAILABLE / RESOURCE_EXHAUSTED / network). The message is also
+    appended to stage_history for post-mortem review.
+    """
+
+    def _on_retry(info: dict[str, Any]) -> None:
+        attempt = info.get("attempt")
+        max_attempts = info.get("maxAttempts")
+        delay = info.get("delaySeconds")
+        err = str(info.get("error") or info.get("errorClass") or "transient error")
+        # Keep the error snippet short so it fits the single-line stage message.
+        err_snippet = err.strip().replace("\n", " ")[:160]
+        message = (
+            f"Gemini transient error — retrying attempt {attempt}/{max_attempts} "
+            f"in {delay}s ({err_snippet})"
+        )
+        try:
+            emit_job_event(
+                job,
+                "stage",
+                {"stage": f"map_extract/{stage_name}", "message": message},
+            )
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("[map_extract][worker] retry emit failed jobId=%s", job.job_id)
+
+    return _on_retry
+
+
+def _gemini_cancel_check(job: JobRecord):
+    return lambda: is_cancel_requested(job.job_id)
 
 
 def _usage_totals_snapshot(usage_totals: dict[str, int]) -> dict[str, int]:
@@ -1515,6 +1551,7 @@ def _run_stage_json(
     parts: list[Part] | None,
     response_schema: dict[str, Any] | None,
     usage_totals: dict[str, int],
+    job: JobRecord | None = None,
 ) -> Any:
     prompt_payload = f"{base_prompt}\n\n{extra_context}"
     before_calls = int(usage_totals.get("call_count", 0))
@@ -1526,13 +1563,20 @@ def _run_stage_json(
         len(prompt_payload),
         len(parts or []),
     )
-    raw = gateway.generate_text(
-        prompt_payload,
-        parts=parts,
-        response_json=True,
-        response_schema=response_schema,
-        usage_collector=usage_totals,
-    ).strip()
+    try:
+        raw = gateway.generate_text(
+            prompt_payload,
+            parts=parts,
+            response_json=True,
+            response_schema=response_schema,
+            usage_collector=usage_totals,
+            on_retry=_gemini_retry_callback(job, stage_name) if job else None,
+            cancel_check=_gemini_cancel_check(job) if job else None,
+        ).strip()
+    except GeminiCancelledError as exc:
+        if job is not None:
+            raise JobCancelledError(str(exc)) from exc
+        raise
     logger.info(
         "[map_extract][worker] gemini_call_end stage=%s model=%s elapsedMs=%s rawChars=%s",
         stage_name,
@@ -1584,6 +1628,7 @@ def _run_stage_text(
     parts: list[Part] | None,
     usage_totals: dict[str, int],
     stage_name: str | None = None,
+    job: JobRecord | None = None,
 ) -> str:
     prompt_payload = f"{base_prompt}\n\n{extra_context}"
     before_calls = int(usage_totals.get("call_count", 0))
@@ -1595,12 +1640,19 @@ def _run_stage_text(
         len(prompt_payload),
         len(parts or []),
     )
-    raw = gateway.generate_text(
-        prompt_payload,
-        parts=parts,
-        response_json=False,
-        usage_collector=usage_totals,
-    ).strip()
+    try:
+        raw = gateway.generate_text(
+            prompt_payload,
+            parts=parts,
+            response_json=False,
+            usage_collector=usage_totals,
+            on_retry=_gemini_retry_callback(job, stage_name or "text") if job else None,
+            cancel_check=_gemini_cancel_check(job) if job else None,
+        ).strip()
+    except GeminiCancelledError as exc:
+        if job is not None:
+            raise JobCancelledError(str(exc)) from exc
+        raise
     logger.info(
         "[map_extract][worker] gemini_call_end stage=%s model=%s elapsedMs=%s rawChars=%s",
         stage_name or "text",
@@ -1863,6 +1915,7 @@ def run_map_extract_worker(
                     parts=[map_part],
                     usage_totals=usage_totals,
                     stage_name="map_extract/extractmap_symbol",
+                    job=job,
                 )
                 if chunk:
                     symbol_chunks.append(f"## {map_name}\n{chunk}")
@@ -1953,6 +2006,7 @@ def run_map_extract_worker(
                     parts=[map_part],
                     response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
                     usage_totals=usage_totals,
+                    job=job,
                 )
                 all_nodes.extend(_extract_nodes(nodes_payload, image_dims=image_dims))
                 node_payload_types.append(type(nodes_payload).__name__)
@@ -2059,6 +2113,7 @@ def run_map_extract_worker(
                     parts=[support_part],
                     usage_totals=usage_totals,
                     stage_name="map_extract/tabular_extraction",
+                    job=job,
                 )
                 if csv_text:
                     csv_chunks.append(f"# {support_name}\n{csv_text}")
@@ -2085,6 +2140,7 @@ def run_map_extract_worker(
                 parts=[first_map_part],
                 usage_totals=usage_totals,
                 stage_name="map_extract/tabular_extraction",
+                job=job,
             )
             if csv_text:
                 csv_chunks.append(f"# {first_map_name}\n{csv_text}")
@@ -2170,6 +2226,7 @@ def run_map_extract_worker(
                 parts=None,
                 response_schema=MAP_EXTRACT_NODE_RESPONSE_SCHEMA,
                 usage_totals=usage_totals,
+                job=job,
             )
             support_enriched_nodes = _extract_nodes(merged_payload, image_dims=image_dims)
             nodes, matched_count, ignored_non_stage2_count = _merge_stage4_completion(nodes, support_enriched_nodes)
@@ -2287,6 +2344,7 @@ def run_map_extract_worker(
                 parts=[map_part],
                 response_schema=MAP_EXTRACT_EDGE_RESPONSE_SCHEMA,
                 usage_totals=usage_totals,
+                job=job,
             )
 
             all_edges.extend(_extract_edges(edges_payload, {node["id"] for node in nodes}))

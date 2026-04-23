@@ -5,7 +5,7 @@ import random
 import os
 import re
 import time
-from typing import Any
+from typing import Any, Callable
 
 from google import genai
 from google.genai import errors as genai_errors
@@ -13,6 +13,15 @@ from google.genai.types import GenerateContentConfig, Part, ThinkingConfig
 
 
 logger = logging.getLogger(__name__)
+
+
+class GeminiCancelledError(RuntimeError):
+    """Raised when a cancel_check callback signals True during a Gemini call.
+
+    The gateway uses this to bail out of its retry/backoff loop so callers can
+    translate it to their own domain-level cancellation exception without
+    spending more tokens on doomed retries.
+    """
 
 
 class GeminiGateway:
@@ -28,6 +37,8 @@ class GeminiGateway:
         response_json: bool,
         response_schema: dict[str, Any] | None = None,
         usage_collector: dict[str, int] | None = None,
+        on_retry: Callable[[dict[str, Any]], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> str:
         content_parts: list[Part] = [Part.from_text(text=prompt)]
         if parts:
@@ -65,9 +76,36 @@ class GeminiGateway:
         base_delay = 1.5
         max_delay = 30.0
 
+        def _should_cancel() -> bool:
+            if cancel_check is None:
+                return False
+            try:
+                return bool(cancel_check())
+            except Exception:  # pragma: no cover - defensive
+                return False
+
+        def _interruptible_sleep(total: float) -> None:
+            # Poll cancel_check every 0.5s so a cancel during backoff wakes
+            # up promptly instead of waiting out the full exponential delay.
+            step = 0.5
+            remaining = total
+            while remaining > 0:
+                if _should_cancel():
+                    return
+                chunk = step if remaining > step else remaining
+                time.sleep(chunk)
+                remaining -= chunk
+
         response = None
         last_exc: Exception | None = None
         for attempt in range(1, max_attempts + 1):
+            if _should_cancel():
+                logger.info(
+                    "[gemini] cancel detected before attempt=%s/%s — aborting",
+                    attempt,
+                    max_attempts,
+                )
+                raise GeminiCancelledError("generate_content cancelled before attempt")
             try:
                 response = self.client.models.generate_content(
                     model=self.model_name,
@@ -94,7 +132,27 @@ class GeminiGateway:
                     delay,
                     exc,
                 )
-                time.sleep(delay)
+                if on_retry is not None:
+                    try:
+                        on_retry(
+                            {
+                                "attempt": attempt,
+                                "maxAttempts": max_attempts,
+                                "delaySeconds": round(delay, 2),
+                                "error": str(exc),
+                                "errorClass": exc.__class__.__name__,
+                            }
+                        )
+                    except Exception:  # pragma: no cover - defensive
+                        logger.exception("[gemini] on_retry callback raised")
+                _interruptible_sleep(delay)
+                if _should_cancel():
+                    logger.info(
+                        "[gemini] cancel detected during backoff attempt=%s/%s — aborting",
+                        attempt,
+                        max_attempts,
+                    )
+                    raise GeminiCancelledError("generate_content cancelled during backoff")
 
         if response is None:
             # Should be unreachable — either break or raise above.

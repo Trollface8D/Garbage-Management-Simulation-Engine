@@ -1884,25 +1884,6 @@ export default function MapExtractionWorkspace({
           </aside>
 
           <section className="min-w-0 space-y-4">
-            {selection.kind !== "none" ? (
-              <article className="fixed right-4 top-4 z-40 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl border border-neutral-800 bg-neutral-900/95 p-4 shadow-2xl backdrop-blur">
-                <button
-                  type="button"
-                  onClick={() => setIsSymbolCollapsed((prev) => !prev)}
-                  className="flex w-full items-center justify-between text-left"
-                >
-                  <span className="text-lg font-bold text-neutral-100">Selection details</span>
-                  <span className="text-neutral-300">{isSymbolCollapsed ? "v" : "^"}</span>
-                </button>
-
-                {!isSymbolCollapsed ? (
-                  <div className="mt-4 max-h-[70vh] overflow-auto">
-                    <SelectionDetails selection={selection} />
-                  </div>
-                ) : null}
-              </article>
-            ) : null}
-
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
               <div className="mb-3 flex items-center justify-end">
                 <div className="inline-flex rounded-full border border-neutral-700 bg-neutral-800 p-1 text-sm">
@@ -2047,6 +2028,23 @@ export default function MapExtractionWorkspace({
           </section>
 
           <aside className="flex min-w-0 flex-col gap-3">
+            {!isRightPanelCollapsed ? (
+              <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
+                <button
+                  type="button"
+                  onClick={() => setIsSymbolCollapsed((prev) => !prev)}
+                  className="flex w-full items-center justify-between text-left"
+                >
+                  <span className="text-base font-bold text-neutral-100">Selection details</span>
+                  <span className="text-neutral-300">{isSymbolCollapsed ? "▼" : "▲"}</span>
+                </button>
+                {!isSymbolCollapsed ? (
+                  <div className="mt-3 max-h-[40vh] overflow-auto">
+                    <SelectionDetails selection={selection} />
+                  </div>
+                ) : null}
+              </article>
+            ) : null}
             {isRightPanelCollapsed ? (
               <div className="flex flex-col items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/60 p-2">
                 <button
