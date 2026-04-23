@@ -72,7 +72,7 @@ async function fetchMapExtractStatus(jobId: string): Promise<MapExtractionJobSta
   return (await response.json()) as MapExtractionJobStatus;
 }
 
-async function fetchMapExtractResult(jobId: string): Promise<MapExtractionResult> {
+export async function fetchMapExtractResult(jobId: string): Promise<MapExtractionResult> {
   const url = new URL(getExtractResultEndpoint(), window.location.origin);
   url.searchParams.set("jobId", jobId);
 

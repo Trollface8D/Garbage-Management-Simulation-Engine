@@ -10,6 +10,7 @@ import {
   extractMapGraph,
   fetchMapExtractInputFile,
   fetchMapExtractInputs,
+  fetchMapExtractResult,
   fetchMapExtractStatusOnce,
   resumeMapExtractJob,
 } from "@/lib/map-api-client";
@@ -588,10 +589,16 @@ export default function MapExtractionWorkspace({
 
   const [isExtracting, setIsExtracting] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
+  // True when the page finds a remote job that is already running/queued on
+  // the backend (started in a previous session or another tab) and is
+  // watching it to completion. Kept separate from isExtracting/isResuming
+  // because those flags are owned by local user actions in this session.
+  const [isRemoteWatching, setIsRemoteWatching] = useState(false);
   // A single "activity" gate that disables inputs and flips the stage-log
   // panel + terminate/extract buttons into the correct state regardless of
-  // whether the user started a fresh extract or resumed an existing job.
-  const isJobActive = isExtracting || isResuming;
+  // whether the user started a fresh extract, resumed an existing job, or
+  // reopened the page while a prior job is still running on the backend.
+  const isJobActive = isExtracting || isResuming || isRemoteWatching;
   const [extractStatus, setExtractStatus] = useState("");
   const [liveUsage, setLiveUsage] = useState<{
     tokenUsage?: Record<string, unknown>;
@@ -887,6 +894,121 @@ export default function MapExtractionWorkspace({
     void refreshJobStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, jobId]);
+
+  // Remote-job watcher: if the page reopens while a prior job is still
+  // running/queued on the backend (worker is a detached daemon thread so it
+  // survives page navigation and backend restarts that re-hydrate from disk
+  // checkpoints), poll status until a terminal state, then pull the final
+  // result.  Without this, the UI would freeze on whatever snapshot mount
+  // saw and never show live progress or the final graph.
+  //
+  // Guards against overlapping with a locally-triggered run (Extract /
+  // Resume) because those paths already own their own polling loop — we
+  // only watch when neither local flag is set.
+  useEffect(() => {
+    if (!hydrated || !jobId) {
+      return;
+    }
+    if (isExtracting || isResuming) {
+      return;
+    }
+    const watchable = jobStatus === "running" || jobStatus === "queued";
+    if (!watchable) {
+      return;
+    }
+    let cancelled = false;
+    setIsRemoteWatching(true);
+    const startedAt = Date.now();
+    let attempt = 0;
+    const pollIntervalMs = 1500;
+
+    const pumpOnce = async (): Promise<boolean> => {
+      if (cancelled) return true;
+      attempt += 1;
+      try {
+        const status = await fetchMapExtractStatusOnce(jobId);
+        if (cancelled) return true;
+        setJobStatus(status.status);
+        setCurrentStage(status.currentStage ?? null);
+        setStageMessage(status.stageMessage ?? "");
+        setCompletedStages(status.completedStages ?? []);
+        setCanResume(Boolean(status.canResume));
+        setRemainingStages(
+          typeof status.remainingStages === "number" ? status.remainingStages : null,
+        );
+        setNextStage(status.nextStage ?? null);
+        setResumeDisabledReason(status.resumeDisabledReason ?? "");
+        setCancelRequested(Boolean(status.cancelRequested));
+        const statusTokenUsage = (status as { tokenUsage?: Record<string, unknown> | null })
+          .tokenUsage;
+        const statusCostEstimate = (status as {
+          costEstimate?: Record<string, unknown> | null;
+        }).costEstimate;
+        if (statusTokenUsage || statusCostEstimate) {
+          setLiveUsage((prev) => ({
+            tokenUsage:
+              (statusTokenUsage as Record<string, unknown> | undefined) ||
+              prev?.tokenUsage,
+            costEstimate:
+              (statusCostEstimate as Record<string, unknown> | undefined) ||
+              prev?.costEstimate,
+          }));
+        }
+        setLatestProgress({
+          jobId,
+          attempt,
+          elapsedMs: Date.now() - startedAt,
+          status: status.status,
+          stage: status.currentStage,
+          message: status.stageMessage,
+          tokenUsage: status.tokenUsage,
+          costEstimate: status.costEstimate,
+          canResume: status.canResume,
+          remainingStages: status.remainingStages,
+          nextStage: status.nextStage,
+          resumeDisabledReason: status.resumeDisabledReason,
+        });
+
+        if (status.status === "completed") {
+          try {
+            const result = await fetchMapExtractResult(jobId);
+            if (cancelled) return true;
+            if (result.graph) {
+              setGraphData(result.graph);
+            }
+            setExtractStatus("Job completed.");
+          } catch {
+            // Result fetch will retry on the next page visit.
+          }
+          return true;
+        }
+        if (status.status === "failed" || status.status === "cancelled") {
+          return true;
+        }
+      } catch {
+        // Transient; keep polling.
+      }
+      return false;
+    };
+
+    let handle: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      const done = await pumpOnce();
+      if (done || cancelled) {
+        setIsRemoteWatching(false);
+        return;
+      }
+      handle = setTimeout(() => void tick(), pollIntervalMs);
+    };
+    void tick();
+
+    return () => {
+      cancelled = true;
+      if (handle) clearTimeout(handle);
+      setIsRemoteWatching(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, jobId, jobStatus, isExtracting, isResuming]);
 
   // Reset rehydration guard when the job identity changes so the next
   // jobId can pull its own inputs.
