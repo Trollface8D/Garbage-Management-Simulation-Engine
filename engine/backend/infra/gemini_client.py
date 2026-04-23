@@ -4,6 +4,7 @@ import logging
 import random
 import os
 import re
+import threading
 import time
 from typing import Any, Callable
 
@@ -96,6 +97,48 @@ class GeminiGateway:
                 time.sleep(chunk)
                 remaining -= chunk
 
+        def _call_with_cancel() -> Any:
+            """Invoke generate_content on a daemon thread so that a cancel
+            during the in-flight HTTP request can abandon the wait instantly.
+
+            The background thread cannot be safely killed — the sync
+            google-genai SDK has no cancel hook — so when the user cancels
+            we simply stop waiting on it. The thread dies naturally once
+            the HTTP call returns (daemon=True means it won't block process
+            shutdown). We pay the tokens for the in-flight request, but the
+            worker stops immediately and no further retries or stages run.
+            """
+            box: dict[str, Any] = {}
+
+            def _worker() -> None:
+                try:
+                    box["value"] = self.client.models.generate_content(
+                        model=self.model_name,
+                        contents=content_parts,
+                        config=GenerateContentConfig(**config_kwargs),
+                    )
+                except BaseException as inner:  # noqa: BLE001
+                    box["error"] = inner
+
+            thread = threading.Thread(
+                target=_worker,
+                name=f"gemini-call-{self.model_name}",
+                daemon=True,
+            )
+            thread.start()
+            while thread.is_alive():
+                thread.join(timeout=0.5)
+                if _should_cancel():
+                    logger.info(
+                        "[gemini] cancel detected during in-flight request — abandoning thread"
+                    )
+                    raise GeminiCancelledError(
+                        "generate_content cancelled during in-flight request"
+                    )
+            if "error" in box:
+                raise box["error"]
+            return box.get("value")
+
         response = None
         last_exc: Exception | None = None
         for attempt in range(1, max_attempts + 1):
@@ -107,12 +150,10 @@ class GeminiGateway:
                 )
                 raise GeminiCancelledError("generate_content cancelled before attempt")
             try:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=content_parts,
-                    config=GenerateContentConfig(**config_kwargs),
-                )
+                response = _call_with_cancel()
                 break
+            except GeminiCancelledError:
+                raise
             except Exception as exc:  # pragma: no cover - network path
                 last_exc = exc
                 if attempt >= max_attempts or not self._is_retryable_transient_error(exc):
@@ -157,6 +198,12 @@ class GeminiGateway:
         if response is None:
             # Should be unreachable — either break or raise above.
             raise last_exc if last_exc else RuntimeError("generate_content returned no response")
+
+        # Final race check: a cancel may have landed between the last 0.5s
+        # poll and the thread returning.  Discard the response instead of
+        # letting the caller continue into downstream work.
+        if _should_cancel():
+            raise GeminiCancelledError("generate_content cancelled after response arrived")
 
         response_text = (response.text or "").strip()
 
