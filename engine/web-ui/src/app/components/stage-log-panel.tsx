@@ -284,11 +284,22 @@ export default function StageLogPanel(props: StageLogProps) {
 
   const hasHistory = completedSet.size > 0;
   const noRemainingStages = typeof remainingStages === "number" && remainingStages <= 0;
-  const resumeEnabled = Boolean(jobId) && !actionPending && !isActive && !!canResume && !noRemainingStages;
+  const isFailed = jobStatus === "failed";
+  // A failed job should always be re-runnable regardless of the backend's
+  // canResume hint — the user explicitly wants to restart from wherever the
+  // pipeline broke. For non-failed jobs we still honor canResume so the
+  // button stays disabled when nothing is left to do.
+  const resumeEnabled =
+    Boolean(jobId) && !actionPending && !isActive && (isFailed || (!!canResume && !noRemainingStages));
+  const resumeLabel = isFailed ? "Restart" : "Resume";
   const resumeTitle = !jobId
     ? "No prior job to resume."
     : isActive
     ? "Job already running."
+    : isFailed
+    ? nextStage
+      ? `Restart from the stage that failed (${nextStage}).`
+      : "Restart from the last successful checkpoint."
     : resumeDisabledReason ||
       (noRemainingStages
         ? "No stages left to run."
@@ -346,7 +357,7 @@ export default function StageLogPanel(props: StageLogProps) {
               title={resumeTitle}
               className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Resume
+              {resumeLabel}
             </button>
           )}
           <button
