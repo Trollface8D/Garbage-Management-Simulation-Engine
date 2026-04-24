@@ -1,0 +1,98 @@
+{
+  "runtime_prompts": {
+
+    "codegen_entity_list_json_schema": "Use this JSON schema exactly:\n{\n  \"entities\": [\n    {\"id\": \"string\", \"label\": \"string\", \"type\": \"string\", \"frequency\": 0, \"priority\": 0}\n  ]\n}\nField rules:\n- id: normalized snake_case identifier derived from label.\n- label: exact surface form as it appears in causal data.\n- type: one of [\"actor\", \"resource\", \"environment\", \"policy\"] — infer from context.\n- frequency: integer count of occurrences across all causal data.\n- priority: integer rank starting at 1; lower = generate first (most mentioned = 1).",
+
+    "codegen_entity_object_output_hint": "Output raw Python class code only. Do NOT include markdown fences (```python), module-level imports unrelated to the class, file headers, comments explaining the task, or any prose. One class per response. Class name must match the entity id in PascalCase.",
+
+    "codegen_environment_output_hint": "Output raw Python class code only. No markdown fences, no prose. The environment class must import and reference all provided entity classes by name. Do not redefine entity logic — only integrate it.",
+
+    "codegen_policy_output_hint": "Output raw Python class code only. No markdown fences, no prose. The policy class must reference entity and environment classes by name. Do not redefine entity or environment logic — only implement behavior change rules.",
+
+    "codegen_dedup_policy": "Deduplicate entities by semantic identity. If two labels in causal data refer to the same real-world actor or resource (e.g. 'forklift' and 'Forklift Operator'), keep one canonical entity. Prefer the most frequent label as the canonical id. Merge frequency counts. Do not create separate entities for plural vs singular forms of the same concept.",
+
+    "codegen_exclusion_policy": "Exclude abstract, placeholder, or meta-level terms from the entity list. Do not emit entities for: generic system concepts (e.g. 'system', 'process', 'data'), causal connectors (e.g. 'cause', 'effect', 'result'), or any label the causal data explicitly marks as deprecated, removed, or inactive.",
+
+    "codegen_template_routing_policy": "Select exactly one code template per entity using this rule:\n- entity.type == 'policy'      → use policy_template\n- entity.type == 'environment' → use environment_template\n- all other types              → use entity_object_template\nNever apply more than one template to a single entity. Never skip template selection.",
+
+    "codegen_accumulation_policy": "Each entity generation iteration receives: causal_data, the entity_id currently being generated, and already_generated_entities (a list of previously generated Python class code strings). Use already_generated_entities for interface consistency ONLY — to match method signatures, attribute names, and class references. Do NOT re-generate or repeat any prior entity code in your output. Do NOT include import statements for prior entities unless they are directly instantiated inside the current class.",
+
+    "codegen_policy_accumulation_policy": "Each policy generation iteration receives: causal_data, the policy rule currently being generated, code_entity (all entity classes), code_environment, and already_generated_policies (list of prior policy class code strings). Use already_generated_policies to avoid duplicating behavior rules already encoded. Generate one policy class per iteration. Do NOT repeat prior policy code in output.",
+
+    "codegen_map_input_policy": "Map data input MUST be provided as extracted_node_json (a JSON object conforming to the map_extract node schema) rather than a raw map image. If only a raw image is available, run map extraction first to produce extracted_node_json before invoking State 3. The environment class must use node id, label, type, and coordinate fields from extracted_node_json to define spatial layout and zone membership.",
+
+    "codegen_fallback_entity_list_policy": "If causal data is ambiguous or too sparse to determine frequency reliably, assign frequency=1 and priority by order of first appearance. Still apply dedup and exclusion policies. Do not abort — emit the best-effort entity list with a metadata flag: {\"warning\": \"low_confidence_frequency\"}.",
+
+    "codegen_fallback_map_policy": "If extracted_node_json is unavailable for State 3, generate the environment class using only Code Entity and Causal Data. Omit all spatial/coordinate logic. Add a class-level comment: # MAP DATA UNAVAILABLE — spatial layout not implemented.",
+
+    "codegen_fallback_policy_context": "If no prior policy context exists for the first policy iteration, treat already_generated_policies as an empty list. Proceed normally.",
+
+    "compact_output_policy": "Minimize output tokens: return only required fields and code. No explanations, no duplicate class definitions, no markdown wrappers unless explicitly requested."
+
+  },
+
+  "state1_entity_list": {
+    "task_description": "Extract a ranked, deduplicated entity list from causal data.",
+    "input_dependencies": ["causal_data"],
+    "output_schema_ref": "codegen_entity_list_json_schema",
+    "prompt": "Analyze the provided causal data and extract all distinct entities (actors, resources, environments, policies). Count how many times each entity is mentioned across the full causal data to determine frequency and generation priority. Apply dedup and exclusion policies. Return JSON only using the configured entity list schema.",
+    "assembled_prompt_parts": [
+      "state1_entity_list.prompt",
+      "codegen_entity_list_json_schema",
+      "codegen_dedup_policy",
+      "codegen_exclusion_policy",
+      "compact_output_policy"
+    ]
+  },
+
+  "state2_code_entity_object": {
+    "task_description": "Generate one entity Python class per iteration, in priority order, accumulating prior classes as context.",
+    "input_dependencies": ["causal_data", "entity_list_json", "already_generated_entities", "selected_template"],
+    "output_schema_ref": "codegen_entity_object_output_hint",
+    "note": "Generate one entity class per call. Caller is responsible for iterating over entity_list_json sorted by priority and passing already_generated_entities from prior iterations.",
+    "prompt": "Using the provided causal data and the selected template, generate the Python class for the entity with id '{entity_id}'. Define all attributes and methods implied by the causal data. Use already_generated_entities for interface consistency only — do not repeat their code. Apply the template routing policy to confirm the correct template is in use.",
+    "assembled_prompt_parts": [
+      "state2_code_entity_object.prompt",
+      "codegen_template_routing_policy",
+      "codegen_accumulation_policy",
+      "codegen_entity_object_output_hint",
+      "compact_output_policy"
+    ]
+  },
+
+  "state3_code_environment": {
+    "task_description": "Generate the environment Python class that spatially integrates all entities using map node data.",
+    "input_dependencies": ["code_entity_list", "extracted_node_json", "causal_data"],
+    "output_schema_ref": "codegen_environment_output_hint",
+    "note": "extracted_node_json must conform to the map_extract node schema. If unavailable, apply codegen_fallback_map_policy.",
+    "prompt": "Using the provided entity classes, extracted map node JSON, and causal data, generate the Environment Python class. Use node id, label, type, and coordinate fields from extracted_node_json to define spatial zones, entry points, and entity placement. Import and reference all entity classes by name. Do not re-implement entity logic.",
+    "assembled_prompt_parts": [
+      "state3_code_environment.prompt",
+      "codegen_map_input_policy",
+      "codegen_fallback_map_policy",
+      "codegen_environment_output_hint",
+      "compact_output_policy"
+    ]
+  },
+
+  "state4_code_policy": {
+    "task_description": "Generate one policy Python class per iteration, accumulating prior policies as context.",
+    "input_dependencies": ["code_entity_list", "code_environment", "causal_data", "already_generated_policies"],
+    "output_schema_ref": "codegen_policy_output_hint",
+    "note": "Generate one policy class per call. Caller iterates over policy rules derived from causal data, passing already_generated_policies from prior iterations.",
+    "prompt": "Using the provided entity classes, environment class, and causal data, generate the Policy Python class for the rule '{policy_rule}'. Implement only behavior changes to entity properties and environment state that are implied by this rule. Use already_generated_policies to avoid duplicating rules already encoded. Reference entities and environment by class name only — do not redefine their logic.",
+    "assembled_prompt_parts": [
+      "state4_code_policy.prompt",
+      "codegen_policy_accumulation_policy",
+      "codegen_fallback_policy_context",
+      "codegen_policy_output_hint",
+      "compact_output_policy"
+    ]
+  },
+
+  "pipeline": {
+    "description": "Ordered execution states for code generation. States run sequentially. State 2 and State 4 are iterative — run once per entity/policy respectively.",
+    "generation_order": ["state1_entity_list", "state2_code_entity_object", "state3_code_environment", "state4_code_policy"],
+    "rationale": "Entities are generated first so their interfaces are available to the environment integrator. Environment is generated before policy so policy can reference spatial state. Policy is generated last because it modifies entity and environment behavior and requires their full implementations as context."
+  }
+}
