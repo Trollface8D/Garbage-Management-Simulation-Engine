@@ -75,9 +75,16 @@ export type MapExtractionJobStart = {
 
 export type MapExtractionJobStatus = {
   jobId: string;
-  status: "queued" | "running" | "completed" | "failed" | string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled" | string;
   currentStage?: string | null;
+  activeStage?: string | null;
   stageMessage?: string;
+  stageHistory?: Array<{
+    stage: string;
+    message?: string;
+    tokenUsage?: MapExtractionProgress["tokenUsage"];
+    costEstimate?: MapExtractionProgress["costEstimate"];
+  }>;
   tokenUsage?: {
     promptTokens?: number;
     outputTokens?: number;
@@ -90,6 +97,39 @@ export type MapExtractionJobStatus = {
     source?: string;
   };
   error?: string | null;
+  cancelRequested?: boolean;
+  completedStages?: string[];
+  canResume?: boolean;
+  remainingStages?: number;
+  nextStage?: string | null;
+  resumeDisabledReason?: string | null;
+};
+
+export type MapExtractCheckpoint = {
+  stage: string;
+  savedAt: number;
+  bytes: number;
+};
+
+export type MapExtractCheckpointList = {
+  jobId: string;
+  status?: string | null;
+  stageOrder: string[];
+  completedStages: string[];
+  checkpoints: MapExtractCheckpoint[];
+};
+
+export type MapExtractCheckpointDetail = {
+  jobId: string;
+  stage: string;
+  summary?: Record<string, unknown>;
+  preview?: unknown;
+  tokenUsage?: {
+    promptTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    callCount?: number;
+  } | null;
 };
 
 export type MapExtractionProgress = {
@@ -110,6 +150,10 @@ export type MapExtractionProgress = {
     estimatedCost?: number | null;
     source?: string;
   };
+  canResume?: boolean;
+  remainingStages?: number;
+  nextStage?: string | null;
+  resumeDisabledReason?: string | null;
 };
 
 export type MapEditRequest = {

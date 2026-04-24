@@ -18,6 +18,9 @@ output/*
 
 env*/
 __pychache__/
+
+# map_extract pipeline checkpoints (per-job inputs + stage outputs)
+engine/backend/data/map_extract_jobs/
 graphdbc*.pt
 graphc*.pickle
 
@@ -29,3 +32,4 @@ build/
 .venv*
 resources/
 /.DS_Store
+data/

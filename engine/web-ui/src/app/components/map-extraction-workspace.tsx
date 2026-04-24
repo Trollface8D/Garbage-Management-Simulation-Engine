@@ -4,11 +4,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "@/app/components/back-to-home";
 import ModelPicker from "@/app/components/model-picker";
 import ProjectPageHeader from "@/app/components/project-page-header";
+import StageLogPanel from "@/app/components/stage-log-panel";
+import {
+  editMapGraph,
+  extractMapGraph,
+  fetchMapExtractInputFile,
+  fetchMapExtractInputs,
+  fetchMapExtractResult,
+  fetchMapExtractStatusOnce,
+  resumeMapExtractJob,
+} from "@/lib/map-api-client";
 import { CaretIcon, ExportIcon, ImportIcon, SaveIcon, TrashIcon } from "@/app/components/icons/common-icons";
-import { editMapGraph, extractMapGraph } from "@/lib/map-api-client";
 import type {
   GraphSelection,
   MapEdge,
+  MapExtractionProgress,
   MapGraphPayload,
   MapVertex,
 } from "@/lib/map-types";
@@ -34,6 +44,8 @@ type SelectionRef = {
 type MapWorkspaceSnapshot = {
   graph: MapGraphPayload | null;
   jobId: string;
+  jobStatus?: string;
+  completedStages?: string[];
   selectedModel: string;
   overviewAdditionalInfo: string;
   binAdditionalInfo: string;
@@ -42,6 +54,8 @@ type MapWorkspaceSnapshot = {
   changeLog: string[];
   editStatus: string;
   selection: SelectionRef;
+  lastTokenUsage?: Record<string, unknown> | null;
+  lastCostEstimate?: Record<string, unknown> | null;
 };
 
 type MapArtifactBundle = {
@@ -507,10 +521,18 @@ export default function MapExtractionWorkspace({
   const artifactImportInputRef = useRef<HTMLInputElement | null>(null);
   const snapshotKey = useMemo(() => `map-workspace:${componentId}`, [componentId]);
 
+  // Prevents the save-effect from overwriting the persisted snapshot with
+  // default (empty) state before the load-effect has hydrated the component.
+  const [hydrated, setHydrated] = useState(false);
+
   const [overviewFiles, setOverviewFiles] = useState<LocalUploadFile[]>([]);
   const [binFiles, setBinFiles] = useState<LocalUploadFile[]>([]);
   const [overviewStoredFileNames, setOverviewStoredFileNames] = useState<string[]>([]);
   const [binStoredFileNames, setBinStoredFileNames] = useState<string[]>([]);
+  // Set to true once saved inputs have been pulled back from the
+  // backend, so the "please re-upload" banner can stop pestering the
+  // user on reload.
+  const [inputsRehydrated, setInputsRehydrated] = useState(false);
   const [overviewAdditionalInfo, setOverviewAdditionalInfo] = useState("");
   const [binAdditionalInfo, setBinAdditionalInfo] = useState("");
 
@@ -525,11 +547,42 @@ export default function MapExtractionWorkspace({
   const [selectedModel, setSelectedModel] = useState<string>("");
 
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
+  // True when the page finds a remote job that is already running/queued on
+  // the backend (started in a previous session or another tab) and is
+  // watching it to completion. Kept separate from isExtracting/isResuming
+  // because those flags are owned by local user actions in this session.
+  const [isRemoteWatching, setIsRemoteWatching] = useState(false);
+  // A single "activity" gate that disables inputs and flips the stage-log
+  // panel + terminate/extract buttons into the correct state regardless of
+  // whether the user started a fresh extract, resumed an existing job, or
+  // reopened the page while a prior job is still running on the backend.
+  const isJobActive = isExtracting || isResuming || isRemoteWatching;
   const [extractStatus, setExtractStatus] = useState("");
   const [liveUsage, setLiveUsage] = useState<{
     tokenUsage?: Record<string, unknown>;
     costEstimate?: Record<string, unknown>;
   } | null>(null);
+
+  // Stage-log / checkpoint-aware state.
+  const [jobStatus, setJobStatus] = useState<string>("");
+  const [currentStage, setCurrentStage] = useState<string | null>(null);
+  const [stageMessage, setStageMessage] = useState<string>("");
+  const [completedStages, setCompletedStages] = useState<string[]>([]);
+  const [canResume, setCanResume] = useState<boolean>(false);
+  const [remainingStages, setRemainingStages] = useState<number | null>(null);
+  const [nextStage, setNextStage] = useState<string | null>(null);
+  const [resumeDisabledReason, setResumeDisabledReason] = useState<string>("");
+  const [cancelRequested, setCancelRequested] = useState<boolean>(false);
+  const [latestProgress, setLatestProgress] = useState<MapExtractionProgress | null>(null);
+
+  // Layout collapse state for the 3-zone grid (left rail / right rail).
+  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
+  // Right rail (stage log) starts collapsed and expands automatically when a
+  // run becomes active or completed-stage history is known.  The user can
+  // still override this manually via the header toggle.
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(true);
+  const [rightPanelUserToggled, setRightPanelUserToggled] = useState(false);
 
   const [chatPrompt, setChatPrompt] = useState("");
   const [isApplyingEdit, setIsApplyingEdit] = useState(false);
@@ -572,15 +625,29 @@ export default function MapExtractionWorkspace({
 
   const usageStats = useMemo(() => {
     const meta = graphData?.metadata;
-    const inFlightTokenUsage = isExtracting ? (liveUsage?.tokenUsage || {}) : undefined;
-    const inFlightCostEstimate = isExtracting ? liveUsage?.costEstimate : undefined;
+    // Any in-flight run (extract OR resume) should surface live usage from
+    // the worker's incremental updates instead of the persisted graph's
+    // snapshot totals.
+    const inFlight = isExtracting || isResuming;
+    const inFlightTokenUsage = inFlight ? (liveUsage?.tokenUsage || {}) : undefined;
+    const inFlightCostEstimate = inFlight ? liveUsage?.costEstimate : undefined;
+    // When the run is not in-flight, prefer the persisted graph's usage
+    // (if the job completed) but fall back to the last-known liveUsage
+    // so a rollback/reload keeps the counter instead of collapsing to 0.
+    const persistedTokenUsage = !inFlight
+      ? (liveUsage?.tokenUsage as Record<string, unknown> | undefined)
+      : undefined;
+    const persistedCostEstimate = !inFlight
+      ? (liveUsage?.costEstimate as Record<string, unknown> | undefined)
+      : undefined;
     const tokenUsageRaw =
       inFlightTokenUsage ||
       (meta?.tokenUsage as Record<string, unknown> | undefined) ||
       (meta?.token_usage as Record<string, unknown> | undefined) ||
       (meta?.usage as Record<string, unknown> | undefined) ||
+      persistedTokenUsage ||
       undefined;
-    const costEstimate = inFlightCostEstimate || meta?.costEstimate;
+    const costEstimate = inFlightCostEstimate || meta?.costEstimate || persistedCostEstimate;
 
     const num = (value: unknown): number => {
       if (typeof value === "number" && Number.isFinite(value)) {
@@ -608,7 +675,30 @@ export default function MapExtractionWorkspace({
       currency: String(costEstimate?.currency || "USD"),
       costSource: String(costEstimate?.source || "unknown"),
     };
-  }, [graphData, isExtracting, liveUsage]);
+  }, [graphData, isExtracting, isResuming, liveUsage]);
+
+  // Whether there is anything worth showing in the stage-log rail.  This is
+  // used both to auto-expand it when a prior run's history is restored from
+  // the snapshot and to lock upload/extract controls below.
+  const hasStageHistory = completedStages.length > 0 || Boolean(jobStatus);
+  // True once the user has *anything* tracked on this component: completed
+  // stages, a live job, or a persisted graph.  When true, input + Extract
+  // controls lock so the user cannot accidentally mutate inputs mid-session
+  // or launch a duplicate run; they must explicitly Reset to start over.
+  const hasAnyActivity = hasStageHistory || isJobActive || Boolean(graphData);
+  const inputsLocked = hasAnyActivity;
+  const inputsLockReason = isJobActive
+    ? "Inputs are locked while the job is running."
+    : "Inputs are locked — click Reset to start a new extraction.";
+
+  useEffect(() => {
+    if (rightPanelUserToggled) return;
+    if (isJobActive || hasStageHistory) {
+      setIsRightPanelCollapsed(false);
+    } else {
+      setIsRightPanelCollapsed(true);
+    }
+  }, [isJobActive, hasStageHistory, rightPanelUserToggled]);
 
   const symbolLegend = useMemo(() => {
     const raw = graphData?.metadata?.symbolLegend;
@@ -634,6 +724,9 @@ export default function MapExtractionWorkspace({
     const saved = window.localStorage.getItem(snapshotKey);
 
     if (!saved) {
+      // No prior snapshot — mark hydrated so the save-effect can start
+      // persisting changes from a clean slate.
+      setHydrated(true);
       return;
     }
 
@@ -677,18 +770,48 @@ export default function MapExtractionWorkspace({
         setEditStatus(parsed.editStatus);
       }
 
+      if (typeof parsed?.jobStatus === "string" && parsed.jobStatus) {
+        setJobStatus(parsed.jobStatus);
+      }
+
+      if (Array.isArray(parsed?.completedStages)) {
+        setCompletedStages(parsed.completedStages);
+      }
+
+      if (parsed?.lastTokenUsage && typeof parsed.lastTokenUsage === "object") {
+        setLiveUsage({
+          tokenUsage: parsed.lastTokenUsage as Record<string, unknown>,
+          costEstimate:
+            (parsed.lastCostEstimate as Record<string, unknown> | undefined) || undefined,
+        });
+      }
+
       if (parsed?.graph) {
         setExtractStatus("Loaded previous map extraction details.");
       }
     } catch {
       // Ignore corrupted local snapshot.
+    } finally {
+      // Always mark hydrated regardless of snapshot validity so the
+      // save-effect is unblocked and future interactions are persisted.
+      setHydrated(true);
     }
   }, [snapshotKey]);
 
   useEffect(() => {
+    // Do not save until the load-effect has finished hydrating state.
+    // Without this guard, the save-effect fires during the first render
+    // with all-default (empty) values and wipes the persisted snapshot
+    // before the restored state can propagate from the load-effect.
+    if (!hydrated) {
+      return;
+    }
+
     const snapshot: MapWorkspaceSnapshot = {
       graph: graphData,
       jobId,
+      jobStatus,
+      completedStages,
       selectedModel,
       overviewAdditionalInfo,
       binAdditionalInfo,
@@ -697,22 +820,254 @@ export default function MapExtractionWorkspace({
       changeLog,
       editStatus,
       selection: graphData ? selectionToRef(selection) : null,
+      lastTokenUsage: liveUsage?.tokenUsage ?? null,
+      lastCostEstimate: liveUsage?.costEstimate ?? null,
     };
 
     window.localStorage.setItem(snapshotKey, JSON.stringify(snapshot));
   }, [
+    hydrated,
     overviewAdditionalInfo,
     binAdditionalInfo,
     binDisplayNames,
     changeLog,
+    completedStages,
     editStatus,
     graphData,
     jobId,
+    jobStatus,
+    liveUsage,
     selectedModel,
     overviewDisplayNames,
     selection,
     snapshotKey,
   ]);
+
+  // After hydration, ask the backend for the authoritative job state so
+  // the UI can reflect actual checkpoints / token usage / cancel state
+  // (protecting against stale localStorage and surviving backend restarts).
+  useEffect(() => {
+    if (!hydrated || !jobId) {
+      return;
+    }
+    void refreshJobStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, jobId]);
+
+  // Remote-job watcher: if the page reopens while a prior job is still
+  // running/queued on the backend (worker is a detached daemon thread so it
+  // survives page navigation and backend restarts that re-hydrate from disk
+  // checkpoints), poll status until a terminal state, then pull the final
+  // result.  Without this, the UI would freeze on whatever snapshot mount
+  // saw and never show live progress or the final graph.
+  //
+  // Guards against overlapping with a locally-triggered run (Extract /
+  // Resume) because those paths already own their own polling loop — we
+  // only watch when neither local flag is set.
+  useEffect(() => {
+    if (!hydrated || !jobId) {
+      return;
+    }
+    if (isExtracting || isResuming) {
+      return;
+    }
+    const watchable = jobStatus === "running" || jobStatus === "queued";
+    if (!watchable) {
+      return;
+    }
+    let cancelled = false;
+    setIsRemoteWatching(true);
+    const startedAt = Date.now();
+    let attempt = 0;
+    const pollIntervalMs = 1500;
+
+    const pumpOnce = async (): Promise<boolean> => {
+      if (cancelled) return true;
+      attempt += 1;
+      try {
+        const status = await fetchMapExtractStatusOnce(jobId);
+        if (cancelled) return true;
+        setJobStatus(status.status);
+        setCurrentStage(status.currentStage ?? null);
+        setStageMessage(status.stageMessage ?? "");
+        setCompletedStages(status.completedStages ?? []);
+        setCanResume(Boolean(status.canResume));
+        setRemainingStages(
+          typeof status.remainingStages === "number" ? status.remainingStages : null,
+        );
+        setNextStage(status.nextStage ?? null);
+        setResumeDisabledReason(status.resumeDisabledReason ?? "");
+        setCancelRequested(Boolean(status.cancelRequested));
+        const statusTokenUsage = (status as { tokenUsage?: Record<string, unknown> | null })
+          .tokenUsage;
+        const statusCostEstimate = (status as {
+          costEstimate?: Record<string, unknown> | null;
+        }).costEstimate;
+        if (statusTokenUsage || statusCostEstimate) {
+          setLiveUsage((prev) => ({
+            tokenUsage:
+              (statusTokenUsage as Record<string, unknown> | undefined) ||
+              prev?.tokenUsage,
+            costEstimate:
+              (statusCostEstimate as Record<string, unknown> | undefined) ||
+              prev?.costEstimate,
+          }));
+        }
+        setLatestProgress({
+          jobId,
+          attempt,
+          elapsedMs: Date.now() - startedAt,
+          status: status.status,
+          stage: status.currentStage,
+          message: status.stageMessage,
+          tokenUsage: status.tokenUsage,
+          costEstimate: status.costEstimate,
+          canResume: status.canResume,
+          remainingStages: status.remainingStages,
+          nextStage: status.nextStage,
+          resumeDisabledReason: status.resumeDisabledReason,
+        });
+
+        if (status.status === "completed") {
+          try {
+            const result = await fetchMapExtractResult(jobId);
+            if (cancelled) return true;
+            if (result.graph) {
+              setGraphData(result.graph);
+            }
+            setExtractStatus("Job completed.");
+          } catch {
+            // Result fetch will retry on the next page visit.
+          }
+          return true;
+        }
+        if (status.status === "failed" || status.status === "cancelled") {
+          return true;
+        }
+      } catch {
+        // Transient; keep polling.
+      }
+      return false;
+    };
+
+    let handle: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      const done = await pumpOnce();
+      if (done || cancelled) {
+        setIsRemoteWatching(false);
+        return;
+      }
+      handle = setTimeout(() => void tick(), pollIntervalMs);
+    };
+    void tick();
+
+    return () => {
+      cancelled = true;
+      if (handle) clearTimeout(handle);
+      setIsRemoteWatching(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, jobId, jobStatus, isExtracting, isResuming]);
+
+  // Reset rehydration guard when the job identity changes so the next
+  // jobId can pull its own inputs.
+  useEffect(() => {
+    setInputsRehydrated(false);
+  }, [jobId]);
+
+  // Pull the previously-uploaded files back from the backend so a
+  // reload keeps the upload section populated (problem #1: snapshots
+  // only persisted filenames; the blobs lived server-side on disk but
+  // were never exposed).  Runs once per jobId after hydrate.
+  useEffect(() => {
+    if (!hydrated || !jobId || inputsRehydrated) {
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const manifest = await fetchMapExtractInputs(jobId);
+        if (!manifest || cancelled) {
+          return;
+        }
+
+        const hydrate = async (
+          entries: typeof manifest.overviewFiles,
+          kind: "overview" | "support",
+        ) => {
+          const files: File[] = [];
+          for (const entry of entries) {
+            try {
+              const file = await fetchMapExtractInputFile(
+                jobId,
+                kind,
+                entry.index,
+                entry.filename,
+                entry.mimeType,
+              );
+              if (file) {
+                files.push(file);
+              }
+            } catch {
+              // Ignore individual file failures — keep hydrating others.
+            }
+            if (cancelled) {
+              return files;
+            }
+          }
+          return files;
+        };
+
+        const overviewHydrated = await hydrate(manifest.overviewFiles, "overview");
+        const supportHydrated = await hydrate(manifest.supportFiles, "support");
+        if (cancelled) {
+          return;
+        }
+        if (overviewHydrated.length > 0) {
+          setOverviewFiles((prev) => {
+            const existingNames = new Set(prev.map((entry) => entry.file.name));
+            const incoming = overviewHydrated
+              .filter((file) => !existingNames.has(file.name))
+              .map(toUploadEntry);
+            return [...prev, ...incoming];
+          });
+          setOverviewStoredFileNames((prev) =>
+            dedupeNames([...prev, ...overviewHydrated.map((file) => file.name)]),
+          );
+        }
+        if (supportHydrated.length > 0) {
+          setBinFiles((prev) => {
+            const existingNames = new Set(prev.map((entry) => entry.file.name));
+            const incoming = supportHydrated
+              .filter((file) => !existingNames.has(file.name))
+              .map(toUploadEntry);
+            return [...prev, ...incoming];
+          });
+          setBinStoredFileNames((prev) =>
+            dedupeNames([...prev, ...supportHydrated.map((file) => file.name)]),
+          );
+        }
+        if (typeof manifest.overviewAdditionalInformation === "string") {
+          setOverviewAdditionalInfo((prev) =>
+            prev || (manifest.overviewAdditionalInformation as string),
+          );
+        }
+        if (typeof manifest.supportAdditionalInformation === "string") {
+          setBinAdditionalInfo((prev) =>
+            prev || (manifest.supportAdditionalInformation as string),
+          );
+        }
+        setInputsRehydrated(true);
+      } catch {
+        // Silently ignore — the user can re-upload if needed.
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, jobId]);
 
   const onPickOverviewFiles = (files: FileList | null) => {
     const picked = Array.from(files || []);
@@ -783,6 +1138,16 @@ export default function MapExtractionWorkspace({
     setIsExtracting(true);
     setExtractStatus("Running map extraction...");
     setEditStatus("");
+    setJobStatus("running");
+    setCurrentStage(null);
+    setStageMessage("");
+    setCompletedStages([]);
+    setCanResume(false);
+    setRemainingStages(null);
+    setNextStage(null);
+    setResumeDisabledReason("");
+    setCancelRequested(false);
+    setLatestProgress(null);
     setLiveUsage({
       tokenUsage: {
         promptTokens: 0,
@@ -812,6 +1177,26 @@ export default function MapExtractionWorkspace({
           const seconds = Math.max(0, Math.floor(progress.elapsedMs / 1000));
           setExtractStatus(`Running ${stage}: ${message} (${String(seconds)}s)`);
           setJobId(progress.jobId);
+          setJobStatus(progress.status);
+          setCurrentStage(progress.stage ?? null);
+          setStageMessage(progress.message ?? "");
+          setLatestProgress(progress);
+          if (typeof progress.canResume === "boolean") {
+            setCanResume(progress.canResume);
+          }
+          if (typeof progress.remainingStages === "number") {
+            setRemainingStages(progress.remainingStages);
+          }
+          if (typeof progress.nextStage === "string") {
+            setNextStage(progress.nextStage);
+          } else if (progress.nextStage === null) {
+            setNextStage(null);
+          }
+          if (typeof progress.resumeDisabledReason === "string") {
+            setResumeDisabledReason(progress.resumeDisabledReason);
+          } else if (progress.resumeDisabledReason === null) {
+            setResumeDisabledReason("");
+          }
           if (progress.tokenUsage || progress.costEstimate) {
             setLiveUsage((prev) => ({
               tokenUsage: (progress.tokenUsage as Record<string, unknown> | undefined) || prev?.tokenUsage,
@@ -834,13 +1219,153 @@ export default function MapExtractionWorkspace({
       setIsBinCollapsed(true);
       setIsSymbolCollapsed(false);
 
+      setJobStatus("completed");
+      setCurrentStage(null);
+      setStageMessage("");
+      setCanResume(false);
+      setRemainingStages(0);
+      setNextStage(null);
+      setResumeDisabledReason("No stages left to run.");
       setExtractStatus("Map extraction completed.");
       setLiveUsage(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Map extraction failed.";
       setExtractStatus(message);
+      setJobStatus((prev) => (prev === "cancelled" ? "cancelled" : "failed"));
     } finally {
       setIsExtracting(false);
+    }
+  };
+
+  const refreshJobStatus = async () => {
+    if (!jobId) {
+      return;
+    }
+    try {
+      const status = await fetchMapExtractStatusOnce(jobId);
+      setJobStatus(status.status);
+      setCurrentStage(status.currentStage ?? null);
+      setStageMessage(status.stageMessage ?? "");
+      setCompletedStages(status.completedStages ?? []);
+      setCanResume(Boolean(status.canResume));
+      setRemainingStages(
+        typeof status.remainingStages === "number" ? status.remainingStages : null,
+      );
+      setNextStage(status.nextStage ?? null);
+      setResumeDisabledReason(status.resumeDisabledReason ?? "");
+      setCancelRequested(Boolean(status.cancelRequested));
+      // Surface backend-known usage totals so a rollback/reload keeps
+      // the counter accurate without a running worker.
+      const statusTokenUsage = (status as { tokenUsage?: Record<string, unknown> | null })
+        .tokenUsage;
+      const statusCostEstimate = (status as { costEstimate?: Record<string, unknown> | null })
+        .costEstimate;
+      if (statusTokenUsage || statusCostEstimate) {
+        setLiveUsage((prev) => ({
+          tokenUsage: (statusTokenUsage as Record<string, unknown> | undefined) || prev?.tokenUsage,
+          costEstimate:
+            (statusCostEstimate as Record<string, unknown> | undefined) || prev?.costEstimate,
+        }));
+      }
+    } catch {
+      // Ignore stale jobs etc.
+    }
+  };
+
+  const handleResume = async () => {
+    if (!jobId) {
+      setExtractStatus("No job to resume.");
+      return;
+    }
+    if (isJobActive) {
+      return;
+    }
+
+    setIsResuming(true);
+    setExtractStatus("Resuming map extraction...");
+    setEditStatus("");
+    setJobStatus("running");
+    setCancelRequested(false);
+    setLatestProgress(null);
+    // Seed a zero'd live usage so the bottom counters go "live" immediately
+    // instead of showing stale totals from the persisted graph metadata.
+    setLiveUsage({
+      tokenUsage: {
+        promptTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        callCount: 0,
+      },
+      costEstimate: {
+        currency: "USD",
+        estimatedCost: 0,
+        source: "unknown",
+      },
+    });
+
+    try {
+      const result = await resumeMapExtractJob(jobId, {
+        onProgress: (progress) => {
+          const stage = progress.stage || "waiting";
+          const message = progress.message || progress.status;
+          const seconds = Math.max(0, Math.floor(progress.elapsedMs / 1000));
+          setExtractStatus(`Resume ${stage}: ${message} (${String(seconds)}s)`);
+          setJobId(progress.jobId);
+          setJobStatus(progress.status);
+          setCurrentStage(progress.stage ?? null);
+          setStageMessage(progress.message ?? "");
+          setLatestProgress(progress);
+          if (typeof progress.canResume === "boolean") {
+            setCanResume(progress.canResume);
+          }
+          if (typeof progress.remainingStages === "number") {
+            setRemainingStages(progress.remainingStages);
+          }
+          if (typeof progress.nextStage === "string") {
+            setNextStage(progress.nextStage);
+          } else if (progress.nextStage === null) {
+            setNextStage(null);
+          }
+          if (typeof progress.resumeDisabledReason === "string") {
+            setResumeDisabledReason(progress.resumeDisabledReason);
+          } else if (progress.resumeDisabledReason === null) {
+            setResumeDisabledReason("");
+          }
+          if (progress.tokenUsage || progress.costEstimate) {
+            setLiveUsage((prev) => ({
+              tokenUsage:
+                (progress.tokenUsage as Record<string, unknown> | undefined) || prev?.tokenUsage,
+              costEstimate:
+                (progress.costEstimate as Record<string, unknown> | undefined) ||
+                prev?.costEstimate,
+            }));
+          }
+        },
+      });
+
+      setGraphData(result.graph);
+      setJobId(result.jobId);
+      setSelection({ kind: "none" });
+      setViewMode("graph");
+      setHistory([]);
+      setJobStatus("completed");
+      setCurrentStage(null);
+      setStageMessage("");
+      setCanResume(false);
+      setRemainingStages(0);
+      setNextStage(null);
+      setResumeDisabledReason("No stages left to run.");
+      setExtractStatus("Resume completed.");
+      setLiveUsage(null);
+      // Refresh stage history from backend (remote checkpoints) so the
+      // stage-log panel shows the full set of completed stages.
+      await refreshJobStatus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Map resume failed.";
+      setExtractStatus(message);
+      setJobStatus((prev) => (prev === "cancelled" ? "cancelled" : "failed"));
+    } finally {
+      setIsResuming(false);
     }
   };
 
@@ -879,6 +1404,62 @@ export default function MapExtractionWorkspace({
       setEditStatus(message);
     } finally {
       setIsApplyingEdit(false);
+    }
+  };
+
+  /**
+   * Wipe everything tied to the current (or prior) extraction so the user can
+   * start fresh.  Only clears *client-side* state; backend checkpoints under
+   * `jobId` remain on disk so nothing becomes irrecoverable — the user can
+   * still Resume via the stage log if they change their mind before running a
+   * new job.  The persisted localStorage snapshot is also cleared.
+   */
+  const handleReset = () => {
+    if (isJobActive) {
+      setEditStatus("Cannot reset while a job is running. Terminate first.");
+      return;
+    }
+
+    setOverviewFiles((prev) => {
+      prev.forEach(revokeFilePreview);
+      return [];
+    });
+    setBinFiles((prev) => {
+      prev.forEach(revokeFilePreview);
+      return [];
+    });
+    setOverviewStoredFileNames([]);
+    setBinStoredFileNames([]);
+    setOverviewAdditionalInfo("");
+    setBinAdditionalInfo("");
+    setGraphData(null);
+    setSelection({ kind: "none" });
+    setJobId("");
+    setJobStatus("");
+    setCurrentStage(null);
+    setStageMessage("");
+    setCompletedStages([]);
+    setCanResume(false);
+    setRemainingStages(null);
+    setNextStage(null);
+    setResumeDisabledReason("");
+    setCancelRequested(false);
+    setLatestProgress(null);
+    setLiveUsage(null);
+    setInputsRehydrated(false);
+    setHistory([]);
+    setChangeLog([]);
+    setEditStatus("");
+    setChatPrompt("");
+    setViewMode("graph");
+    setExtractStatus("Workspace reset. Ready for a new extraction.");
+    setIsOverviewCollapsed(false);
+    setIsBinCollapsed(false);
+    setRightPanelUserToggled(false);
+    try {
+      window.localStorage.removeItem(snapshotKey);
+    } catch {
+      // ignore storage errors
     }
   };
 
@@ -1028,7 +1609,7 @@ export default function MapExtractionWorkspace({
 
   return (
     <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
-      <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
+      <main className="mx-auto w-full max-w-[1600px] px-4 py-6 md:px-6 md:py-8 lg:px-8">
         <ProjectPageHeader
           title="Map Extraction Section"
           projectName={projectName}
@@ -1097,6 +1678,23 @@ export default function MapExtractionWorkspace({
                 event.currentTarget.value = "";
               }}
             />
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={isJobActive || !hasAnyActivity}
+              aria-label="Reset workspace"
+              title={
+                isJobActive
+                  ? "Terminate the running job before resetting."
+                  : !hasAnyActivity
+                  ? "Nothing to reset yet."
+                  : "Reset workspace: clear graph, inputs, and local snapshot."
+              }
+              className="inline-flex items-center gap-2 rounded-md border border-amber-700 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <TrashIcon className="h-4 w-4" />
+              <span>Reset</span>
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -1111,11 +1709,56 @@ export default function MapExtractionWorkspace({
                 job: {jobId}
               </span>
             ) : null}
+            <button
+              type="button"
+              onClick={() => setIsLeftPanelCollapsed((prev) => !prev)}
+              aria-label={isLeftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={isLeftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className="inline-flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-2 text-xs text-neutral-300 transition hover:border-sky-500"
+            >
+              {isLeftPanelCollapsed ? "⟩ Left" : "⟨ Left"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRightPanelUserToggled(true);
+                setIsRightPanelCollapsed((prev) => !prev);
+              }}
+              aria-label={isRightPanelCollapsed ? "Expand stage log" : "Collapse stage log"}
+              title={isRightPanelCollapsed ? "Expand stage log" : "Collapse stage log"}
+              className="inline-flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-2 text-xs text-neutral-300 transition hover:border-sky-500"
+            >
+              {isRightPanelCollapsed ? "⟨ Log" : "⟩ Log"}
+            </button>
           </div>
         </header>
 
-        <section className="grid gap-6 lg:grid-cols-[320px_1fr]">
-          <aside className="space-y-4">
+        <section
+          className="grid gap-4"
+          style={{
+            gridTemplateColumns: `${isLeftPanelCollapsed ? "48px" : "320px"} minmax(0, 1fr) ${
+              isRightPanelCollapsed ? "40px" : "360px"
+            }`,
+          }}
+        >
+          <aside className="flex min-w-0 flex-col gap-3">
+            {isLeftPanelCollapsed ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/60 p-2">
+                <button
+                  type="button"
+                  onClick={() => setIsLeftPanelCollapsed(false)}
+                  title="Expand sidebar"
+                  aria-label="Expand sidebar"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-200 transition hover:border-sky-500"
+                >
+                  ⟩
+                </button>
+                <span className="[writing-mode:vertical-rl] rotate-180 text-[10px] uppercase tracking-widest text-neutral-500">
+                  files · inspector
+                </span>
+              </div>
+            ) : (
+            <>
             <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
               <button
                 type="button"
@@ -1142,7 +1785,9 @@ export default function MapExtractionWorkspace({
                   <button
                     type="button"
                     onClick={() => overviewInputRef.current?.click()}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-4 py-3 text-sm font-semibold text-neutral-100 transition hover:border-sky-500"
+                    disabled={inputsLocked}
+                    title={inputsLocked ? inputsLockReason : "Choose files"}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-4 py-3 text-sm font-semibold text-neutral-100 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     + Choose files
                   </button>
@@ -1152,6 +1797,7 @@ export default function MapExtractionWorkspace({
                     multiple
                     accept="image/*"
                     className="hidden"
+                    disabled={inputsLocked}
                     onChange={(event) => {
                       onPickOverviewFiles(event.target.files);
                       event.currentTarget.value = "";
@@ -1161,7 +1807,9 @@ export default function MapExtractionWorkspace({
                     <p className="text-xs text-neutral-500">
                       {overviewDisplayNames.length > 0 ? `${String(overviewDisplayNames.length)} file(s)` : "No files selected yet"}
                     </p>
-                    {overviewFiles.length === 0 && overviewStoredFileNames.length > 0 ? (
+                    {overviewFiles.length === 0 &&
+                    overviewStoredFileNames.length > 0 &&
+                    !inputsRehydrated ? (
                       <p className="text-xs text-amber-300">
                         Previous file names restored. Re-upload files to run extraction again.
                       </p>
@@ -1174,9 +1822,10 @@ export default function MapExtractionWorkspace({
                             <button
                               type="button"
                               onClick={() => handleRemoveOverviewFile(name)}
+                              disabled={inputsLocked}
                               aria-label={`Remove ${name}`}
-                              title="Remove file"
-                              className="inline-flex h-6 w-6 items-center justify-center rounded border border-red-800 bg-red-500/10 text-red-200 transition hover:bg-red-500/20"
+                              title={inputsLocked ? inputsLockReason : "Remove file"}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded border border-red-800 bg-red-500/10 text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <TrashIcon className="h-3.5 w-3.5" />
                             </button>
@@ -1195,7 +1844,8 @@ export default function MapExtractionWorkspace({
                     value={overviewAdditionalInfo}
                     onChange={(event) => setOverviewAdditionalInfo(event.target.value)}
                     placeholder="input text here"
-                    className="min-h-24 w-full rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
+                    disabled={inputsLocked}
+                    className="min-h-24 w-full rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
               ) : null}
@@ -1227,7 +1877,9 @@ export default function MapExtractionWorkspace({
                   <button
                     type="button"
                     onClick={() => binInputRef.current?.click()}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-4 py-3 text-sm font-semibold text-neutral-100 transition hover:border-sky-500"
+                    disabled={inputsLocked}
+                    title={inputsLocked ? inputsLockReason : "Choose files"}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-600 bg-neutral-800 px-4 py-3 text-sm font-semibold text-neutral-100 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     + Choose files
                   </button>
@@ -1236,6 +1888,7 @@ export default function MapExtractionWorkspace({
                     type="file"
                     multiple
                     className="hidden"
+                    disabled={inputsLocked}
                     onChange={(event) => {
                       onPickBinFiles(event.target.files);
                       event.currentTarget.value = "";
@@ -1246,7 +1899,9 @@ export default function MapExtractionWorkspace({
                     <p className="text-xs text-neutral-500">
                       {binDisplayNames.length > 0 ? `${String(binDisplayNames.length)} file(s)` : "No files selected yet"}
                     </p>
-                    {binFiles.length === 0 && binStoredFileNames.length > 0 ? (
+                    {binFiles.length === 0 &&
+                    binStoredFileNames.length > 0 &&
+                    !inputsRehydrated ? (
                       <p className="text-xs text-amber-300">
                         Previous file names restored. Re-upload files to run extraction again.
                       </p>
@@ -1259,9 +1914,10 @@ export default function MapExtractionWorkspace({
                             <button
                               type="button"
                               onClick={() => handleRemoveBinFile(name)}
+                              disabled={inputsLocked}
                               aria-label={`Remove ${name}`}
-                              title="Remove file"
-                              className="inline-flex h-6 w-6 items-center justify-center rounded border border-red-800 bg-red-500/10 text-red-200 transition hover:bg-red-500/20"
+                              title={inputsLocked ? inputsLockReason : "Remove file"}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded border border-red-800 bg-red-500/10 text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <TrashIcon className="h-3.5 w-3.5" />
                             </button>
@@ -1280,12 +1936,17 @@ export default function MapExtractionWorkspace({
                     value={binAdditionalInfo}
                     onChange={(event) => setBinAdditionalInfo(event.target.value)}
                     placeholder="input text here"
-                    className="min-h-24 w-full rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
+                    disabled={inputsLocked}
+                    className="min-h-24 w-full rounded-md border border-neutral-700 bg-neutral-800 p-3 text-sm text-neutral-100 outline-none transition focus:border-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
               ) : null}
             </article>
 
+            <div className="mt-auto space-y-3 border-t border-neutral-800 pt-3">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                Session details
+              </p>
             <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
               <button
                 type="button"
@@ -1315,6 +1976,9 @@ export default function MapExtractionWorkspace({
                 </ul>
               )}
             </article>
+            </div>
+            </>
+            )}
           </aside>
 
           <section className="min-w-0 space-y-4">
@@ -1347,10 +2011,15 @@ export default function MapExtractionWorkspace({
                   <button
                     type="button"
                     onClick={() => void handleExtract()}
-                    disabled={isExtracting}
+                    disabled={isJobActive || hasStageHistory}
+                    title={
+                      hasStageHistory && !isJobActive
+                        ? "A previous extraction is still in state. Resume it from the stage log or click Reset to start over."
+                        : undefined
+                    }
                     className="rounded-lg border border-neutral-700 bg-neutral-800 px-8 py-3 text-base font-semibold text-neutral-100 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    {isExtracting ? "Extracting..." : "Extract"}
+                    {isExtracting ? "Extracting..." : isResuming ? "Resuming..." : "Extract"}
                   </button>
                 </div>
               ) : viewMode === "graph" ? (
@@ -1405,7 +2074,7 @@ export default function MapExtractionWorkspace({
               )}
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs text-neutral-400">{extractStatus}</div>
+                <div className="min-w-0 flex-1 break-words text-xs text-neutral-400">{extractStatus}</div>
                 <div className="ml-auto flex items-end gap-3">
                   <div className="text-right text-[11px] text-neutral-400">
                     <div>
@@ -1452,9 +2121,75 @@ export default function MapExtractionWorkspace({
                   </button>
                 </div>
               </div>
-              <p className="mt-2 text-xs text-neutral-400">{editStatus}</p>
+              <p className="mt-2 break-words text-xs text-neutral-400">{editStatus}</p>
             </div>
           </section>
+
+          <aside className="flex min-w-0 flex-col gap-3">
+            {!isRightPanelCollapsed ? (
+              <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
+                <button
+                  type="button"
+                  onClick={() => setIsSymbolCollapsed((prev) => !prev)}
+                  className="flex w-full items-center justify-between text-left"
+                >
+                  <span className="text-base font-bold text-neutral-100">Selection details</span>
+                  <span className="text-neutral-300">{isSymbolCollapsed ? "▼" : "▲"}</span>
+                </button>
+                {!isSymbolCollapsed ? (
+                  <div className="mt-3 max-h-[40vh] overflow-auto">
+                    <SelectionDetails selection={selection} />
+                  </div>
+                ) : null}
+              </article>
+            ) : null}
+            {isRightPanelCollapsed ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/60 p-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRightPanelUserToggled(true);
+                    setIsRightPanelCollapsed(false);
+                  }}
+                  title="Expand stage log"
+                  aria-label="Expand stage log"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-700 bg-neutral-900 text-neutral-200 transition hover:border-sky-500"
+                >
+                  ⟨
+                </button>
+                <span className="[writing-mode:vertical-rl] rotate-180 text-[10px] uppercase tracking-widest text-neutral-500">
+                  stage log
+                </span>
+                {isExtracting ? (
+                  <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-sky-500" />
+                ) : null}
+              </div>
+            ) : (
+              <StageLogPanel
+                jobId={jobId}
+                jobStatus={jobStatus}
+                currentStage={currentStage}
+                stageMessage={stageMessage}
+                completedStages={completedStages}
+                canResume={canResume}
+                remainingStages={remainingStages ?? undefined}
+                nextStage={nextStage}
+                resumeDisabledReason={resumeDisabledReason || undefined}
+                cancelRequested={cancelRequested}
+                latestProgress={latestProgress}
+                isActive={isJobActive}
+                onResumeRequested={() => void handleResume()}
+                onExtractRequested={() => void handleExtract()}
+                extractDisabled={isJobActive || overviewFiles.length === 0}
+                extractDisabledReason={
+                  overviewFiles.length === 0
+                    ? "Upload at least one overview map image first."
+                    : "Extraction is already running."
+                }
+                onStatusUpdate={(message) => setExtractStatus(message)}
+              />
+            )}
+          </aside>
         </section>
       </main>
     </div>

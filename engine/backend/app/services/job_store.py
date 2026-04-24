@@ -1,4 +1,5 @@
 import threading
+import time
 from datetime import datetime
 import logging
 from typing import Any
@@ -6,6 +7,43 @@ from typing import Any
 from fastapi.responses import JSONResponse
 
 from ..models.job_models import JobRecord
+
+
+class JobCancelledError(RuntimeError):
+    """Raised by the pipeline worker when the user has requested cancellation."""
+
+
+def request_cancel(job_id: str) -> bool:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is None:
+            return False
+        if job.status in {"completed", "failed", "cancelled"}:
+            return False
+        job.cancel_requested = True
+        job.updated_at = utc_now_iso()
+    logger.info("[job_store] cancel requested jobId=%s", job_id)
+    return True
+
+
+def is_cancel_requested(job_id: str) -> bool:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        return bool(job and job.cancel_requested)
+
+
+def mark_cancelled(job_id: str) -> None:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is None or job.status in {"completed", "failed"}:
+            return
+        job.status = "cancelled"
+        job.updated_at = utc_now_iso()
+    logger.info("[job_store] cancelled jobId=%s", job_id)
+
+
+def touch_activity(job: JobRecord) -> None:
+    job.last_activity_ts = time.monotonic()
 
 
 JOBS: dict[str, JobRecord] = {}
@@ -32,8 +70,8 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
         token_usage = payload.get("tokenUsage")
         cost_estimate = payload.get("costEstimate")
         with JOBS_LOCK:
-            if job.status == "failed":
-                logger.info("[job_store] ignored stage for failed jobId=%s stage=%s", job.job_id, stage)
+            if job.status in {"failed", "cancelled"}:
+                logger.info("[job_store] ignored stage for %s jobId=%s stage=%s", job.status, job.job_id, stage)
                 return
             if job.status == "queued":
                 job.status = "running"
@@ -59,8 +97,8 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
 
     if event == "result":
         with JOBS_LOCK:
-            if job.status == "failed":
-                logger.warning("[job_store] ignored result for failed jobId=%s", job.job_id)
+            if job.status in {"failed", "cancelled"}:
+                logger.warning("[job_store] ignored result for %s jobId=%s", job.status, job.job_id)
                 return
             job.result = payload if isinstance(payload, dict) else None
             job.status = "completed"
@@ -69,7 +107,7 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
 
     if event == "done":
         with JOBS_LOCK:
-            if job.status not in {"completed", "failed"}:
+            if job.status not in {"completed", "failed", "cancelled"}:
                 job.status = "completed"
             job.updated_at = utc_now_iso()
         logger.info("[job_store] done jobId=%s status=%s", job.job_id, job.status)
@@ -90,4 +128,6 @@ def serialize_job(job: JobRecord) -> dict[str, Any]:
         "costEstimate": job.cost_estimate,
         "error": job.error,
         "runDir": job.run_dir,
+        "cancelRequested": job.cancel_requested,
+        "completedStages": list(job.completed_stages),
     }

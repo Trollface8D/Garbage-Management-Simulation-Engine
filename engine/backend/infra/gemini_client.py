@@ -4,8 +4,9 @@ import logging
 import random
 import os
 import re
+import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 from google import genai
 from google.genai import errors as genai_errors
@@ -13,6 +14,15 @@ from google.genai.types import GenerateContentConfig, Part, ThinkingConfig
 
 
 logger = logging.getLogger(__name__)
+
+
+class GeminiCancelledError(RuntimeError):
+    """Raised when a cancel_check callback signals True during a Gemini call.
+
+    The gateway uses this to bail out of its retry/backoff loop so callers can
+    translate it to their own domain-level cancellation exception without
+    spending more tokens on doomed retries.
+    """
 
 
 class GeminiGateway:
@@ -28,6 +38,8 @@ class GeminiGateway:
         response_json: bool,
         response_schema: dict[str, Any] | None = None,
         usage_collector: dict[str, int] | None = None,
+        on_retry: Callable[[dict[str, Any]], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> str:
         content_parts: list[Part] = [Part.from_text(text=prompt)]
         if parts:
@@ -61,11 +73,138 @@ class GeminiGateway:
             if response_schema is not None:
                 config_kwargs["response_schema"] = response_schema
 
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=content_parts,
-            config=GenerateContentConfig(**config_kwargs),
-        )
+        max_attempts = _safe_int_env("GEMINI_MAX_ATTEMPTS", 4, minimum=1, maximum=10)
+        base_delay = 1.5
+        max_delay = 30.0
+
+        def _should_cancel() -> bool:
+            if cancel_check is None:
+                return False
+            try:
+                return bool(cancel_check())
+            except Exception:  # pragma: no cover - defensive
+                return False
+
+        def _interruptible_sleep(total: float) -> None:
+            # Poll cancel_check every 0.5s so a cancel during backoff wakes
+            # up promptly instead of waiting out the full exponential delay.
+            step = 0.5
+            remaining = total
+            while remaining > 0:
+                if _should_cancel():
+                    return
+                chunk = step if remaining > step else remaining
+                time.sleep(chunk)
+                remaining -= chunk
+
+        def _call_with_cancel() -> Any:
+            """Invoke generate_content on a daemon thread so that a cancel
+            during the in-flight HTTP request can abandon the wait instantly.
+
+            The background thread cannot be safely killed — the sync
+            google-genai SDK has no cancel hook — so when the user cancels
+            we simply stop waiting on it. The thread dies naturally once
+            the HTTP call returns (daemon=True means it won't block process
+            shutdown). We pay the tokens for the in-flight request, but the
+            worker stops immediately and no further retries or stages run.
+            """
+            box: dict[str, Any] = {}
+
+            def _worker() -> None:
+                try:
+                    box["value"] = self.client.models.generate_content(
+                        model=self.model_name,
+                        contents=content_parts,
+                        config=GenerateContentConfig(**config_kwargs),
+                    )
+                except BaseException as inner:  # noqa: BLE001
+                    box["error"] = inner
+
+            thread = threading.Thread(
+                target=_worker,
+                name=f"gemini-call-{self.model_name}",
+                daemon=True,
+            )
+            thread.start()
+            while thread.is_alive():
+                thread.join(timeout=0.5)
+                if _should_cancel():
+                    logger.info(
+                        "[gemini] cancel detected during in-flight request — abandoning thread"
+                    )
+                    raise GeminiCancelledError(
+                        "generate_content cancelled during in-flight request"
+                    )
+            if "error" in box:
+                raise box["error"]
+            return box.get("value")
+
+        response = None
+        last_exc: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            if _should_cancel():
+                logger.info(
+                    "[gemini] cancel detected before attempt=%s/%s — aborting",
+                    attempt,
+                    max_attempts,
+                )
+                raise GeminiCancelledError("generate_content cancelled before attempt")
+            try:
+                response = _call_with_cancel()
+                break
+            except GeminiCancelledError:
+                raise
+            except Exception as exc:  # pragma: no cover - network path
+                last_exc = exc
+                if attempt >= max_attempts or not self._is_retryable_transient_error(exc):
+                    logger.error(
+                        "[gemini] generate_content failed attempt=%s/%s error=%s",
+                        attempt,
+                        max_attempts,
+                        exc,
+                    )
+                    raise
+                delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
+                delay += random.uniform(0, delay * 0.25)
+                logger.warning(
+                    "[gemini] transient error attempt=%s/%s sleeping=%.2fs error=%s",
+                    attempt,
+                    max_attempts,
+                    delay,
+                    exc,
+                )
+                if on_retry is not None:
+                    try:
+                        on_retry(
+                            {
+                                "attempt": attempt,
+                                "maxAttempts": max_attempts,
+                                "delaySeconds": round(delay, 2),
+                                "error": str(exc),
+                                "errorClass": exc.__class__.__name__,
+                            }
+                        )
+                    except Exception:  # pragma: no cover - defensive
+                        logger.exception("[gemini] on_retry callback raised")
+                _interruptible_sleep(delay)
+                if _should_cancel():
+                    logger.info(
+                        "[gemini] cancel detected during backoff attempt=%s/%s — aborting",
+                        attempt,
+                        max_attempts,
+                    )
+                    raise GeminiCancelledError("generate_content cancelled during backoff")
+
+        if response is None:
+            # Should be unreachable — either break or raise above.
+            raise last_exc if last_exc else RuntimeError("generate_content returned no response")
+
+        # Final race check: a cancel may have landed between the last 0.5s
+        # poll and the thread returning.  Discard the response instead of
+        # letting the caller continue into downstream work.
+        if _should_cancel():
+            raise GeminiCancelledError("generate_content cancelled after response arrived")
+
         response_text = (response.text or "").strip()
 
         if usage_collector is not None:
@@ -145,26 +284,6 @@ class GeminiGateway:
             "provider_total_tokens": provider_total_tokens,
             "hidden_tokens": hidden_tokens,
         }
-
-    @staticmethod
-    def _is_retryable_transient_error(exc: Exception) -> bool:
-        if isinstance(exc, genai_errors.ServerError):
-            return True
-
-        message = str(exc).lower()
-        transient_tokens = (
-            "503",
-            "unavailable",
-            "high demand",
-            "resource exhausted",
-            "temporarily",
-            "timeout",
-            "timed out",
-            "connection reset",
-            "connection aborted",
-            "network",
-        )
-        return any(token in message for token in transient_tokens)
 
     @staticmethod
     def _is_retryable_transient_error(exc: Exception) -> bool:
