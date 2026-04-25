@@ -1,0 +1,171 @@
+"use client";
+
+const BASE = "/api/code-gen";
+
+export type CodeGenEntity = {
+  id: string;
+  label: string;
+  type: "actor" | "resource" | "environment" | "policy";
+  frequency: number;
+};
+
+export type CodeGenPolicyOutline = {
+  rule_id: string;
+  label: string;
+  trigger: string;
+  target_entity_id: string;
+  target_method: string;
+  inputs: string[];
+  description: string;
+};
+
+export type CodeGenJobStatus = {
+  jobId: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled" | "partial";
+  currentStage: string | null;
+  stageMessage: string;
+  stageHistory: Array<{ stage: string; message: string; tokenUsage?: Record<string, number> }>;
+  tokenUsage: Record<string, number> | null;
+  error: string | null;
+  cancelRequested: boolean;
+  completedStages: string[];
+  remainingStages: number;
+  nextStage: string | null;
+  canResume: boolean;
+  resumeDisabledReason: string | null;
+};
+
+export type CodeGenPreviewResult = {
+  jobId: string;
+  entities: CodeGenEntity[];
+  policies: CodeGenPolicyOutline[];
+  warning: string | null;
+};
+
+export type CodeGenIterationEntry = {
+  stage: string;
+  iterId: string;
+  savedAt: number;
+  bytes: number;
+};
+
+export type CodeGenCreateRequest = {
+  causalData: string;
+  mapNodeJson?: Record<string, unknown> | null;
+  selectedEntities?: Array<{ id: string }>;
+  selectedPolicies?: Array<{ rule_id: string }>;
+  model?: string;
+};
+
+async function parseError(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as { error?: string };
+    return payload.error || `Request failed (${String(response.status)})`;
+  } catch {
+    return `Request failed (${String(response.status)})`;
+  }
+}
+
+async function jsonOrThrow<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as T;
+}
+
+export async function createCodeGenJob(req: CodeGenCreateRequest): Promise<{ jobId: string }> {
+  const response = await fetch(`${BASE}/jobs`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(req),
+    cache: "no-store",
+  });
+  return jsonOrThrow<{ jobId: string }>(response);
+}
+
+export async function previewEntities(jobId: string): Promise<CodeGenPreviewResult> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/preview_entities`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  return jsonOrThrow<CodeGenPreviewResult>(response);
+}
+
+export async function fetchCodeGenStatus(jobId: string): Promise<CodeGenJobStatus> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+  return jsonOrThrow<CodeGenJobStatus>(response);
+}
+
+export async function resumeCodeGenJob(jobId: string): Promise<void> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/resume`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+}
+
+export async function cancelCodeGenJob(jobId: string): Promise<void> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+}
+
+export async function rollbackCodeGenJob(
+  jobId: string,
+  toStage: string,
+  mode: "after" | "from" = "after",
+): Promise<void> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/rollback`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ toStage, mode }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+}
+
+export async function fetchCodeGenResult(jobId: string): Promise<unknown> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/result`, { cache: "no-store" });
+  return jsonOrThrow<unknown>(response);
+}
+
+export async function listIterations(jobId: string, stage: string): Promise<CodeGenIterationEntry[]> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/iterations/${encodeURIComponent(stage)}`, {
+    cache: "no-store",
+  });
+  const payload = await jsonOrThrow<{ iterations: CodeGenIterationEntry[] }>(response);
+  return payload.iterations || [];
+}
+
+export async function fetchIteration(jobId: string, stage: string, iterId: string): Promise<{ code?: string; filename?: string; validation?: { errors: string[] } }> {
+  const response = await fetch(
+    `${BASE}/jobs/${encodeURIComponent(jobId)}/iterations/${encodeURIComponent(stage)}/${encodeURIComponent(iterId)}`,
+    { cache: "no-store" },
+  );
+  return jsonOrThrow(response);
+}
+
+export async function deleteIteration(jobId: string, stage: string, iterId: string): Promise<void> {
+  const response = await fetch(
+    `${BASE}/jobs/${encodeURIComponent(jobId)}/iterations/${encodeURIComponent(stage)}/${encodeURIComponent(iterId)}`,
+    { method: "DELETE", cache: "no-store" },
+  );
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+}
+
+export function artifactUrl(jobId: string, relativePath: string): string {
+  return `${BASE}/jobs/${encodeURIComponent(jobId)}/artifacts/${relativePath
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}`;
+}

@@ -1,3 +1,4 @@
+from .code_gen import router as code_gen_router
 from .compat import router as compat_router
 from .codegen_analytics import router as codegen_analytics_router
 from .extract import router as extract_router
@@ -9,6 +10,7 @@ from .jobs_stream import router as jobs_stream_router
 from .map_extract import router as map_extract_router
 
 __all__ = [
+	"code_gen_router",
 	"compat_router",
 	"codegen_analytics_router",
 	"extract_router",

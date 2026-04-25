@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { type ChangeEvent, type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import ProjectPageHeader from "../components/project-page-header";
 import UsedItemsSection from "@/app/code/used-items-section";
+import CodeGenWorkspace from "@/app/code/code-gen-workspace";
 import {
     categoryPath,
     findComponentById as findSeedComponentById,
@@ -1102,6 +1103,10 @@ export default function CodePage() {
                             </div>
                         ) : null}
                     </div>
+
+                    <CodeGenWorkspace
+                        causalComponentIds={causalItems.map((item) => item.id)}
+                    />
                 </section>
             </main>
         </div>

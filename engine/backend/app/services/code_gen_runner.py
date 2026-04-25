@@ -1,0 +1,788 @@
+"""Driver for the code-generation background pipeline.
+
+Phase 2: Stage 1 family (state1_entity_list, state1b_policy_outline,
+state1c_entity_dependencies) is wired with real Gemini calls. Stages 2 / 3 /
+4 / validation / finalize remain stubs and are replaced in Phase 3.
+
+The driver mirrors ``map_extract_runner`` in event semantics so the existing
+status / SSE infrastructure can be reused without modification.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Callable
+
+from ...infra.gemini_client import GeminiCancelledError, GeminiGateway
+from ..models.job_models import JobRecord
+from ..services import code_gen_checkpoints as checkpoints
+from ..services import code_gen_prompts as prompts
+from ..services.job_store import (
+    JobCancelledError,
+    emit_job_event,
+    is_cancel_requested,
+    touch_activity,
+)
+
+logger = logging.getLogger(__name__)
+
+
+StageFn = Callable[["StageContext"], dict[str, Any]]
+
+
+class StageContext:
+    """Per-stage handle passed to stage implementations.
+
+    Provides everything a stage needs without coupling it to ``JobRecord``
+    internals: previous-stage outputs, inputs manifest, cancel check, and
+    iteration helpers for iterative stages.
+    """
+
+    def __init__(
+        self,
+        job: JobRecord,
+        api_key: str,
+        model_name: str,
+        use_env_model_overrides: bool,
+        inputs: dict[str, Any],
+    ) -> None:
+        self.job = job
+        self.api_key = api_key
+        self.model_name = model_name
+        self.use_env_model_overrides = use_env_model_overrides
+        self.inputs = inputs
+        self.usage: dict[str, int] = {}
+
+    @property
+    def job_id(self) -> str:
+        return self.job.job_id
+
+    def stage_payload(self, stage: str) -> dict[str, Any] | None:
+        return checkpoints.load_stage(self.job_id, stage)
+
+    def is_cancelled(self) -> bool:
+        return is_cancel_requested(self.job_id)
+
+    def raise_if_cancelled(self) -> None:
+        if self.is_cancelled():
+            raise JobCancelledError("cancel requested")
+
+    def emit_stage_message(
+        self,
+        stage: str,
+        message: str,
+        *,
+        token_usage: dict[str, Any] | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {"stage": stage, "message": message}
+        if token_usage is not None:
+            payload["tokenUsage"] = token_usage
+        emit_job_event(self.job, "stage", payload)
+
+    def gateway(self) -> GeminiGateway:
+        return GeminiGateway(api_key=self.api_key, model_name=self.model_name)
+
+
+def _gemini_retry_callback(ctx: StageContext, stage: str):
+    def _emit(info: dict[str, Any]) -> None:
+        attempt = info.get("attempt")
+        max_attempts = info.get("maxAttempts")
+        delay = info.get("delaySeconds")
+        err_class = info.get("errorClass") or "Error"
+        err_text = str(info.get("error") or "")[:160]
+        msg = (
+            f"{stage}: Gemini transient error — retrying attempt "
+            f"{attempt}/{max_attempts} in {delay}s ({err_class}: {err_text})"
+        )
+        ctx.emit_stage_message(stage, msg)
+        touch_activity(ctx.job)
+
+    return _emit
+
+
+def _gemini_cancel_check(ctx: StageContext):
+    return lambda: is_cancel_requested(ctx.job_id)
+
+
+def _generate_json(
+    ctx: StageContext,
+    stage: str,
+    prompt: str,
+    schema: dict[str, Any] | None = None,
+) -> Any:
+    """Run a JSON-schema-constrained Gemini call with cancel + retry surfacing."""
+    gateway = ctx.gateway()
+    try:
+        raw = gateway.generate_text(
+            prompt,
+            response_json=True,
+            response_schema=schema,
+            usage_collector=ctx.usage,
+            on_retry=_gemini_retry_callback(ctx, stage),
+            cancel_check=_gemini_cancel_check(ctx),
+        )
+    except GeminiCancelledError as exc:
+        raise JobCancelledError(str(exc)) from exc
+    return GeminiGateway.parse_json_relaxed(raw)
+
+
+def _generate_text(
+    ctx: StageContext,
+    stage: str,
+    prompt: str,
+) -> str:
+    """Run a free-form Gemini call returning raw text (for code generation)."""
+    gateway = ctx.gateway()
+    try:
+        raw = gateway.generate_text(
+            prompt,
+            response_json=False,
+            usage_collector=ctx.usage,
+            on_retry=_gemini_retry_callback(ctx, stage),
+            cancel_check=_gemini_cancel_check(ctx),
+        )
+    except GeminiCancelledError as exc:
+        raise JobCancelledError(str(exc)) from exc
+    return prompts.strip_code_fences(raw)
+
+
+def _resume_skip_completed(job: JobRecord) -> set[str]:
+    """Return the set of stages already completed on disk.
+
+    On cold restart ``JobRecord.completed_stages`` is empty, so we trust the
+    checkpoint files. Stage-N is considered complete only if its summary file
+    exists (per-iteration files alone are NOT enough — see docstring on
+    ``code_gen_checkpoints.ITERATIVE_STAGES``).
+    """
+    completed: set[str] = set()
+    for stage in checkpoints.STAGE_ORDER:
+        if checkpoints.load_stage(job.job_id, stage) is not None:
+            completed.add(stage)
+    completed.update(job.completed_stages or [])
+    return completed
+
+
+# ---------------------------------------------------------------------------
+# Stage 1 family — real implementations (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def _stage_state1_entity_list(ctx: StageContext) -> dict[str, Any]:
+    ctx.raise_if_cancelled()
+    causal_data = str(ctx.inputs.get("causalData") or "")
+    prompt, schema = prompts.build_state1_entity_list_prompt(causal_data)
+    parsed = _generate_json(ctx, "state1_entity_list", prompt, schema)
+    if not isinstance(parsed, dict):
+        parsed = {"entities": []}
+    entities = parsed.get("entities") or []
+    if not isinstance(entities, list):
+        entities = []
+    cleaned: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for entry in entities:
+        if not isinstance(entry, dict):
+            continue
+        eid = str(entry.get("id") or "").strip()
+        if not eid or eid in seen_ids:
+            continue
+        seen_ids.add(eid)
+        cleaned.append(
+            {
+                "id": eid,
+                "label": str(entry.get("label") or eid),
+                "type": str(entry.get("type") or "actor"),
+                "frequency": int(entry.get("frequency") or 0),
+            }
+        )
+    return {
+        "stage": "state1_entity_list",
+        "entities": cleaned,
+        "warning": parsed.get("warning"),
+    }
+
+
+def _stage_state1b_policy_outline(ctx: StageContext) -> dict[str, Any]:
+    ctx.raise_if_cancelled()
+    state1 = ctx.stage_payload("state1_entity_list") or {}
+    entities = state1.get("entities") or []
+    causal_data = str(ctx.inputs.get("causalData") or "")
+    prompt, schema = prompts.build_state1b_policy_outline_prompt(causal_data, entities)
+    parsed = _generate_json(ctx, "state1b_policy_outline", prompt, schema)
+    if not isinstance(parsed, dict):
+        parsed = {"policies": []}
+    policies = parsed.get("policies") or []
+    if not isinstance(policies, list):
+        policies = []
+    valid_ids = {str(e.get("id") or "") for e in entities if isinstance(e, dict)}
+    valid_ids.add("environment")
+    cleaned: list[dict[str, Any]] = []
+    seen_rule_ids: set[str] = set()
+    for entry in policies:
+        if not isinstance(entry, dict):
+            continue
+        rule_id = str(entry.get("rule_id") or "").strip()
+        target = str(entry.get("target_entity_id") or "").strip()
+        method = str(entry.get("target_method") or "").strip()
+        if not rule_id or not target or not method or rule_id in seen_rule_ids:
+            continue
+        if target not in valid_ids:
+            logger.warning(
+                "[code_gen][state1b] dropping rule %r: target_entity_id %r not in entity list",
+                rule_id,
+                target,
+            )
+            continue
+        seen_rule_ids.add(rule_id)
+        cleaned.append(
+            {
+                "rule_id": rule_id,
+                "label": str(entry.get("label") or rule_id),
+                "trigger": str(entry.get("trigger") or "").strip(),
+                "target_entity_id": target,
+                "target_method": method,
+                "inputs": [str(x) for x in (entry.get("inputs") or []) if isinstance(x, str)],
+                "description": str(entry.get("description") or "").strip(),
+            }
+        )
+    return {"stage": "state1b_policy_outline", "policies": cleaned}
+
+
+def _stage_state1c_entity_dependencies(ctx: StageContext) -> dict[str, Any]:
+    ctx.raise_if_cancelled()
+    state1 = ctx.stage_payload("state1_entity_list") or {}
+    entities = state1.get("entities") or []
+    state1b = ctx.stage_payload("state1b_policy_outline") or {}
+    policies = state1b.get("policies") or []
+    causal_data = str(ctx.inputs.get("causalData") or "")
+    prompt, schema = prompts.build_state1c_entity_dependencies_prompt(
+        causal_data, entities, policies
+    )
+    parsed = _generate_json(ctx, "state1c_entity_dependencies", prompt, schema)
+    if not isinstance(parsed, dict):
+        parsed = {"edges": []}
+    edges = parsed.get("edges") or []
+    if not isinstance(edges, list):
+        edges = []
+    valid_ids = {str(e.get("id") or "") for e in entities if isinstance(e, dict)}
+    cleaned: list[dict[str, Any]] = []
+    for entry in edges:
+        if not isinstance(entry, dict):
+            continue
+        a = str(entry.get("from") or "").strip()
+        b = str(entry.get("to") or "").strip()
+        if not a or not b or a == b:
+            continue
+        if a not in valid_ids or b not in valid_ids:
+            continue
+        cleaned.append({"from": a, "to": b, "reason": str(entry.get("reason") or "")})
+    order = prompts.topological_order(entities, cleaned)
+    return {
+        "stage": "state1c_entity_dependencies",
+        "edges": cleaned,
+        "order": order,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 / 3 / 4 / validation / finalize (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+def _required_methods_for_entity(
+    entity_id: str,
+    policy_outline: list[dict[str, Any]],
+) -> list[str]:
+    methods = [
+        str(p.get("target_method") or "").strip()
+        for p in (policy_outline or [])
+        if p.get("target_entity_id") == entity_id
+    ]
+    return [m for m in methods if m]
+
+
+def _selected_entity_filter(ctx: StageContext) -> set[str]:
+    """If the user picked specific entities client-side, restrict generation to those.
+
+    Empty selection → generate all from State 1.
+    """
+    selected = ctx.inputs.get("selectedEntities") or []
+    out: set[str] = set()
+    for entry in selected:
+        if isinstance(entry, dict) and entry.get("id"):
+            out.add(str(entry["id"]))
+        elif isinstance(entry, str):
+            out.add(entry)
+    return out
+
+
+def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
+    ctx.raise_if_cancelled()
+    state1 = ctx.stage_payload("state1_entity_list") or {}
+    entities: list[dict[str, Any]] = list(state1.get("entities") or [])
+    entity_by_id = {str(e.get("id") or ""): e for e in entities if isinstance(e, dict)}
+
+    state1b = ctx.stage_payload("state1b_policy_outline") or {}
+    policy_outline = list(state1b.get("policies") or [])
+
+    state1c = ctx.stage_payload("state1c_entity_dependencies") or {}
+    order = list(state1c.get("order") or list(entity_by_id.keys()))
+
+    user_filter = _selected_entity_filter(ctx)
+    if user_filter:
+        order = [eid for eid in order if eid in user_filter]
+
+    causal_data = str(ctx.inputs.get("causalData") or "")
+    iteration_summaries: list[dict[str, Any]] = []
+    accumulator_files: list[tuple[str, str]] = []
+
+    for index, entity_id in enumerate(order):
+        ctx.raise_if_cancelled()
+        entity_obj = entity_by_id.get(entity_id) or {"id": entity_id}
+
+        existing = checkpoints.load_iteration(ctx.job_id, "state2_code_entity_object", entity_id)
+        if existing and isinstance(existing, dict) and existing.get("code"):
+            ctx.emit_stage_message(
+                "state2_code_entity_object",
+                f"state2: skip {entity_id} (already generated)",
+            )
+            iteration_summaries.append(
+                {
+                    "iterId": entity_id,
+                    "filename": existing.get("filename") or f"{entity_id}.py",
+                    "validation": existing.get("validation") or {"errors": []},
+                }
+            )
+            accumulator_files.append((existing.get("filename") or f"{entity_id}.py", existing.get("code") or ""))
+            continue
+
+        ctx.emit_stage_message(
+            "state2_code_entity_object",
+            f"state2: generating {entity_id} ({index + 1}/{len(order)})",
+        )
+
+        accumulator_blob = prompts.concat_with_delimiters(accumulator_files)
+        digest_collected: dict[str, Any] = {"classes": []}
+        for _, prior_code in accumulator_files:
+            digest_collected["classes"].extend(
+                prompts.interface_digest_from_source(prior_code).get("classes") or []
+            )
+
+        retry_error: str | None = None
+        code = ""
+        validation_errors: list[str] = []
+        for attempt in range(2):  # one initial + one retry
+            prompt = prompts.build_state2_entity_prompt(
+                causal_data=causal_data,
+                entity_id=entity_id,
+                entity_obj=entity_obj,
+                accumulator_blob=accumulator_blob,
+                interface_digest=digest_collected,
+                policy_outline=policy_outline,
+                retry_error=retry_error,
+            )
+            code = _generate_text(ctx, "state2_code_entity_object", prompt)
+            validation_errors = prompts.validate_entity_protocol(
+                code,
+                required_methods=_required_methods_for_entity(entity_id, policy_outline),
+            )
+            if not validation_errors:
+                break
+            retry_error = "; ".join(validation_errors)
+            ctx.emit_stage_message(
+                "state2_code_entity_object",
+                f"state2: {entity_id} validation failed (attempt {attempt + 1}/2): {retry_error}",
+            )
+
+        filename = f"{entity_id}.py"
+        payload = {
+            "entityId": entity_id,
+            "filename": filename,
+            "code": code,
+            "validation": {"errors": validation_errors},
+        }
+        checkpoints.save_iteration(ctx.job_id, "state2_code_entity_object", entity_id, payload)
+        iteration_summaries.append(
+            {"iterId": entity_id, "filename": filename, "validation": payload["validation"]}
+        )
+        accumulator_files.append((filename, code))
+        touch_activity(ctx.job)
+
+    return {
+        "stage": "state2_code_entity_object",
+        "iterations": iteration_summaries,
+        "iterationCount": len(iteration_summaries),
+    }
+
+
+def _stage_state2v_validate_protocol(ctx: StageContext) -> dict[str, Any]:
+    ctx.raise_if_cancelled()
+    iterations = checkpoints.list_iterations(ctx.job_id, "state2_code_entity_object")
+    failures: list[dict[str, Any]] = []
+    for entry in iterations:
+        payload = checkpoints.load_iteration(
+            ctx.job_id, "state2_code_entity_object", entry["iterId"]
+        )
+        if not isinstance(payload, dict):
+            failures.append({"iterId": entry["iterId"], "errors": ["payload missing"]})
+            continue
+        errors = list((payload.get("validation") or {}).get("errors") or [])
+        if errors:
+            failures.append({"iterId": entry["iterId"], "errors": errors})
+    if failures:
+        msg = "; ".join(f"{f['iterId']}: {', '.join(f['errors'])}" for f in failures)
+        raise RuntimeError(f"state2 validation failed: {msg}")
+    return {"stage": "state2v_validate_protocol", "iterations": len(iterations), "failures": []}
+
+
+def _stage_state3_code_environment(ctx: StageContext) -> dict[str, Any]:
+    ctx.raise_if_cancelled()
+    causal_data = str(ctx.inputs.get("causalData") or "")
+    map_node_json = ctx.inputs.get("mapNodeJson")
+    entities_blob = checkpoints.concat_iterations_with_delimiters(
+        ctx.job_id, "state2_code_entity_object"
+    )
+
+    retry_error: str | None = None
+    code = ""
+    errors: list[str] = []
+    for attempt in range(2):
+        prompt = prompts.build_state3_environment_prompt(
+            causal_data=causal_data,
+            entities_blob=entities_blob,
+            map_node_json=map_node_json if isinstance(map_node_json, dict) else None,
+            retry_error=retry_error,
+        )
+        code = _generate_text(ctx, "state3_code_environment", prompt)
+        errors = prompts.validate_environment_protocol(code)
+        if not errors:
+            break
+        retry_error = "; ".join(errors)
+        ctx.emit_stage_message(
+            "state3_code_environment",
+            f"state3: validation failed (attempt {attempt + 1}/2): {retry_error}",
+        )
+
+    return {
+        "stage": "state3_code_environment",
+        "filename": "environment.py",
+        "code": code,
+        "validation": {"errors": errors},
+        "mapAvailable": isinstance(map_node_json, dict) and bool(map_node_json),
+    }
+
+
+def _stage_state4_code_policy(ctx: StageContext) -> dict[str, Any]:
+    ctx.raise_if_cancelled()
+    state1b = ctx.stage_payload("state1b_policy_outline") or {}
+    policies: list[dict[str, Any]] = list(state1b.get("policies") or [])
+
+    selected_policies = ctx.inputs.get("selectedPolicies") or []
+    if selected_policies:
+        wanted_ids: set[str] = set()
+        for entry in selected_policies:
+            if isinstance(entry, dict) and entry.get("rule_id"):
+                wanted_ids.add(str(entry["rule_id"]))
+            elif isinstance(entry, str):
+                wanted_ids.add(entry)
+        if wanted_ids:
+            policies = [p for p in policies if p.get("rule_id") in wanted_ids]
+
+    state3 = ctx.stage_payload("state3_code_environment") or {}
+    environment_code = str(state3.get("code") or "")
+    entities_blob = checkpoints.concat_iterations_with_delimiters(
+        ctx.job_id, "state2_code_entity_object"
+    )
+    causal_data = str(ctx.inputs.get("causalData") or "")
+    iteration_summaries: list[dict[str, Any]] = []
+
+    for index, rule in enumerate(policies):
+        ctx.raise_if_cancelled()
+        rule_id = str(rule.get("rule_id") or f"policy_{index}")
+        existing = checkpoints.load_iteration(ctx.job_id, "state4_code_policy", rule_id)
+        if existing and isinstance(existing, dict) and existing.get("code"):
+            ctx.emit_stage_message(
+                "state4_code_policy",
+                f"state4: skip {rule_id} (already generated)",
+            )
+            iteration_summaries.append(
+                {"iterId": rule_id, "filename": existing.get("filename") or f"{rule_id}.py"}
+            )
+            continue
+
+        ctx.emit_stage_message(
+            "state4_code_policy",
+            f"state4: generating {rule_id} ({index + 1}/{len(policies)})",
+        )
+        policies_blob = checkpoints.concat_iterations_with_delimiters(
+            ctx.job_id, "state4_code_policy"
+        )
+
+        retry_error: str | None = None
+        code = ""
+        errors: list[str] = []
+        for attempt in range(2):
+            prompt = prompts.build_state4_policy_prompt(
+                causal_data=causal_data,
+                rule=rule,
+                entities_blob=entities_blob,
+                environment_code=environment_code,
+                policies_accumulator=policies_blob,
+                retry_error=retry_error,
+            )
+            code = _generate_text(ctx, "state4_code_policy", prompt)
+            errors = prompts.validate_policy_protocol(code)
+            if not errors:
+                break
+            retry_error = "; ".join(errors)
+            ctx.emit_stage_message(
+                "state4_code_policy",
+                f"state4: {rule_id} validation failed (attempt {attempt + 1}/2): {retry_error}",
+            )
+
+        filename = f"{rule_id}.py"
+        payload = {
+            "ruleId": rule_id,
+            "filename": filename,
+            "code": code,
+            "validation": {"errors": errors},
+        }
+        checkpoints.save_iteration(ctx.job_id, "state4_code_policy", rule_id, payload)
+        iteration_summaries.append({"iterId": rule_id, "filename": filename})
+        touch_activity(ctx.job)
+
+    return {
+        "stage": "state4_code_policy",
+        "iterations": iteration_summaries,
+        "iterationCount": len(iteration_summaries),
+    }
+
+
+def _stage_state4v_validate_policy(ctx: StageContext) -> dict[str, Any]:
+    ctx.raise_if_cancelled()
+    iterations = checkpoints.list_iterations(ctx.job_id, "state4_code_policy")
+    failures: list[dict[str, Any]] = []
+    for entry in iterations:
+        payload = checkpoints.load_iteration(
+            ctx.job_id, "state4_code_policy", entry["iterId"]
+        )
+        if not isinstance(payload, dict):
+            failures.append({"iterId": entry["iterId"], "errors": ["payload missing"]})
+            continue
+        errors = list((payload.get("validation") or {}).get("errors") or [])
+        if errors:
+            failures.append({"iterId": entry["iterId"], "errors": errors})
+    if failures:
+        msg = "; ".join(f"{f['iterId']}: {', '.join(f['errors'])}" for f in failures)
+        raise RuntimeError(f"state4 validation failed: {msg}")
+    return {"stage": "state4v_validate_policy", "iterations": len(iterations), "failures": []}
+
+
+def _stage_finalize_bundle(ctx: StageContext) -> dict[str, Any]:
+    """Write a flat artifact tree under ``<job>/artifacts/``.
+
+    Layout:
+      artifacts/entities/<id>.py
+      artifacts/environment.py
+      artifacts/policies/<rule_id>.py
+      artifacts/manifest.json
+    """
+    ctx.raise_if_cancelled()
+    base = checkpoints.artifact_root(ctx.job_id)
+    entities_dir = base / "entities"
+    policies_dir = base / "policies"
+    entities_dir.mkdir(parents=True, exist_ok=True)
+    policies_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_files: list[dict[str, Any]] = []
+
+    for entry in checkpoints.list_iterations(ctx.job_id, "state2_code_entity_object"):
+        payload = checkpoints.load_iteration(
+            ctx.job_id, "state2_code_entity_object", entry["iterId"]
+        )
+        if not isinstance(payload, dict):
+            continue
+        filename = str(payload.get("filename") or f"{entry['iterId']}.py")
+        target = entities_dir / filename
+        target.write_text(str(payload.get("code") or ""), encoding="utf-8")
+        manifest_files.append({"path": f"entities/{filename}", "iterId": entry["iterId"], "kind": "entity"})
+
+    state3 = ctx.stage_payload("state3_code_environment") or {}
+    env_code = str(state3.get("code") or "")
+    if env_code.strip():
+        env_path = base / "environment.py"
+        env_path.write_text(env_code, encoding="utf-8")
+        manifest_files.append({"path": "environment.py", "kind": "environment"})
+
+    for entry in checkpoints.list_iterations(ctx.job_id, "state4_code_policy"):
+        payload = checkpoints.load_iteration(
+            ctx.job_id, "state4_code_policy", entry["iterId"]
+        )
+        if not isinstance(payload, dict):
+            continue
+        filename = str(payload.get("filename") or f"{entry['iterId']}.py")
+        target = policies_dir / filename
+        target.write_text(str(payload.get("code") or ""), encoding="utf-8")
+        manifest_files.append({"path": f"policies/{filename}", "iterId": entry["iterId"], "kind": "policy"})
+
+    manifest = {
+        "pipeline": "code_gen",
+        "jobId": ctx.job_id,
+        "files": manifest_files,
+        "tokenUsage": dict(ctx.usage) if ctx.usage else {},
+    }
+    import json as _json
+
+    (base / "manifest.json").write_text(
+        _json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return {"stage": "finalize_bundle", "fileCount": len(manifest_files), "files": manifest_files}
+
+
+# ---------------------------------------------------------------------------
+# Stage registry
+# ---------------------------------------------------------------------------
+
+
+def _stage_stub(name: str) -> StageFn:
+    def _impl(ctx: StageContext) -> dict[str, Any]:
+        ctx.raise_if_cancelled()
+        ctx.emit_stage_message(name, f"{name}: stub (not yet implemented)")
+        return {
+            "stage": name,
+            "stub": True,
+            "message": "Stage not yet implemented (Phase 2 scaffold).",
+        }
+
+    return _impl
+
+
+STAGE_REGISTRY: dict[str, StageFn] = {
+    stage: _stage_stub(stage) for stage in checkpoints.STAGE_ORDER
+}
+STAGE_REGISTRY["state1_entity_list"] = _stage_state1_entity_list
+STAGE_REGISTRY["state1b_policy_outline"] = _stage_state1b_policy_outline
+STAGE_REGISTRY["state1c_entity_dependencies"] = _stage_state1c_entity_dependencies
+STAGE_REGISTRY["state2_code_entity_object"] = _stage_state2_code_entity_object
+STAGE_REGISTRY["state2v_validate_protocol"] = _stage_state2v_validate_protocol
+STAGE_REGISTRY["state3_code_environment"] = _stage_state3_code_environment
+STAGE_REGISTRY["state4_code_policy"] = _stage_state4_code_policy
+STAGE_REGISTRY["state4v_validate_policy"] = _stage_state4v_validate_policy
+STAGE_REGISTRY["finalize_bundle"] = _stage_finalize_bundle
+
+
+def run_stage_inline(
+    *,
+    stage: str,
+    job: JobRecord,
+    api_key: str,
+    model_name: str,
+    use_env_model_overrides: bool,
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    """Run a single stage in the calling thread, persisting its checkpoint.
+
+    Used by the ``preview_entities`` HTTP endpoint to run Stage 1 + Stage 1b
+    synchronously from a request handler. Skips re-running if the stage is
+    already on disk.
+    """
+    impl = STAGE_REGISTRY.get(stage)
+    if impl is None:
+        raise KeyError(f"unknown stage {stage!r}")
+    existing = checkpoints.load_stage(job.job_id, stage)
+    if existing is not None:
+        return existing
+    ctx = StageContext(
+        job=job,
+        api_key=api_key,
+        model_name=model_name,
+        use_env_model_overrides=use_env_model_overrides,
+        inputs=inputs,
+    )
+    payload = impl(ctx)
+    checkpoints.save_stage(job.job_id, stage, payload)
+    with_completed = list(job.completed_stages or [])
+    if stage not in with_completed:
+        with_completed.append(stage)
+        job.completed_stages = with_completed
+    return payload
+
+
+def run_code_gen_worker(
+    *,
+    job: JobRecord,
+    api_key: str,
+    model_name: str,
+    use_env_model_overrides: bool,
+    inputs: dict[str, Any],
+) -> None:
+    """Background worker entry point.
+
+    Walks ``STAGE_ORDER``, skipping any stage whose checkpoint already exists,
+    and emits the same ``stage`` / ``error`` / ``result`` / ``done`` events as
+    the map_extract worker so the existing frontend status path Just Works.
+    """
+    ctx = StageContext(
+        job=job,
+        api_key=api_key,
+        model_name=model_name,
+        use_env_model_overrides=use_env_model_overrides,
+        inputs=inputs,
+    )
+    completed = _resume_skip_completed(job)
+    final_stage_payload: dict[str, Any] | None = None
+
+    try:
+        for stage in checkpoints.STAGE_ORDER:
+            ctx.raise_if_cancelled()
+
+            if stage in completed:
+                logger.info(
+                    "[code_gen] skip already-completed stage jobId=%s stage=%s",
+                    job.job_id,
+                    stage,
+                )
+                ctx.emit_stage_message(stage, f"{stage}: skipped (already completed)")
+                continue
+
+            ctx.emit_stage_message(stage, f"{stage}: starting")
+            touch_activity(job)
+
+            impl = STAGE_REGISTRY[stage]
+            payload = impl(ctx)
+
+            checkpoints.save_stage(job.job_id, stage, payload)
+            with_completed = list(job.completed_stages or [])
+            if stage not in with_completed:
+                with_completed.append(stage)
+                job.completed_stages = with_completed
+            touch_activity(job)
+            usage_snapshot = (
+                {
+                    "promptTokens": int(ctx.usage.get("prompt_tokens", 0)),
+                    "outputTokens": int(ctx.usage.get("output_tokens", 0)),
+                    "totalTokens": int(ctx.usage.get("total_tokens", 0)),
+                    "callCount": int(ctx.usage.get("call_count", 0)),
+                }
+                if ctx.usage
+                else None
+            )
+            ctx.emit_stage_message(stage, f"{stage}: done", token_usage=usage_snapshot)
+            final_stage_payload = payload
+
+        result = {
+            "pipeline": "code_gen",
+            "completedStages": list(job.completed_stages),
+            "finalStage": final_stage_payload,
+        }
+        emit_job_event(job, "result", result)
+    except JobCancelledError:
+        logger.info("[code_gen] cancelled jobId=%s", job.job_id)
+        from ..services.job_store import mark_cancelled
+
+        mark_cancelled(job.job_id)
+    except Exception as exc:  # pragma: no cover - defensive surface
+        logger.exception("[code_gen] worker failed jobId=%s", job.job_id)
+        emit_job_event(job, "error", {"error": f"code_gen worker failed: {exc}"})
+    finally:
+        emit_job_event(job, "done", None)
