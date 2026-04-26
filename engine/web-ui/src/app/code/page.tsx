@@ -16,6 +16,8 @@ import {
 import {
     createComponent,
     createProject,
+    loadCausalArtifactsForItem,
+    loadCausalSourceItems,
     loadComponents,
     loadProjects,
     saveCausalArtifactsForItem,
@@ -99,19 +101,48 @@ function sanitizeFilenameSegment(value: string): string {
     return value.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "imported";
 }
 
-const EXTRACTION_DELAY_MS = 1300;
 const PROGRESS_TICK_MS = 240;
 const PROGRESS_STEP = 6;
 
-const INITIAL_ENTITIES: GeneratedEntity[] = [
-    { id: "entity-1", name: "Janitor", count: 8, selected: true },
-    { id: "entity-2", name: "Garbage Truck", count: 14, selected: true },
-    { id: "entity-3", name: "Transfer Station", count: 4, selected: true },
-    { id: "entity-4", name: "Recycling Crew", count: 6, selected: true },
-    { id: "entity-5", name: "Entity 1", count: 11, selected: true },
-    { id: "entity-6", name: "Entity 2", count: 5, selected: true },
-    { id: "entity-7", name: "Entity 3", count: 3, selected: true },
-];
+async function aggregateEntitiesFromCausalComponents(
+    componentIds: string[],
+): Promise<GeneratedEntity[]> {
+    const counts = new Map<string, number>();
+    for (const componentId of componentIds) {
+        let sources;
+        try {
+            sources = await loadCausalSourceItems("", componentId);
+        } catch {
+            continue;
+        }
+        for (const source of sources) {
+            try {
+                const artifacts = await loadCausalArtifactsForItem(source.id);
+                for (const chunk of artifacts.raw_extraction || []) {
+                    for (const cls of chunk.classes || []) {
+                        for (const rel of cls.extracted || []) {
+                            for (const term of [rel.head, rel.tail]) {
+                                const trimmed = (term || "").trim();
+                                if (!trimmed) continue;
+                                counts.set(trimmed, (counts.get(trimmed) || 0) + 1);
+                            }
+                        }
+                    }
+                }
+            } catch {
+                // Skip sources without artifacts.
+            }
+        }
+    }
+    return Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([name, count], idx) => ({
+            id: `entity-${String(idx)}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+            name,
+            count,
+            selected: true,
+        }));
+}
 
 function makeSlug(value: string): string {
     const trimmed = value.trim().toLowerCase();
@@ -386,14 +417,20 @@ export default function CodePage() {
 
     const [projects, setProjects] = useState<SimulationProject[]>([]);
     const [components, setComponents] = useState<SimulationComponent[]>([]);
-    const [entities, setEntities] = useState<GeneratedEntity[]>(INITIAL_ENTITIES);
+    const [entities, setEntities] = useState<GeneratedEntity[]>([]);
     const [isExtracted, setIsExtracted] = useState<boolean>(false);
     const [isExtracting, setIsExtracting] = useState<boolean>(false);
+    const [extractError, setExtractError] = useState<string>("");
     const [isGenerating, setIsGenerating] = useState<boolean>(false);
     const [progress, setProgress] = useState<number>(0);
     const [isImporting, setIsImporting] = useState<boolean>(false);
     const [importMessage, setImportMessage] = useState<string>("");
     const [importError, setImportError] = useState<string>("");
+    const [selectedCausalIds, setSelectedCausalIds] = useState<Set<string>>(new Set());
+    const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
+    const [isCodeGenRunning, setIsCodeGenRunning] = useState<boolean>(false);
+
+    const inputsLocked = isCodeGenRunning;
 
     const progressTimerRef = useRef<number | null>(null);
     const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -582,16 +619,56 @@ export default function CodePage() {
         if (isExtracting) {
             return;
         }
+        if (selectedCausalIds.size === 0) {
+            setExtractError("Select at least one causal artifact above before extracting.");
+            return;
+        }
 
         stopGeneration();
         setProgress(0);
+        setExtractError("");
         setIsExtracting(true);
 
-        window.setTimeout(() => {
-            setIsExtracted(true);
-            setIsExtracting(false);
-            setProgress(12);
-        }, EXTRACTION_DELAY_MS);
+        void (async () => {
+            try {
+                const aggregated = await aggregateEntitiesFromCausalComponents(
+                    Array.from(selectedCausalIds),
+                );
+                setEntities(aggregated);
+                setIsExtracted(true);
+                setProgress(aggregated.length > 0 ? 12 : 0);
+                if (aggregated.length === 0) {
+                    setExtractError(
+                        "No extracted relations found in the selected causal artifacts.",
+                    );
+                }
+            } catch (err) {
+                setExtractError(
+                    err instanceof Error ? err.message : "Causal aggregation failed.",
+                );
+            } finally {
+                setIsExtracting(false);
+            }
+        })();
+    };
+
+    const handleToggleCausalSelection = (id: string) => {
+        if (inputsLocked) return;
+        setSelectedCausalIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+        setIsExtracted(false);
+        setEntities([]);
+        setProgress(0);
+        setExtractError("");
+    };
+
+    const handleToggleMapSelection = (id: string) => {
+        if (inputsLocked) return;
+        setSelectedMapId((prev) => (prev === id ? null : id));
     };
 
     const handleGenerate = () => {
@@ -628,6 +705,7 @@ export default function CodePage() {
     };
 
     const handleToggleEntity = (targetId: string) => {
+        if (inputsLocked) return;
         setEntities((prev) =>
             prev.map((entity) =>
                 entity.id === targetId ? { ...entity, selected: !entity.selected } : entity,
@@ -947,7 +1025,7 @@ export default function CodePage() {
                     <button
                         type="button"
                         onClick={handleOpenImportDialog}
-                        disabled={isImporting}
+                        disabled={isImporting || inputsLocked}
                         className="rounded-md border border-emerald-700 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                         {isImporting ? "Importing JSON..." : "Import JSON (Causal/Map)"}
@@ -973,6 +1051,8 @@ export default function CodePage() {
                         items={causalItems}
                         onDelete={handleDeleteComponent}
                         onCreate={handleCreateFromEmptySection}
+                        selectedIds={selectedCausalIds}
+                        onToggleSelect={handleToggleCausalSelection}
                     />
 
                     <UsedItemsSection
@@ -981,30 +1061,43 @@ export default function CodePage() {
                         items={mapItems}
                         onDelete={handleDeleteComponent}
                         onCreate={handleCreateFromEmptySection}
+                        selectedIds={selectedMapId ? new Set([selectedMapId]) : undefined}
+                        onToggleSelect={handleToggleMapSelection}
                     />
 
                     <div>
-                        <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">
-                            Entity that will be generated
-                        </h2>
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <h2 className="text-xl font-bold text-neutral-100 md:text-2xl">
+                                Entity that will be generated
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={handleExtractFromCausal}
+                                disabled={isExtracting || inputsLocked}
+                                className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {isExtracting
+                                    ? "Extracting..."
+                                    : isExtracted
+                                      ? "Re-extract from causal"
+                                      : "Extract from causal"}
+                            </button>
+                        </div>
+
+                        {extractError ? (
+                            <div className="mb-3 rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                                {extractError}
+                            </div>
+                        ) : null}
 
                         <div className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-4 md:p-6">
                             {!isExtracted ? (
                                 <div className="relative min-h-90 rounded-lg border border-dashed border-neutral-700 bg-neutral-900/60 p-6">
-                                    <div className="absolute right-4 top-4">
-                                        <button
-                                            type="button"
-                                            onClick={handleExtractFromCausal}
-                                            disabled={isExtracting}
-                                            className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                                        >
-                                            {isExtracting ? "Extracting..." : "Extract from causal"}
-                                        </button>
-                                    </div>
-
-                                    <div className="flex h-full min-h-75 items-center justify-center text-center">
+                                    <div className="flex h-full min-h-75 flex-col items-center justify-center gap-3 text-center">
                                         <p className="max-w-md text-sm text-neutral-400">
-                                            Run extraction to populate entity candidates and generation controls.
+                                            {selectedCausalIds.size === 0
+                                                ? "Click one or more causal cards above to select them, then run extraction."
+                                                : `Selected ${String(selectedCausalIds.size)} causal source(s). Click "Extract from causal" to aggregate entities.`}
                                         </p>
                                     </div>
                                 </div>
@@ -1052,7 +1145,8 @@ export default function CodePage() {
                                                             type="checkbox"
                                                             checked={entity.selected}
                                                             onChange={() => handleToggleEntity(entity.id)}
-                                                            className="h-4 w-4 accent-sky-500"
+                                                            disabled={inputsLocked}
+                                                            className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                                                         />
                                                         <span className="text-sm text-neutral-200">{entity.name}</span>
                                                     </div>
@@ -1105,7 +1199,14 @@ export default function CodePage() {
                     </div>
 
                     <CodeGenWorkspace
-                        causalComponentIds={causalItems.map((item) => item.id)}
+                        causalComponentIds={
+                            selectedCausalIds.size > 0
+                                ? causalItems
+                                      .map((item) => item.id)
+                                      .filter((id) => selectedCausalIds.has(id))
+                                : causalItems.map((item) => item.id)
+                        }
+                        onRunningChange={setIsCodeGenRunning}
                     />
                 </section>
             </main>

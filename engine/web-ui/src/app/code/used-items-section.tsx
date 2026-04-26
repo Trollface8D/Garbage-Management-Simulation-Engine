@@ -15,6 +15,8 @@ type UsedItemsSectionProps = {
   items: UsedItem[];
   onDelete: (componentId: string) => void;
   onCreate: (category: "Causal" | "Map") => void;
+  selectedIds?: ReadonlySet<string>;
+  onToggleSelect?: (id: string) => void;
 };
 
 export default function UsedItemsSection({
@@ -23,6 +25,8 @@ export default function UsedItemsSection({
   items,
   onDelete,
   onCreate,
+  selectedIds,
+  onToggleSelect,
 }: UsedItemsSectionProps) {
   const isCausal = category === "Causal";
   const actionLabel = isCausal ? "Create Causal Extraction" : "Create Map Extraction";
@@ -53,14 +57,20 @@ export default function UsedItemsSection({
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {items.map((item) =>
-            isCausal ? (
+          {items.map((item) => {
+            const isSelected = selectedIds?.has(item.id) ?? false;
+            const handleSelect = onToggleSelect
+              ? () => onToggleSelect(item.id)
+              : undefined;
+            return isCausal ? (
               <CausalUsedCard
                 key={item.id}
                 title={item.title}
                 project={item.project}
                 lastEdited={item.lastEdited}
                 onDelete={() => onDelete(item.id)}
+                selected={isSelected}
+                onSelect={handleSelect}
               />
             ) : (
               <MapUsedCard
@@ -69,9 +79,11 @@ export default function UsedItemsSection({
                 project={item.project}
                 lastEdited={item.lastEdited}
                 onDelete={() => onDelete(item.id)}
+                selected={isSelected}
+                onSelect={handleSelect}
               />
-            ),
-          )}
+            );
+          })}
         </div>
       )}
     </div>

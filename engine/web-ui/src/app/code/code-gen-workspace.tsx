@@ -31,6 +31,7 @@ const DEFAULT_MODEL = "gemini-2.5-flash";
 
 type Props = {
   causalComponentIds: string[];
+  onRunningChange?: (running: boolean) => void;
 };
 
 async function aggregateCausalText(items: CausalChoice[]): Promise<string> {
@@ -74,7 +75,7 @@ async function aggregateCausalText(items: CausalChoice[]): Promise<string> {
   return blocks.join("\n\n---\n\n").trim();
 }
 
-export default function CodeGenWorkspace({ causalComponentIds }: Props) {
+export default function CodeGenWorkspace({ causalComponentIds, onRunningChange }: Props) {
   const job = useCodeGenJob();
   const [causalChoices, setCausalChoices] = useState<CausalChoice[]>([]);
   const [selectedCausalIds, setSelectedCausalIds] = useState<Set<string>>(new Set());
@@ -86,6 +87,19 @@ export default function CodeGenWorkspace({ causalComponentIds }: Props) {
   const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([]);
   const [actionError, setActionError] = useState<string>("");
   const lastResultJobIdRef = useRef<string | null>(null);
+
+  const jobStatus = job.status?.status;
+  const isRunning =
+    job.isStarting ||
+    job.isPreviewing ||
+    job.isResuming ||
+    job.isPolling ||
+    jobStatus === "running" ||
+    jobStatus === "queued";
+
+  useEffect(() => {
+    onRunningChange?.(isRunning);
+  }, [isRunning, onRunningChange]);
 
   // Discover causal source documents for the selected causal components.
   useEffect(() => {
@@ -298,9 +312,10 @@ export default function CodeGenWorkspace({ causalComponentIds }: Props) {
                   <label className="flex items-center gap-2 px-1 py-1 text-sm text-neutral-200">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 accent-sky-500"
+                      className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                       checked={selectedCausalIds.has(c.id)}
                       onChange={() => toggleCausal(c.id)}
+                      disabled={isRunning}
                     />
                     <span>{c.label}</span>
                   </label>
@@ -317,7 +332,8 @@ export default function CodeGenWorkspace({ causalComponentIds }: Props) {
             onChange={handleMapJsonChange}
             placeholder='Paste a map node graph as JSON, e.g. {"nodes": [...], "edges": [...]}. Leave blank for fallback policy.'
             rows={6}
-            className="w-full resize-y rounded-md border border-neutral-800 bg-neutral-950 p-2 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600"
+            disabled={isRunning}
+            className="w-full resize-y rounded-md border border-neutral-800 bg-neutral-950 p-2 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
           />
           {mapJsonError ? (
             <p className="mt-1 text-xs text-red-300">{mapJsonError}</p>
@@ -332,14 +348,15 @@ export default function CodeGenWorkspace({ causalComponentIds }: Props) {
             type="text"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600"
+            disabled={isRunning}
+            className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
           />
         </label>
 
         <button
           type="button"
           onClick={() => void handlePreview()}
-          disabled={job.isStarting || job.isPreviewing}
+          disabled={isRunning}
           className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {job.isPreviewing ? "Previewing..." : job.isStarting ? "Starting..." : "Preview entities"}
@@ -371,7 +388,8 @@ export default function CodeGenWorkspace({ causalComponentIds }: Props) {
             lastResultJobIdRef.current = null;
             job.reset();
           }}
-          className="rounded-md border border-neutral-700 bg-neutral-800/40 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:bg-neutral-700/40"
+          disabled={isRunning}
+          className="rounded-md border border-neutral-700 bg-neutral-800/40 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:bg-neutral-700/40 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Reset
         </button>
@@ -401,9 +419,10 @@ export default function CodeGenWorkspace({ causalComponentIds }: Props) {
                     <span className="flex items-center gap-2 text-neutral-100">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 accent-sky-500"
+                        className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                         checked={selectedEntityIds.has(entity.id)}
                         onChange={() => toggleEntity(entity.id)}
+                        disabled={isRunning}
                       />
                       <span>
                         {entity.label}{" "}
@@ -428,9 +447,10 @@ export default function CodeGenWorkspace({ causalComponentIds }: Props) {
                     <span className="flex items-center gap-2 text-neutral-100">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 accent-sky-500"
+                        className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                         checked={selectedPolicyIds.has(policy.rule_id)}
                         onChange={() => togglePolicy(policy.rule_id)}
+                        disabled={isRunning}
                       />
                       <span className="font-semibold">{policy.label}</span>
                     </span>
