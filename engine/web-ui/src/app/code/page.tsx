@@ -104,36 +104,50 @@ function sanitizeFilenameSegment(value: string): string {
 const PROGRESS_TICK_MS = 240;
 const PROGRESS_STEP = 6;
 
+type CausalComponentRef = { projectId: string; componentId: string };
+
 async function aggregateEntitiesFromCausalComponents(
-    componentIds: string[],
+    refs: CausalComponentRef[],
 ): Promise<GeneratedEntity[]> {
     const counts = new Map<string, number>();
-    for (const componentId of componentIds) {
-        let sources;
-        try {
-            sources = await loadCausalSourceItems("", componentId);
-        } catch {
+    let sourceCount = 0;
+    let artifactCount = 0;
+    let relationCount = 0;
+
+    for (const { projectId, componentId } of refs) {
+        if (!projectId || !componentId) {
             continue;
         }
+        const sources = await loadCausalSourceItems(projectId, componentId);
+        sourceCount += sources.length;
         for (const source of sources) {
-            try {
-                const artifacts = await loadCausalArtifactsForItem(source.id);
-                for (const chunk of artifacts.raw_extraction || []) {
-                    for (const cls of chunk.classes || []) {
-                        for (const rel of cls.extracted || []) {
-                            for (const term of [rel.head, rel.tail]) {
-                                const trimmed = (term || "").trim();
-                                if (!trimmed) continue;
-                                counts.set(trimmed, (counts.get(trimmed) || 0) + 1);
-                            }
+            const artifacts = await loadCausalArtifactsForItem(source.id);
+            const chunks = artifacts.raw_extraction || [];
+            if (chunks.length > 0) {
+                artifactCount += 1;
+            }
+            for (const chunk of chunks) {
+                for (const cls of chunk.classes || []) {
+                    for (const rel of cls.extracted || []) {
+                        relationCount += 1;
+                        for (const term of [rel.head, rel.tail]) {
+                            const trimmed = (term || "").trim();
+                            if (!trimmed) continue;
+                            counts.set(trimmed, (counts.get(trimmed) || 0) + 1);
                         }
                     }
                 }
-            } catch {
-                // Skip sources without artifacts.
             }
         }
     }
+
+    if (counts.size === 0) {
+        console.info(
+            "[code-gen] aggregator found 0 entities",
+            { refs, sourceCount, artifactCount, relationCount },
+        );
+    }
+
     return Array.from(counts.entries())
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .map(([name, count], idx) => ({
@@ -629,11 +643,19 @@ export default function CodePage() {
         setExtractError("");
         setIsExtracting(true);
 
+        const refs: CausalComponentRef[] = [];
+        for (const id of selectedCausalIds) {
+            const component =
+                components.find((c) => c.id === id) ?? findSeedComponentById(id);
+            if (!component || component.category !== "Causal") {
+                continue;
+            }
+            refs.push({ projectId: component.projectId, componentId: component.id });
+        }
+
         void (async () => {
             try {
-                const aggregated = await aggregateEntitiesFromCausalComponents(
-                    Array.from(selectedCausalIds),
-                );
+                const aggregated = await aggregateEntitiesFromCausalComponents(refs);
                 setEntities(aggregated);
                 setIsExtracted(true);
                 setProgress(aggregated.length > 0 ? 12 : 0);
