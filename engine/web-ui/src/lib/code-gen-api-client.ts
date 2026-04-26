@@ -169,3 +169,17 @@ export function artifactUrl(jobId: string, relativePath: string): string {
     .map(encodeURIComponent)
     .join("/")}`;
 }
+
+export async function groupEntitiesWithGemini(
+  counts: Record<string, number>,
+  model?: string,
+): Promise<Record<string, number>> {
+  const response = await fetch(`${BASE}/group_entities`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ counts, ...(model ? { model } : {}) }),
+    cache: "no-store",
+  });
+  const payload = await jsonOrThrow<{ counts: Record<string, number> }>(response);
+  return payload.counts || {};
+}

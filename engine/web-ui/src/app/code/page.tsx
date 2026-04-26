@@ -26,6 +26,7 @@ import {
     softDeleteComponent,
     type ExtractionPayloadRecord,
 } from "@/lib/pm-storage";
+import { groupEntitiesWithGemini } from "@/lib/code-gen-api-client";
 import BackToHome from "../components/back-to-home";
 
 type WordCloudWord = {
@@ -443,6 +444,8 @@ export default function CodePage() {
     const [selectedCausalIds, setSelectedCausalIds] = useState<Set<string>>(new Set());
     const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
     const [isCodeGenRunning, setIsCodeGenRunning] = useState<boolean>(false);
+    const [isGroupingEntities, setIsGroupingEntities] = useState<boolean>(false);
+    const [groupError, setGroupError] = useState<string>("");
 
     const inputsLocked = isCodeGenRunning;
 
@@ -641,6 +644,7 @@ export default function CodePage() {
         stopGeneration();
         setProgress(0);
         setExtractError("");
+        setGroupError("");
         setIsExtracting(true);
 
         const refs: CausalComponentRef[] = [];
@@ -674,6 +678,44 @@ export default function CodePage() {
         })();
     };
 
+    const handleGroupWithGemini = () => {
+        if (isGroupingEntities || inputsLocked) return;
+        if (entities.length === 0) {
+            setGroupError("Extract entities first before grouping.");
+            return;
+        }
+        setGroupError("");
+        setIsGroupingEntities(true);
+        const counts: Record<string, number> = {};
+        for (const entity of entities) {
+            counts[entity.name] = (counts[entity.name] || 0) + entity.count;
+        }
+        void (async () => {
+            try {
+                const grouped = await groupEntitiesWithGemini(counts);
+                const next: GeneratedEntity[] = Object.entries(grouped)
+                    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                    .map(([name, count], idx) => ({
+                        id: `entity-grouped-${String(idx)}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+                        name,
+                        count,
+                        selected: true,
+                    }));
+                if (next.length === 0) {
+                    setGroupError("Gemini returned no grouped entities.");
+                    return;
+                }
+                setEntities(next);
+            } catch (err) {
+                setGroupError(
+                    err instanceof Error ? err.message : "Semantic grouping failed.",
+                );
+            } finally {
+                setIsGroupingEntities(false);
+            }
+        })();
+    };
+
     const handleToggleCausalSelection = (id: string) => {
         if (inputsLocked) return;
         setSelectedCausalIds((prev) => {
@@ -686,6 +728,7 @@ export default function CodePage() {
         setEntities([]);
         setProgress(0);
         setExtractError("");
+        setGroupError("");
     };
 
     const handleToggleMapSelection = (id: string) => {
@@ -1092,23 +1135,65 @@ export default function CodePage() {
                             <h2 className="text-xl font-bold text-neutral-100 md:text-2xl">
                                 Entity that will be generated
                             </h2>
-                            <button
-                                type="button"
-                                onClick={handleExtractFromCausal}
-                                disabled={isExtracting || inputsLocked}
-                                className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                                {isExtracting
-                                    ? "Extracting..."
-                                    : isExtracted
-                                      ? "Re-extract from causal"
-                                      : "Extract from causal"}
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleGroupWithGemini}
+                                    disabled={
+                                        isGroupingEntities ||
+                                        inputsLocked ||
+                                        !isExtracted ||
+                                        entities.length === 0
+                                    }
+                                    title="Semantic grouping with Gemini — merges related names and sums counts"
+                                    aria-label="Group entities with Gemini"
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-purple-600/70 bg-purple-500/10 text-purple-200 transition hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {isGroupingEntities ? (
+                                        <svg
+                                            className="h-4 w-4 animate-spin"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                        >
+                                            <path d="M21 12a9 9 0 1 1-6.2-8.55" strokeLinecap="round" />
+                                        </svg>
+                                    ) : (
+                                        <svg
+                                            className="h-4 w-4"
+                                            viewBox="0 0 24 24"
+                                            fill="currentColor"
+                                            aria-hidden="true"
+                                        >
+                                            <path d="M12 2 L13.8 8.2 L20 10 L13.8 11.8 L12 18 L10.2 11.8 L4 10 L10.2 8.2 Z" />
+                                            <path d="M19 16 L19.7 18.3 L22 19 L19.7 19.7 L19 22 L18.3 19.7 L16 19 L18.3 18.3 Z" />
+                                        </svg>
+                                    )}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleExtractFromCausal}
+                                    disabled={isExtracting || inputsLocked}
+                                    className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {isExtracting
+                                        ? "Extracting..."
+                                        : isExtracted
+                                          ? "Re-extract from causal"
+                                          : "Extract from causal"}
+                                </button>
+                            </div>
                         </div>
 
                         {extractError ? (
                             <div className="mb-3 rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
                                 {extractError}
+                            </div>
+                        ) : null}
+                        {groupError ? (
+                            <div className="mb-3 rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                                {groupError}
                             </div>
                         ) : null}
 
