@@ -449,6 +449,7 @@ export default function CodePage() {
     const [isCodeGenRunning, setIsCodeGenRunning] = useState<boolean>(false);
     const [isGroupingEntities, setIsGroupingEntities] = useState<boolean>(false);
     const [groupError, setGroupError] = useState<string>("");
+    const [collapsedParentIds, setCollapsedParentIds] = useState<Set<string>>(new Set());
     const [selectedModel, setSelectedModel] = useState<string>("");
 
     const inputsLocked = isCodeGenRunning;
@@ -487,10 +488,7 @@ export default function CodePage() {
         [],
     );
 
-    const totalEntityCount = useMemo(
-        () => selectedEntities.reduce((sum, entity) => sum + entity.count, 0),
-        [selectedEntities],
-    );
+    const totalEntityCount = useMemo(() => selectedEntities.length, [selectedEntities]);
 
     const selectedComponent = useMemo(() => {
         if (!componentId) {
@@ -649,6 +647,7 @@ export default function CodePage() {
         setProgress(0);
         setExtractError("");
         setGroupError("");
+        setCollapsedParentIds(new Set());
         setIsExtracting(true);
 
         const refs: CausalComponentRef[] = [];
@@ -776,6 +775,9 @@ export default function CodePage() {
                 );
 
                 setEntities(next);
+                // Collapse all groups by default — the user only wants to see
+                // canonical names until they expand a group to fine-tune.
+                setCollapsedParentIds(new Set(parents.map((p) => p.id)));
             } catch (err) {
                 setGroupError(
                     err instanceof Error ? err.message : "Semantic grouping failed.",
@@ -799,6 +801,7 @@ export default function CodePage() {
         setProgress(0);
         setExtractError("");
         setGroupError("");
+        setCollapsedParentIds(new Set());
     };
 
     const handleToggleMapSelection = (id: string) => {
@@ -1320,12 +1323,52 @@ export default function CodePage() {
                                                 const isParent =
                                                     !!entity.memberIds && entity.memberIds.length > 0;
                                                 const isChild = !!entity.parentId;
+                                                if (
+                                                    isChild &&
+                                                    entity.parentId &&
+                                                    collapsedParentIds.has(entity.parentId)
+                                                ) {
+                                                    return null;
+                                                }
+                                                const isCollapsed =
+                                                    isParent && collapsedParentIds.has(entity.id);
                                                 return (
-                                                    <label
+                                                    <div
                                                         key={entity.id}
                                                         className={`flex items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2 last:border-b-0 ${isChild ? "pl-9 bg-neutral-950/30" : ""}`}
                                                     >
-                                                        <div className="flex items-center gap-2">
+                                                        <div className="flex min-w-0 items-center gap-2">
+                                                            {isParent ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        setCollapsedParentIds((prev) => {
+                                                                            const next = new Set(prev);
+                                                                            if (next.has(entity.id))
+                                                                                next.delete(entity.id);
+                                                                            else next.add(entity.id);
+                                                                            return next;
+                                                                        })
+                                                                    }
+                                                                    aria-label={
+                                                                        isCollapsed
+                                                                            ? `Expand ${entity.name}`
+                                                                            : `Collapse ${entity.name}`
+                                                                    }
+                                                                    className="inline-flex h-5 w-5 items-center justify-center rounded text-purple-300 hover:bg-purple-500/10"
+                                                                >
+                                                                    <svg
+                                                                        viewBox="0 0 12 12"
+                                                                        className={`h-3 w-3 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+                                                                        fill="currentColor"
+                                                                        aria-hidden="true"
+                                                                    >
+                                                                        <path d="M3 2 L9 6 L3 10 Z" />
+                                                                    </svg>
+                                                                </button>
+                                                            ) : (
+                                                                <span className="inline-block h-5 w-5" aria-hidden="true" />
+                                                            )}
                                                             <input
                                                                 type="checkbox"
                                                                 checked={entity.selected}
@@ -1334,13 +1377,13 @@ export default function CodePage() {
                                                                 className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                                                             />
                                                             <span
-                                                                className={
+                                                                className={`truncate ${
                                                                     isParent
                                                                         ? "text-sm font-semibold text-purple-200"
                                                                         : isChild
                                                                           ? "text-xs text-neutral-400"
                                                                           : "text-sm text-neutral-200"
-                                                                }
+                                                                }`}
                                                             >
                                                                 {entity.name}
                                                             </span>
@@ -1353,10 +1396,11 @@ export default function CodePage() {
 
                                                         <span
                                                             className={`text-xs font-semibold ${isChild ? "text-neutral-500" : "text-neutral-400"}`}
+                                                            title="Frequency in the source extraction"
                                                         >
-                                                            Count: {String(entity.count)}
+                                                            freq: {String(entity.count)}
                                                         </span>
-                                                    </label>
+                                                    </div>
                                                 );
                                             })}
                                         </div>
