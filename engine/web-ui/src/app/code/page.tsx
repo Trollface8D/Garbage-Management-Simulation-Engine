@@ -46,6 +46,12 @@ const ReactWordcloud = dynamic(
     { ssr: false },
 ) as unknown as ComponentType<WordCloudProps>;
 
+const MODEL_OPTIONS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-3-flash-preview",
+] as const;
+
 type GeneratedEntity = {
     id: string;
     name: string;
@@ -448,6 +454,7 @@ export default function CodePage() {
     const [isCodeGenRunning, setIsCodeGenRunning] = useState<boolean>(false);
     const [isGroupingEntities, setIsGroupingEntities] = useState<boolean>(false);
     const [groupError, setGroupError] = useState<string>("");
+    const [selectedModel, setSelectedModel] = useState<string>("gemini-2.5-flash");
 
     const inputsLocked = isCodeGenRunning;
 
@@ -697,7 +704,7 @@ export default function CodePage() {
         }
         void (async () => {
             try {
-                const groups = await groupEntitiesWithGemini(counts);
+                const groups = await groupEntitiesWithGemini(counts, selectedModel);
                 if (groups.length === 0) {
                     setGroupError("Gemini returned no groups.");
                     return;
@@ -1227,7 +1234,24 @@ export default function CodePage() {
                             <h2 className="text-xl font-bold text-neutral-100 md:text-2xl">
                                 Entity that will be generated
                             </h2>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <label className="flex items-center gap-2 text-xs text-neutral-400">
+                                    <span>Model</span>
+                                    <select
+                                        value={selectedModel}
+                                        onChange={(event) => setSelectedModel(event.target.value)}
+                                        disabled={
+                                            inputsLocked || isExtracting || isGroupingEntities
+                                        }
+                                        className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        {MODEL_OPTIONS.map((option) => (
+                                            <option key={option} value={option}>
+                                                {option}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
                                 <button
                                     type="button"
                                     onClick={handleGroupWithGemini}
@@ -1438,6 +1462,7 @@ export default function CodePage() {
                                 ? mapItems.find((item) => item.id === selectedMapId)?.title ?? null
                                 : null
                         }
+                        model={selectedModel}
                         onRunningChange={setIsCodeGenRunning}
                     />
                 </section>

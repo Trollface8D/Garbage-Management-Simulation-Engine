@@ -28,14 +28,13 @@ type ArtifactFile = {
   iterId?: string;
 };
 
-const DEFAULT_MODEL = "gemini-2.5-flash";
-
 export type CausalSourceRef = { projectId: string; componentId: string };
 
 type Props = {
   causalSourceRefs: CausalSourceRef[];
   selectedMapId?: string | null;
   selectedMapLabel?: string | null;
+  model: string;
   onRunningChange?: (running: boolean) => void;
 };
 
@@ -96,13 +95,13 @@ export default function CodeGenWorkspace({
   causalSourceRefs,
   selectedMapId,
   selectedMapLabel,
+  model,
   onRunningChange,
 }: Props) {
   const job = useCodeGenJob();
   const [causalChoices, setCausalChoices] = useState<CausalChoice[]>([]);
   const [mapGraph, setMapGraph] = useState<MapGraphPayload | null>(null);
   const [mapStatus, setMapStatus] = useState<string>("no map selected");
-  const [model] = useState<string>(DEFAULT_MODEL);
   const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(new Set());
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<Set<string>>(new Set());
   const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([]);
