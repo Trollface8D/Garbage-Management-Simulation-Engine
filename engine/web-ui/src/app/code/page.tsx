@@ -1228,6 +1228,11 @@ export default function CodePage() {
                                       .filter((id) => selectedCausalIds.has(id))
                                 : causalItems.map((item) => item.id)
                         }
+                        selectedMapLabel={
+                            selectedMapId
+                                ? mapItems.find((item) => item.id === selectedMapId)?.title ?? null
+                                : null
+                        }
                         onRunningChange={setIsCodeGenRunning}
                     />
                 </section>

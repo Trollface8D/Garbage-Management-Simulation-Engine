@@ -31,6 +31,7 @@ const DEFAULT_MODEL = "gemini-2.5-flash";
 
 type Props = {
   causalComponentIds: string[];
+  selectedMapLabel?: string | null;
   onRunningChange?: (running: boolean) => void;
 };
 
@@ -75,10 +76,13 @@ async function aggregateCausalText(items: CausalChoice[]): Promise<string> {
   return blocks.join("\n\n---\n\n").trim();
 }
 
-export default function CodeGenWorkspace({ causalComponentIds, onRunningChange }: Props) {
+export default function CodeGenWorkspace({
+  causalComponentIds,
+  selectedMapLabel,
+  onRunningChange,
+}: Props) {
   const job = useCodeGenJob();
   const [causalChoices, setCausalChoices] = useState<CausalChoice[]>([]);
-  const [selectedCausalIds, setSelectedCausalIds] = useState<Set<string>>(new Set());
   const [mapJsonText, setMapJsonText] = useState<string>("");
   const [mapJsonError, setMapJsonError] = useState<string>("");
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
@@ -86,6 +90,9 @@ export default function CodeGenWorkspace({ causalComponentIds, onRunningChange }
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<Set<string>>(new Set());
   const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([]);
   const [actionError, setActionError] = useState<string>("");
+  const [previewOpen, setPreviewOpen] = useState<boolean>(false);
+  const [previewText, setPreviewText] = useState<string>("");
+  const [previewLoading, setPreviewLoading] = useState<boolean>(false);
   const lastResultJobIdRef = useRef<string | null>(null);
 
   const jobStatus = job.status?.status;
@@ -158,15 +165,6 @@ export default function CodeGenWorkspace({ causalComponentIds, onRunningChange }
     })();
   }, [job.status?.status, job.jobId]);
 
-  const toggleCausal = (id: string) => {
-    setSelectedCausalIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   const toggleEntity = (id: string) => {
     setSelectedEntityIds((prev) => {
       const next = new Set(prev);
@@ -214,19 +212,43 @@ export default function CodeGenWorkspace({ causalComponentIds, onRunningChange }
     }
   }, [mapJsonText]);
 
+  const handleOpenPreview = async () => {
+    setPreviewOpen(true);
+    if (causalChoices.length === 0) {
+      setPreviewText("No causal source documents resolved from the selected components.");
+      return;
+    }
+    setPreviewLoading(true);
+    try {
+      const text = await aggregateCausalText(causalChoices);
+      setPreviewText(text || "(empty — selected sources have no extractable text)");
+    } catch (err) {
+      setPreviewText(err instanceof Error ? err.message : "Failed to build preview.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleCopyPreview = async () => {
+    try {
+      await navigator.clipboard.writeText(previewText);
+    } catch {
+      // Best-effort; clipboard may be unavailable.
+    }
+  };
+
   const handlePreview = async () => {
     setActionError("");
     if (mapJsonError) {
       setActionError("Fix map JSON before previewing.");
       return;
     }
-    if (selectedCausalIds.size === 0) {
-      setActionError("Select at least one causal source.");
+    if (causalChoices.length === 0) {
+      setActionError("No causal sources resolved from the selected components above.");
       return;
     }
 
-    const chosen = causalChoices.filter((c) => selectedCausalIds.has(c.id));
-    const causalData = await aggregateCausalText(chosen);
+    const causalData = await aggregateCausalText(causalChoices);
     if (!causalData) {
       setActionError("Selected causal sources have no extractable text.");
       return;
@@ -255,12 +277,7 @@ export default function CodeGenWorkspace({ causalComponentIds, onRunningChange }
       return;
     }
     try {
-      // Re-create the job manifest with refined selections so the backend
-      // honors them. The existing job's manifest already has full sets — we
-      // simply restart with the user's filter.
-      const causalData = await aggregateCausalText(
-        causalChoices.filter((c) => selectedCausalIds.has(c.id)),
-      );
+      const causalData = await aggregateCausalText(causalChoices);
       const refinedJobId = await job.start({
         causalData,
         mapNodeJson: parsedMapJson,
@@ -289,70 +306,79 @@ export default function CodeGenWorkspace({ causalComponentIds, onRunningChange }
   const stageMessage = job.status?.stageMessage ?? "";
   const jobStatusLabel = job.status?.status ?? "—";
 
+  const causalCount = causalChoices.length;
+  const mapStatus = selectedMapLabel
+    ? `1 map · ${selectedMapLabel}`
+    : parsedMapJson
+      ? "1 map (pasted JSON)"
+      : "no map";
+
   return (
     <section className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-4 md:p-6">
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-xl font-bold text-neutral-100 md:text-2xl">Run real code-gen pipeline</h2>
+        <h2 className="text-xl font-bold text-neutral-100 md:text-2xl">Generate simulation code</h2>
         <p className="text-xs text-neutral-400">
           {job.jobId ? `Job: ${job.jobId}` : "No active job"}
         </p>
       </header>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
-          <p className="mb-2 text-sm font-semibold text-neutral-200">Causal sources</p>
-          {causalChoices.length === 0 ? (
-            <p className="text-xs text-neutral-500">
-              No causal source documents found for the selected components.
-            </p>
-          ) : (
-            <ul className="max-h-40 overflow-y-auto">
-              {causalChoices.map((c) => (
-                <li key={c.id}>
-                  <label className="flex items-center gap-2 px-1 py-1 text-sm text-neutral-200">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      checked={selectedCausalIds.has(c.id)}
-                      onChange={() => toggleCausal(c.id)}
-                      disabled={isRunning}
-                    />
-                    <span>{c.label}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
-          <p className="mb-2 text-sm font-semibold text-neutral-200">Map JSON (optional)</p>
-          <textarea
-            value={mapJsonText}
-            onChange={handleMapJsonChange}
-            placeholder='Paste a map node graph as JSON, e.g. {"nodes": [...], "edges": [...]}. Leave blank for fallback policy.'
-            rows={6}
-            disabled={isRunning}
-            className="w-full resize-y rounded-md border border-neutral-800 bg-neutral-950 p-2 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
-          />
-          {mapJsonError ? (
-            <p className="mt-1 text-xs text-red-300">{mapJsonError}</p>
-          ) : null}
-        </div>
+      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-sm text-neutral-300">
+        <span>
+          <span className="font-semibold text-neutral-100">{causalCount}</span> causal source
+          {causalCount === 1 ? "" : "s"}
+        </span>
+        <span className="text-neutral-600">·</span>
+        <span>{mapStatus}</span>
+        <span className="text-neutral-600">·</span>
+        <span>
+          model <span className="font-mono text-neutral-100">{model}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => void handleOpenPreview()}
+          className="ml-auto rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-200 transition hover:border-sky-500 hover:text-sky-200"
+        >
+          Preview prompt input
+        </button>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm text-neutral-300">
-          <span>Model</span>
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            disabled={isRunning}
-            className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
-          />
-        </label>
+      <details className="mb-4 rounded-lg border border-neutral-800 bg-neutral-950/40">
+        <summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-neutral-200">
+          Advanced
+        </summary>
+        <div className="space-y-3 px-3 pb-3">
+          <label className="flex items-center gap-2 text-sm text-neutral-300">
+            <span>Model</span>
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={isRunning}
+              className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+          <div>
+            <p className="mb-1 text-sm font-semibold text-neutral-200">Map JSON override (optional)</p>
+            <p className="mb-2 text-xs text-neutral-500">
+              Map cards above don&apos;t auto-load yet — paste a node graph here to feed State 3.
+              Leave blank for the fallback policy.
+            </p>
+            <textarea
+              value={mapJsonText}
+              onChange={handleMapJsonChange}
+              placeholder='{"nodes": [...], "edges": [...]}'
+              rows={5}
+              disabled={isRunning}
+              className="w-full resize-y rounded-md border border-neutral-800 bg-neutral-950 p-2 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            {mapJsonError ? (
+              <p className="mt-1 text-xs text-red-300">{mapJsonError}</p>
+            ) : null}
+          </div>
+        </div>
+      </details>
 
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={() => void handlePreview()}
@@ -498,26 +524,76 @@ export default function CodeGenWorkspace({ causalComponentIds, onRunningChange }
         )}
       </div>
 
-      {artifactFiles.length > 0 && job.jobId ? (
-        <div className="mt-6 rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
-          <p className="mb-2 text-sm font-semibold text-neutral-200">
-            Artifacts ({artifactFiles.length})
-          </p>
-          <ul className="max-h-60 overflow-y-auto font-mono text-xs">
-            {artifactFiles.map((file) => (
-              <li key={file.path} className="py-0.5">
-                <a
-                  className="text-sky-300 underline hover:text-sky-200"
-                  href={artifactUrl(job.jobId, file.path)}
-                  target="_blank"
-                  rel="noreferrer"
+      {(() => {
+        const id = job.jobId;
+        if (!id || artifactFiles.length === 0) return null;
+        return (
+          <div className="mt-6 rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
+            <p className="mb-2 text-sm font-semibold text-neutral-200">
+              Artifacts ({artifactFiles.length})
+            </p>
+            <ul className="max-h-60 overflow-y-auto font-mono text-xs">
+              {artifactFiles.map((file) => (
+                <li key={file.path} className="py-0.5">
+                  <a
+                    className="text-sky-300 underline hover:text-sky-200"
+                    href={artifactUrl(id, file.path)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {file.path}
+                  </a>
+                  {file.kind ? <span className="ml-2 text-neutral-500">[{file.kind}]</span> : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
+
+      {previewOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setPreviewOpen(false)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
+              <p className="text-sm font-semibold text-neutral-100">
+                Resolved causal prompt input
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleCopyPreview()}
+                  disabled={previewLoading || !previewText}
+                  className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-200 transition hover:border-sky-500 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {file.path}
-                </a>
-                {file.kind ? <span className="ml-2 text-neutral-500">[{file.kind}]</span> : null}
-              </li>
-            ))}
-          </ul>
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(false)}
+                  className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-200 transition hover:border-red-500 hover:text-red-200"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {previewLoading ? (
+                <p className="text-xs text-neutral-400">Building preview…</p>
+              ) : (
+                <pre className="whitespace-pre-wrap break-words font-mono text-xs text-neutral-100">
+                  {previewText}
+                </pre>
+              )}
+            </div>
+          </div>
         </div>
       ) : null}
     </section>
