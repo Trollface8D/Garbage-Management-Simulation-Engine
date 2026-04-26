@@ -1313,6 +1313,7 @@ export default function CodePage() {
                                       .filter((id) => selectedCausalIds.has(id))
                                 : causalItems.map((item) => item.id)
                         }
+                        selectedMapId={selectedMapId}
                         selectedMapLabel={
                             selectedMapId
                                 ? mapItems.find((item) => item.id === selectedMapId)?.title ?? null

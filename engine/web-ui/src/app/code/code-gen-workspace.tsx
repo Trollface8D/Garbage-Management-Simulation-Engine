@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   artifactUrl,
   fetchCodeGenResult,
@@ -14,6 +14,7 @@ import {
   loadCausalSourceItems,
   type CausalSourceItem,
 } from "@/lib/pm-storage";
+import type { MapGraphPayload } from "@/lib/map-types";
 
 type CausalChoice = {
   id: string;
@@ -31,9 +32,22 @@ const DEFAULT_MODEL = "gemini-2.5-flash";
 
 type Props = {
   causalComponentIds: string[];
+  selectedMapId?: string | null;
   selectedMapLabel?: string | null;
   onRunningChange?: (running: boolean) => void;
 };
+
+function loadMapGraphForComponent(componentId: string): MapGraphPayload | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(`map-workspace:${componentId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { graph?: MapGraphPayload | null };
+    return parsed?.graph ?? null;
+  } catch {
+    return null;
+  }
+}
 
 async function aggregateCausalText(items: CausalChoice[]): Promise<string> {
   const blocks: string[] = [];
@@ -78,14 +92,15 @@ async function aggregateCausalText(items: CausalChoice[]): Promise<string> {
 
 export default function CodeGenWorkspace({
   causalComponentIds,
+  selectedMapId,
   selectedMapLabel,
   onRunningChange,
 }: Props) {
   const job = useCodeGenJob();
   const [causalChoices, setCausalChoices] = useState<CausalChoice[]>([]);
-  const [mapJsonText, setMapJsonText] = useState<string>("");
-  const [mapJsonError, setMapJsonError] = useState<string>("");
-  const [model, setModel] = useState<string>(DEFAULT_MODEL);
+  const [mapGraph, setMapGraph] = useState<MapGraphPayload | null>(null);
+  const [mapStatus, setMapStatus] = useState<string>("no map selected");
+  const [model] = useState<string>(DEFAULT_MODEL);
   const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(new Set());
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<Set<string>>(new Set());
   const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([]);
@@ -94,6 +109,28 @@ export default function CodeGenWorkspace({
   const [previewText, setPreviewText] = useState<string>("");
   const [previewLoading, setPreviewLoading] = useState<boolean>(false);
   const lastResultJobIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedMapId) {
+      setMapGraph(null);
+      setMapStatus("no map selected");
+      return;
+    }
+    const graph = loadMapGraphForComponent(selectedMapId);
+    if (!graph) {
+      setMapGraph(null);
+      setMapStatus(
+        `1 map: ${selectedMapLabel ?? selectedMapId} — no saved graph found (open the map workspace once to extract it)`,
+      );
+      return;
+    }
+    setMapGraph(graph);
+    const v = graph.vertices?.length ?? 0;
+    const e = graph.edges?.length ?? 0;
+    setMapStatus(
+      `1 map: ${selectedMapLabel ?? selectedMapId} (${String(v)} vertices, ${String(e)} edges)`,
+    );
+  }, [selectedMapId, selectedMapLabel]);
 
   const jobStatus = job.status?.status;
   const isRunning =
@@ -183,34 +220,9 @@ export default function CodeGenWorkspace({
     });
   };
 
-  const handleMapJsonChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    setMapJsonText(value);
-    if (value.trim().length === 0) {
-      setMapJsonError("");
-      return;
-    }
-    try {
-      JSON.parse(value);
-      setMapJsonError("");
-    } catch {
-      setMapJsonError("Invalid JSON.");
-    }
-  };
-
-  const parsedMapJson = useMemo<Record<string, unknown> | null>(() => {
-    const trimmed = mapJsonText.trim();
-    if (!trimmed) return null;
-    try {
-      const parsed = JSON.parse(trimmed) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }, [mapJsonText]);
+  const mapNodeJson: Record<string, unknown> | null = mapGraph
+    ? (mapGraph as unknown as Record<string, unknown>)
+    : null;
 
   const handleOpenPreview = async () => {
     setPreviewOpen(true);
@@ -239,10 +251,6 @@ export default function CodeGenWorkspace({
 
   const handlePreview = async () => {
     setActionError("");
-    if (mapJsonError) {
-      setActionError("Fix map JSON before previewing.");
-      return;
-    }
     if (causalChoices.length === 0) {
       setActionError("No causal sources resolved from the selected components above.");
       return;
@@ -257,7 +265,7 @@ export default function CodeGenWorkspace({
     try {
       const newJobId = await job.start({
         causalData,
-        mapNodeJson: parsedMapJson,
+        mapNodeJson,
         model,
       });
       await job.runPreview(newJobId);
@@ -280,7 +288,7 @@ export default function CodeGenWorkspace({
       const causalData = await aggregateCausalText(causalChoices);
       const refinedJobId = await job.start({
         causalData,
-        mapNodeJson: parsedMapJson,
+        mapNodeJson,
         selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
         selectedPolicies: Array.from(selectedPolicyIds).map((rule_id) => ({ rule_id })),
         model,
@@ -307,11 +315,6 @@ export default function CodeGenWorkspace({
   const jobStatusLabel = job.status?.status ?? "—";
 
   const causalCount = causalChoices.length;
-  const mapStatus = selectedMapLabel
-    ? `1 map · ${selectedMapLabel}`
-    : parsedMapJson
-      ? "1 map (pasted JSON)"
-      : "no map";
 
   return (
     <section className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-4 md:p-6">
@@ -341,42 +344,6 @@ export default function CodeGenWorkspace({
           Preview prompt input
         </button>
       </div>
-
-      <details className="mb-4 rounded-lg border border-neutral-800 bg-neutral-950/40">
-        <summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-neutral-200">
-          Advanced
-        </summary>
-        <div className="space-y-3 px-3 pb-3">
-          <label className="flex items-center gap-2 text-sm text-neutral-300">
-            <span>Model</span>
-            <input
-              type="text"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              disabled={isRunning}
-              className="rounded-md border border-neutral-800 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </label>
-          <div>
-            <p className="mb-1 text-sm font-semibold text-neutral-200">Map JSON override (optional)</p>
-            <p className="mb-2 text-xs text-neutral-500">
-              Map cards above don&apos;t auto-load yet — paste a node graph here to feed State 3.
-              Leave blank for the fallback policy.
-            </p>
-            <textarea
-              value={mapJsonText}
-              onChange={handleMapJsonChange}
-              placeholder='{"nodes": [...], "edges": [...]}'
-              rows={5}
-              disabled={isRunning}
-              className="w-full resize-y rounded-md border border-neutral-800 bg-neutral-950 p-2 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            {mapJsonError ? (
-              <p className="mt-1 text-xs text-red-300">{mapJsonError}</p>
-            ) : null}
-          </div>
-        </div>
-      </details>
 
       <div className="flex flex-wrap items-center gap-3">
         <button
