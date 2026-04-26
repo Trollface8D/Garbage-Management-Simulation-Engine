@@ -28,6 +28,7 @@ import {
 } from "@/lib/pm-storage";
 import { groupEntitiesWithGemini } from "@/lib/code-gen-api-client";
 import BackToHome from "../components/back-to-home";
+import ModelPicker from "@/app/components/model-picker";
 
 type WordCloudWord = {
     text: string;
@@ -45,12 +46,6 @@ const ReactWordcloud = dynamic(
     () => import("react-wordcloud").then((mod) => (mod && (mod.default ?? mod))),
     { ssr: false },
 ) as unknown as ComponentType<WordCloudProps>;
-
-const MODEL_OPTIONS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-3-flash-preview",
-] as const;
 
 type GeneratedEntity = {
     id: string;
@@ -454,7 +449,7 @@ export default function CodePage() {
     const [isCodeGenRunning, setIsCodeGenRunning] = useState<boolean>(false);
     const [isGroupingEntities, setIsGroupingEntities] = useState<boolean>(false);
     const [groupError, setGroupError] = useState<string>("");
-    const [selectedModel, setSelectedModel] = useState<string>("gemini-2.5-flash");
+    const [selectedModel, setSelectedModel] = useState<string>("");
 
     const inputsLocked = isCodeGenRunning;
 
@@ -1235,23 +1230,10 @@ export default function CodePage() {
                                 Entity that will be generated
                             </h2>
                             <div className="flex flex-wrap items-center gap-2">
-                                <label className="flex items-center gap-2 text-xs text-neutral-400">
-                                    <span>Model</span>
-                                    <select
-                                        value={selectedModel}
-                                        onChange={(event) => setSelectedModel(event.target.value)}
-                                        disabled={
-                                            inputsLocked || isExtracting || isGroupingEntities
-                                        }
-                                        className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
-                                        {MODEL_OPTIONS.map((option) => (
-                                            <option key={option} value={option}>
-                                                {option}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
+                                <ModelPicker
+                                    value={selectedModel}
+                                    onChange={setSelectedModel}
+                                />
                                 <button
                                     type="button"
                                     onClick={handleGroupWithGemini}

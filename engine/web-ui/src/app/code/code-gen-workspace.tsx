@@ -335,7 +335,10 @@ export default function CodeGenWorkspace({
         <span>{mapStatus}</span>
         <span className="text-neutral-600">·</span>
         <span>
-          model <span className="font-mono text-neutral-100">{model}</span>
+          model{" "}
+          <span className="font-mono text-neutral-100">
+            {model.trim() || "(env default)"}
+          </span>
         </span>
         <button
           type="button"
