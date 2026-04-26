@@ -841,35 +841,11 @@ export default function CodePage() {
 
     const handleToggleEntity = (targetId: string) => {
         if (inputsLocked) return;
-        setEntities((prev) => {
-            const target = prev.find((entity) => entity.id === targetId);
-            if (!target) return prev;
-            const willBeSelected = !target.selected;
-
-            // Parent toggled on -> deselect its members (avoid double-counting).
-            if (target.memberIds && target.memberIds.length > 0 && willBeSelected) {
-                const memberSet = new Set(target.memberIds);
-                return prev.map((entity) => {
-                    if (entity.id === target.id) return { ...entity, selected: true };
-                    if (memberSet.has(entity.id)) return { ...entity, selected: false };
-                    return entity;
-                });
-            }
-
-            // Member toggled on -> deselect its parent.
-            if (target.parentId && willBeSelected) {
-                const parentId = target.parentId;
-                return prev.map((entity) => {
-                    if (entity.id === target.id) return { ...entity, selected: true };
-                    if (entity.id === parentId) return { ...entity, selected: false };
-                    return entity;
-                });
-            }
-
-            return prev.map((entity) =>
-                entity.id === target.id ? { ...entity, selected: willBeSelected } : entity,
-            );
-        });
+        setEntities((prev) =>
+            prev.map((entity) =>
+                entity.id === targetId ? { ...entity, selected: !entity.selected } : entity,
+            ),
+        );
     };
 
     const resolveProjectIdForCreate = (): string | null => {
