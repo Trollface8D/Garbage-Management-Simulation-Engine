@@ -170,16 +170,22 @@ export function artifactUrl(jobId: string, relativePath: string): string {
     .join("/")}`;
 }
 
+export type EntityGroup = {
+  canonical: string;
+  count: number;
+  members: Array<{ name: string; count: number }>;
+};
+
 export async function groupEntitiesWithGemini(
   counts: Record<string, number>,
   model?: string,
-): Promise<Record<string, number>> {
+): Promise<EntityGroup[]> {
   const response = await fetch(`${BASE}/group_entities`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ counts, ...(model ? { model } : {}) }),
     cache: "no-store",
   });
-  const payload = await jsonOrThrow<{ counts: Record<string, number> }>(response);
-  return payload.counts || {};
+  const payload = await jsonOrThrow<{ groups: EntityGroup[] }>(response);
+  return payload.groups || [];
 }

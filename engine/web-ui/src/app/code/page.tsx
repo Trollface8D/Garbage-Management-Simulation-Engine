@@ -51,6 +51,8 @@ type GeneratedEntity = {
     name: string;
     count: number;
     selected: boolean;
+    parentId?: string;
+    memberIds?: string[];
 };
 
 type JsonImportItem = {
@@ -680,31 +682,97 @@ export default function CodePage() {
 
     const handleGroupWithGemini = () => {
         if (isGroupingEntities || inputsLocked) return;
-        if (entities.length === 0) {
+        // Ungrouped originals (parents added by a previous run are excluded so
+        // we don't double-count canonical sums).
+        const originals = entities.filter((entity) => !entity.memberIds);
+        if (originals.length === 0) {
             setGroupError("Extract entities first before grouping.");
             return;
         }
         setGroupError("");
         setIsGroupingEntities(true);
         const counts: Record<string, number> = {};
-        for (const entity of entities) {
+        for (const entity of originals) {
             counts[entity.name] = (counts[entity.name] || 0) + entity.count;
         }
         void (async () => {
             try {
-                const grouped = await groupEntitiesWithGemini(counts);
-                const next: GeneratedEntity[] = Object.entries(grouped)
-                    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-                    .map(([name, count], idx) => ({
-                        id: `entity-grouped-${String(idx)}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-                        name,
-                        count,
-                        selected: true,
-                    }));
-                if (next.length === 0) {
-                    setGroupError("Gemini returned no grouped entities.");
+                const groups = await groupEntitiesWithGemini(counts);
+                if (groups.length === 0) {
+                    setGroupError("Gemini returned no groups.");
                     return;
                 }
+                // Build lookup of originals by case-folded name; an original
+                // may be referenced by multiple group members (rare) so first
+                // match wins.
+                const byName = new Map<string, GeneratedEntity>();
+                for (const original of originals) {
+                    const key = original.name.toLowerCase();
+                    if (!byName.has(key)) byName.set(key, original);
+                }
+
+                const consumed = new Set<string>(); // original ids placed in a group
+                const parents: GeneratedEntity[] = [];
+                const updatedOriginals = new Map<string, GeneratedEntity>(
+                    originals.map((o) => [o.id, { ...o, selected: false, parentId: undefined }]),
+                );
+
+                groups.forEach((group, idx) => {
+                    const memberIds: string[] = [];
+                    const parentSlug = group.canonical
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, "-");
+                    const parentId = `entity-canonical-${String(idx)}-${parentSlug}`;
+                    for (const member of group.members) {
+                        const original = byName.get(member.name.toLowerCase());
+                        if (!original || consumed.has(original.id)) continue;
+                        consumed.add(original.id);
+                        memberIds.push(original.id);
+                        updatedOriginals.set(original.id, {
+                            ...(updatedOriginals.get(original.id) ?? original),
+                            selected: false,
+                            parentId,
+                        });
+                    }
+                    if (memberIds.length === 0) return;
+                    parents.push({
+                        id: parentId,
+                        name: group.canonical,
+                        count: group.count,
+                        selected: true,
+                        memberIds,
+                    });
+                });
+
+                if (parents.length === 0) {
+                    setGroupError("Gemini grouping did not match any current entities.");
+                    return;
+                }
+
+                // Originals with no group → keep as-is, still selected.
+                const ungroupedOriginals = originals
+                    .filter((o) => !consumed.has(o.id))
+                    .map((o) => ({ ...o, selected: true, parentId: undefined }));
+
+                // Order: parents (largest first), then for each parent its
+                // members directly under it; ungrouped at the end.
+                const next: GeneratedEntity[] = [];
+                parents.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+                for (const parent of parents) {
+                    next.push(parent);
+                    const memberSet = new Set(parent.memberIds);
+                    const members = originals
+                        .filter((o) => memberSet.has(o.id))
+                        .map((o) => updatedOriginals.get(o.id) ?? o)
+                        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+                    next.push(...members);
+                }
+                next.push(
+                    ...ungroupedOriginals.sort(
+                        (a, b) => b.count - a.count || a.name.localeCompare(b.name),
+                    ),
+                );
+
                 setEntities(next);
             } catch (err) {
                 setGroupError(
@@ -771,11 +839,35 @@ export default function CodePage() {
 
     const handleToggleEntity = (targetId: string) => {
         if (inputsLocked) return;
-        setEntities((prev) =>
-            prev.map((entity) =>
-                entity.id === targetId ? { ...entity, selected: !entity.selected } : entity,
-            ),
-        );
+        setEntities((prev) => {
+            const target = prev.find((entity) => entity.id === targetId);
+            if (!target) return prev;
+            const willBeSelected = !target.selected;
+
+            // Parent toggled on -> deselect its members (avoid double-counting).
+            if (target.memberIds && target.memberIds.length > 0 && willBeSelected) {
+                const memberSet = new Set(target.memberIds);
+                return prev.map((entity) => {
+                    if (entity.id === target.id) return { ...entity, selected: true };
+                    if (memberSet.has(entity.id)) return { ...entity, selected: false };
+                    return entity;
+                });
+            }
+
+            // Member toggled on -> deselect its parent.
+            if (target.parentId && willBeSelected) {
+                const parentId = target.parentId;
+                return prev.map((entity) => {
+                    if (entity.id === target.id) return { ...entity, selected: true };
+                    if (entity.id === parentId) return { ...entity, selected: false };
+                    return entity;
+                });
+            }
+
+            return prev.map((entity) =>
+                entity.id === target.id ? { ...entity, selected: willBeSelected } : entity,
+            );
+        });
     };
 
     const resolveProjectIdForCreate = (): string | null => {
@@ -1242,27 +1334,49 @@ export default function CodePage() {
                                         </p>
 
                                         <div className="mt-4 max-h-65 overflow-y-auto rounded-md border border-neutral-800 bg-neutral-900/70">
-                                            {entities.map((entity) => (
-                                                <label
-                                                    key={entity.id}
-                                                    className="flex items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2 last:border-b-0"
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={entity.selected}
-                                                            onChange={() => handleToggleEntity(entity.id)}
-                                                            disabled={inputsLocked}
-                                                            className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
-                                                        />
-                                                        <span className="text-sm text-neutral-200">{entity.name}</span>
-                                                    </div>
+                                            {entities.map((entity) => {
+                                                const isParent =
+                                                    !!entity.memberIds && entity.memberIds.length > 0;
+                                                const isChild = !!entity.parentId;
+                                                return (
+                                                    <label
+                                                        key={entity.id}
+                                                        className={`flex items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2 last:border-b-0 ${isChild ? "pl-9 bg-neutral-950/30" : ""}`}
+                                                    >
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={entity.selected}
+                                                                onChange={() => handleToggleEntity(entity.id)}
+                                                                disabled={inputsLocked}
+                                                                className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                                            />
+                                                            <span
+                                                                className={
+                                                                    isParent
+                                                                        ? "text-sm font-semibold text-purple-200"
+                                                                        : isChild
+                                                                          ? "text-xs text-neutral-400"
+                                                                          : "text-sm text-neutral-200"
+                                                                }
+                                                            >
+                                                                {entity.name}
+                                                            </span>
+                                                            {isParent ? (
+                                                                <span className="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-purple-200">
+                                                                    group · {String(entity.memberIds?.length ?? 0)}
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
 
-                                                    <span className="text-xs font-semibold text-neutral-400">
-                                                        Count: {String(entity.count)}
-                                                    </span>
-                                                </label>
-                                            ))}
+                                                        <span
+                                                            className={`text-xs font-semibold ${isChild ? "text-neutral-500" : "text-neutral-400"}`}
+                                                        >
+                                                            Count: {String(entity.count)}
+                                                        </span>
+                                                    </label>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 </div>
@@ -1306,13 +1420,18 @@ export default function CodePage() {
                     </div>
 
                     <CodeGenWorkspace
-                        causalComponentIds={
-                            selectedCausalIds.size > 0
-                                ? causalItems
-                                      .map((item) => item.id)
-                                      .filter((id) => selectedCausalIds.has(id))
-                                : causalItems.map((item) => item.id)
-                        }
+                        causalSourceRefs={(selectedCausalIds.size > 0
+                            ? causalItems.filter((item) => selectedCausalIds.has(item.id))
+                            : causalItems
+                        ).flatMap((item) => {
+                            const component =
+                                components.find((c) => c.id === item.id) ??
+                                findSeedComponentById(item.id);
+                            if (!component || component.category !== "Causal") {
+                                return [];
+                            }
+                            return [{ projectId: component.projectId, componentId: item.id }];
+                        })}
                         selectedMapId={selectedMapId}
                         selectedMapLabel={
                             selectedMapId

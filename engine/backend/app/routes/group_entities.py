@@ -24,24 +24,48 @@ router = APIRouter(tags=["group_entities"])
 logger = logging.getLogger(__name__)
 
 
-_PROMPT_TEMPLATE = """You are normalizing a noisy bag of entity names extracted from
-text about a domain (e.g. waste management, supply chain). Each name has a
-frequency count from raw extraction. Your job is to merge semantically
-equivalent or strongly-related names into a single canonical name and SUM
-their counts.
+_PROMPT_TEMPLATE = """You are doing aggressive hierarchical clustering of a noisy bag of
+entity names extracted from text about a domain (e.g. waste management,
+supply chain). Each name has a frequency count from raw extraction. The
+downstream goal is to give a human a SHORT list of high-level actors /
+objects / concepts to choose from, so be aggressive about collapsing
+related terms.
 
 Rules:
-1. Pick the shortest, most general canonical form when merging
-   ("waste separation" + "waste" -> "waste"; "garbage truck" + "trucks" -> "truck").
-2. Only merge names that refer to the same actor/object/concept. Do NOT merge
-   distinct things that merely co-occur (e.g. "driver" and "truck" stay separate).
-3. Use lowercase canonical names unless the term is a proper noun.
-4. Drop entries that are pure stopwords, single letters, numbers, or empty.
-5. Preserve every input count somewhere in the output (sum of output counts
-   should equal sum of input counts minus anything you legitimately dropped
-   in rule 4).
-6. Return ONLY a JSON object mapping canonical_name -> integer count.
-   No prose, no markdown, no code fences.
+1. Cluster names that refer to the same actor / object / concept OR to a
+   common parent concept. Examples:
+   - "waste", "waste separation", "general waste", "household waste" ->
+     parent "waste"
+   - "garbage truck", "trucks", "collection truck" -> parent "truck"
+   - "driver", "truck driver", "operator" -> parent "driver"
+2. Pick the shortest, most general lowercase canonical form as the parent
+   name. Use a proper noun only when it really is one.
+3. Be aggressive: if two names plausibly belong together for a domain
+   reader, merge them. Aim for roughly 5-15 top-level groups for typical
+   inputs, fewer when the input is small.
+4. Do NOT merge distinct things that merely co-occur (e.g. "driver" and
+   "truck" stay separate parents).
+5. Drop entries that are pure stopwords, single letters, numbers, empty,
+   or pure verbs/actions ("collect", "load") that aren't entities.
+6. Every accepted input must appear as a member of exactly one group. The
+   parent's count is the sum of its members' counts.
+7. If a name doesn't merge with anything, output a singleton group with
+   one member equal to the input.
+
+Return ONLY a JSON object of this exact shape (no prose, no markdown, no
+code fences):
+{{
+  "groups": [
+    {{
+      "canonical": "<parent name>",
+      "members": [
+        {{"name": "<original input name>", "count": <int>}},
+        ...
+      ]
+    }},
+    ...
+  ]
+}}
 
 Input counts:
 {counts_json}
@@ -97,9 +121,45 @@ def group_entities(payload: dict[str, Any] = Body(...)) -> JSONResponse:
             {"error": "Gemini did not return a JSON object."}, status_code=502
         )
 
-    try:
-        grouped = _coerce_counts(parsed)
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=502)
+    raw_groups = parsed.get("groups")
+    if not isinstance(raw_groups, list):
+        return JSONResponse(
+            {"error": "Gemini response missing `groups` array."}, status_code=502
+        )
 
-    return JSONResponse({"counts": grouped})
+    out_groups: list[dict[str, Any]] = []
+    for raw_group in raw_groups:
+        if not isinstance(raw_group, dict):
+            continue
+        canonical = str(raw_group.get("canonical") or "").strip()
+        if not canonical:
+            continue
+        raw_members = raw_group.get("members")
+        if not isinstance(raw_members, list):
+            continue
+        members: list[dict[str, Any]] = []
+        total = 0
+        for raw_member in raw_members:
+            if not isinstance(raw_member, dict):
+                continue
+            name = str(raw_member.get("name") or "").strip()
+            if not name:
+                continue
+            try:
+                cnt = int(raw_member.get("count"))
+            except (TypeError, ValueError):
+                continue
+            if cnt <= 0:
+                continue
+            members.append({"name": name, "count": cnt})
+            total += cnt
+        if not members:
+            continue
+        out_groups.append({"canonical": canonical, "count": total, "members": members})
+
+    if not out_groups:
+        return JSONResponse(
+            {"error": "Gemini returned no usable groups."}, status_code=502
+        )
+
+    return JSONResponse({"groups": out_groups})

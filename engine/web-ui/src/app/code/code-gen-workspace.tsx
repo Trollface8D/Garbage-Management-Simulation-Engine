@@ -30,8 +30,10 @@ type ArtifactFile = {
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
 
+export type CausalSourceRef = { projectId: string; componentId: string };
+
 type Props = {
-  causalComponentIds: string[];
+  causalSourceRefs: CausalSourceRef[];
   selectedMapId?: string | null;
   selectedMapLabel?: string | null;
   onRunningChange?: (running: boolean) => void;
@@ -91,7 +93,7 @@ async function aggregateCausalText(items: CausalChoice[]): Promise<string> {
 }
 
 export default function CodeGenWorkspace({
-  causalComponentIds,
+  causalSourceRefs,
   selectedMapId,
   selectedMapLabel,
   onRunningChange,
@@ -150,13 +152,13 @@ export default function CodeGenWorkspace({
     let cancelled = false;
     void (async () => {
       const collected: CausalChoice[] = [];
-      for (const componentId of causalComponentIds) {
+      for (const ref of causalSourceRefs) {
         try {
-          const items = await loadCausalSourceItems("", componentId);
+          const items = await loadCausalSourceItems(ref.projectId, ref.componentId);
           for (const item of items) {
             collected.push({
               id: item.id,
-              componentId,
+              componentId: ref.componentId,
               label: item.label || item.fileName || item.id,
             });
           }
@@ -171,7 +173,7 @@ export default function CodeGenWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [causalComponentIds]);
+  }, [causalSourceRefs]);
 
   // When preview entities arrives, auto-select all by default.
   useEffect(() => {
