@@ -17,6 +17,12 @@ type TextBlock = {
     text: string;
 };
 
+type ChunkingApiResponse = {
+    chunks?: unknown;
+    error?: string;
+    detail?: string;
+};
+
 type ToolMode = "edit" | "split";
 
 function createBlock(text: string): TextBlock {
@@ -37,20 +43,6 @@ function buildBlocksFromTexts(texts: string[]): TextBlock[] {
         return [createBlock("")];
     }
     return cleaned.map((text) => createBlock(text));
-}
-
-function splitIntoFixedWordChunks(fullText: string, chunkSize: number): string[] {
-    const words = fullText.split(/\s+/).filter(Boolean);
-    if (words.length === 0) {
-        return [];
-    }
-
-    const chunks: string[] = [];
-    for (let index = 0; index < words.length; index += chunkSize) {
-        chunks.push(words.slice(index, index + chunkSize).join(" "));
-    }
-
-    return chunks;
 }
 
 function CursorToolIcon({ className }: { className?: string }) {
@@ -108,6 +100,7 @@ function CausalExtractChunkingContent() {
     const [loadStatus, setLoadStatus] = useState<string>("");
     const [chunkSaveStatus, setChunkSaveStatus] = useState<string>("");
     const [isSavingChunks, setIsSavingChunks] = useState<boolean>(false);
+    const [isAutoChunking, setIsAutoChunking] = useState<boolean>(false);
     const [projects, setProjects] = useState<SimulationProject[]>([]);
     const [components, setComponents] = useState<SimulationComponent[]>([]);
     const [itemSourceType, setItemSourceType] = useState<string>("");
@@ -282,9 +275,9 @@ function CausalExtractChunkingContent() {
         setToolMode("edit");
     };
 
-    const handleAutochunk = () => {
+    const handleAutochunk = async () => {
         const shouldContinue = window.confirm(
-            "Autochunk will rechunk the entire document into 20-word blocks and reset current block-level edits. Continue?",
+            "Gemini chunking will rechunk the entire document and reset current block-level edits. Continue?",
         );
 
         if (!shouldContinue) {
@@ -296,16 +289,50 @@ function CausalExtractChunkingContent() {
             .filter(Boolean)
             .join(" ");
 
-        const rechunked = splitIntoFixedWordChunks(fullText, 20);
-        if (rechunked.length === 0) {
+        if (!fullText) {
+            setLoadStatus("No text found to chunk.");
             return;
         }
 
-        setBlocks(buildBlocksFromTexts(rechunked));
-        setActiveIndex(0);
-        setSelectedForJoin([]);
-        setToolMode("edit");
-        setLoadStatus(`AI chunking completed with ${String(rechunked.length)} blocks.`);
+        setIsAutoChunking(true);
+        setLoadStatus("Chunking with Gemini...");
+
+        try {
+            const response = await fetch("/api/causal-extract/chunk", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    inputText: fullText,
+                    model: selectedModel.trim() || undefined,
+                }),
+            });
+
+            const payload = (await response.json().catch(() => null)) as ChunkingApiResponse | null;
+            if (!response.ok) {
+                throw new Error(payload?.error || payload?.detail || `Chunking failed (${String(response.status)}).`);
+            }
+
+            const chunkTexts = Array.isArray(payload?.chunks)
+                ? payload.chunks.filter((entry): entry is string => typeof entry === "string").map((entry) => entry.trim()).filter(Boolean)
+                : [];
+
+            if (chunkTexts.length === 0) {
+                throw new Error("Chunking returned no valid chunks.");
+            }
+
+            setBlocks(buildBlocksFromTexts(chunkTexts));
+            setActiveIndex(0);
+            setSelectedForJoin([]);
+            setToolMode("edit");
+            setLoadStatus(`Gemini chunking completed with ${String(chunkTexts.length)} blocks.`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Unable to chunk text with Gemini.";
+            setLoadStatus(message);
+        } finally {
+            setIsAutoChunking(false);
+        }
     };
 
     const handleSaveChunks = useCallback(async () => {
@@ -397,9 +424,10 @@ function CausalExtractChunkingContent() {
 
                             <button
                                 type="button"
-                                onClick={handleAutochunk}
-                                title="AI chunking"
-                                aria-label="AI chunking"
+                                onClick={() => void handleAutochunk()}
+                                title={isAutoChunking ? "Chunking with Gemini..." : "AI chunking"}
+                                aria-label={isAutoChunking ? "Chunking with Gemini" : "AI chunking"}
+                                disabled={isAutoChunking}
                                 className="rounded-xl border border-violet-700 bg-violet-500/10 p-3 text-violet-200 transition hover:bg-violet-500/20"
                             >
                                 <AiToolIcon className="h-5 w-5" />
