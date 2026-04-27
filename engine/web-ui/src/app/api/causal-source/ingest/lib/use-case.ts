@@ -7,7 +7,7 @@ import { deleteUploadedFile, saveUploadedFile } from "./storage";
 import type { IngestSourceResult, ParsedIngestRequest, SupportedSourceType } from "./types";
 
 export async function ingestUploadedSource(input: ParsedIngestRequest): Promise<IngestSourceResult> {
-    const { projectId, componentId, label, file } = input;
+    const { projectId, componentId, label, model, file } = input;
 
     if (!projectExists(projectId)) {
         throw badRequestError(`projectId '${projectId}' was not found or is deleted.`);
@@ -30,7 +30,7 @@ export async function ingestUploadedSource(input: ParsedIngestRequest): Promise<
         const upload = await saveUploadedFile(file, itemId);
         storedPath = upload.storedPath;
 
-        const rawText = (await extractRawTextFromUploadedFile(file, upload.buffer, uploadKind)).trim();
+        const rawText = (await extractRawTextFromUploadedFile(file, upload.buffer, uploadKind, model)).trim();
         if (!rawText) {
             throw badRequestError("No readable text could be extracted from uploaded file.");
         }

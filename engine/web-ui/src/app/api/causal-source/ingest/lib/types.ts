@@ -7,6 +7,7 @@ export type ParsedIngestRequest = {
     projectId: string;
     componentId: string;
     label: string;
+    model: string;
     file: File;
 };
 

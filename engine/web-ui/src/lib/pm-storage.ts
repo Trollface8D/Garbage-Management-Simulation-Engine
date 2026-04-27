@@ -574,6 +574,7 @@ export async function uploadCausalSourceFile(input: {
   componentId: string;
   file: File;
   label?: string;
+  model?: string;
 }): Promise<CausalSourceItem> {
   await ensureLegacyMigration();
 
@@ -581,6 +582,9 @@ export async function uploadCausalSourceFile(input: {
   formData.set("projectId", input.projectId);
   formData.set("componentId", input.componentId);
   formData.set("label", input.label ?? "file upload");
+  if (input.model && input.model.trim()) {
+    formData.set("model", input.model.trim());
+  }
   formData.set("file", input.file);
 
   const response = await fetch("/api/causal-source/ingest", {

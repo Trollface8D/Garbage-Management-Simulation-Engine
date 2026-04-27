@@ -12,13 +12,21 @@ type BackendTranscribeResponse = {
     error?: string;
 };
 
-export async function transcribeAudioViaBackend(buffer: Buffer, mimeType: string, fileName: string): Promise<string> {
+export async function transcribeAudioViaBackend(
+    buffer: Buffer,
+    mimeType: string,
+    fileName: string,
+    model?: string,
+): Promise<string> {
     const backendUrl = `${resolveBackendBaseUrl()}/transcribe/audio`;
 
     const audioBytes = new Uint8Array(buffer);
     const audioBlob = new Blob([audioBytes], { type: mimeType || "audio/mpeg" });
     const formData = new FormData();
     formData.set("audioFile", audioBlob, fileName || "audio-upload.bin");
+    if (model && model.trim()) {
+        formData.set("model", model.trim());
+    }
 
     let response: Response;
     try {
