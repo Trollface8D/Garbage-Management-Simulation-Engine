@@ -468,6 +468,8 @@ export default function CodePage() {
     const [archiveMessage, setArchiveMessage] = useState<string>("");
     const [archiveError, setArchiveError] = useState<string>("");
     const importInputArchiveRef = useRef<HTMLInputElement | null>(null);
+    const [manualEntityName, setManualEntityName] = useState<string>("");
+    const [manualEntityError, setManualEntityError] = useState<string>("");
     const [selectedModel, setSelectedModel] = useState<string>("");
 
     const inputsLocked = isCodeGenRunning;
@@ -1104,6 +1106,33 @@ export default function CodePage() {
         })();
     };
 
+    const handleAddManualEntity = () => {
+        if (inputsLocked) return;
+        const trimmed = manualEntityName.trim();
+        if (!trimmed) {
+            setManualEntityError("Type a name first.");
+            return;
+        }
+        const exists = entities.some(
+            (entity) => entity.name.toLowerCase() === trimmed.toLowerCase(),
+        );
+        if (exists) {
+            setManualEntityError(`"${trimmed}" is already in the list.`);
+            return;
+        }
+        const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        const newEntity: GeneratedEntity = {
+            id: `entity-manual-${String(Date.now())}-${slug}`,
+            name: trimmed,
+            count: 1,
+            selected: true,
+        };
+        setEntities((prev) => [...prev, newEntity]);
+        setIsExtracted(true);
+        setManualEntityName("");
+        setManualEntityError("");
+    };
+
     const handleToggleEntity = (targetId: string) => {
         if (inputsLocked) return;
         setEntities((prev) =>
@@ -1629,25 +1658,27 @@ export default function CodePage() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="grid min-h-90 gap-4 lg:grid-cols-2">
-                                    <div className="flex min-h-75 items-center justify-center rounded-lg border border-neutral-700 bg-linear-to-br from-neutral-900 to-neutral-800 p-6">
-                                        <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-950/70 p-5">
+                                <div className="grid min-h-180 gap-4 lg:grid-cols-2">
+                                    <div className="flex min-h-150 items-stretch justify-center rounded-lg border border-neutral-700 bg-linear-to-br from-neutral-900 to-neutral-800 p-4">
+                                        <div className="flex w-full flex-col rounded-lg border border-neutral-700 bg-neutral-950/70 p-3">
                                             {wordCloudWords.length > 0 ? (
                                                 <div
                                                     aria-label="Generated entity word cloud"
-                                                    className="flex h-55 w-full items-center justify-center"
+                                                    className="flex w-full flex-1 items-center justify-center"
                                                 >
-                                                    <div ref={wordCloudHostRef} className="h-55 w-55">
+                                                    <div
+                                                        ref={wordCloudHostRef}
+                                                        className="h-full w-full"
+                                                    >
                                                         <ReactWordcloud
-                                                            minSize={[220, 220]}
-                                                            size={[220, 220]}
+                                                            minSize={[200, 200]}
                                                             options={wordCloudOptions}
                                                             words={wordCloudWords}
                                                         />
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <div className="flex h-55 items-center justify-center text-center">
+                                                <div className="flex flex-1 items-center justify-center text-center">
                                                     <p className="text-sm font-semibold text-neutral-300">
                                                         Select at least one entity to render the word cloud.
                                                     </p>
@@ -1656,12 +1687,47 @@ export default function CodePage() {
                                         </div>
                                     </div>
 
-                                    <div className="rounded-lg border border-neutral-700 bg-neutral-900/70 p-4">
+                                    <div className="flex flex-col rounded-lg border border-neutral-700 bg-neutral-900/70 p-4">
                                         <p className="text-sm font-semibold text-neutral-100">
                                             system will create {String(totalEntityCount)} entity
                                         </p>
 
-                                        <div className="mt-4 max-h-65 overflow-y-auto rounded-md border border-neutral-800 bg-neutral-900/70">
+                                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                                            <input
+                                                type="text"
+                                                value={manualEntityName}
+                                                onChange={(event) => {
+                                                    setManualEntityName(event.target.value);
+                                                    if (manualEntityError) setManualEntityError("");
+                                                }}
+                                                onKeyDown={(event) => {
+                                                    if (event.key === "Enter") {
+                                                        event.preventDefault();
+                                                        handleAddManualEntity();
+                                                    }
+                                                }}
+                                                placeholder="Add an entity the extractor missed…"
+                                                disabled={inputsLocked}
+                                                className="flex-1 min-w-0 rounded-md border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-xs text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handleAddManualEntity}
+                                                disabled={
+                                                    inputsLocked || manualEntityName.trim().length === 0
+                                                }
+                                                className="rounded-md border border-emerald-600 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                Add entity
+                                            </button>
+                                        </div>
+                                        {manualEntityError ? (
+                                            <p className="mt-1 text-[11px] text-red-300">
+                                                {manualEntityError}
+                                            </p>
+                                        ) : null}
+
+                                        <div className="mt-3 max-h-130 flex-1 overflow-y-auto rounded-md border border-neutral-800 bg-neutral-900/70">
                                             {entities.map((entity) => {
                                                 const isParent =
                                                     !!entity.memberIds && entity.memberIds.length > 0;
