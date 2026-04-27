@@ -176,6 +176,37 @@ export type EntityGroup = {
   members: Array<{ name: string; count: number }>;
 };
 
+export async function exportWorkspaceArchive(
+  metadata: Record<string, unknown>,
+  jobId?: string | null,
+): Promise<Blob> {
+  const response = await fetch(`${BASE}/workspace_export`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ metadata, ...(jobId ? { jobId } : {}) }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return await response.blob();
+}
+
+export async function importWorkspaceArchive(
+  file: File,
+): Promise<{ metadata: Record<string, unknown>; artifactNames: string[] }> {
+  const form = new FormData();
+  form.set("file", file);
+  const response = await fetch(`${BASE}/workspace_import`, {
+    method: "POST",
+    body: form,
+    cache: "no-store",
+  });
+  return jsonOrThrow<{ metadata: Record<string, unknown>; artifactNames: string[] }>(
+    response,
+  );
+}
+
 export async function groupEntitiesWithGemini(
   counts: Record<string, number>,
   model?: string,

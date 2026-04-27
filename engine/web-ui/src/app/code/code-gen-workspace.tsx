@@ -36,6 +36,7 @@ type Props = {
   selectedMapLabel?: string | null;
   model: string;
   onRunningChange?: (running: boolean) => void;
+  onJobIdChange?: (jobId: string | null) => void;
 };
 
 function loadMapGraphForComponent(componentId: string): MapGraphPayload | null {
@@ -97,6 +98,7 @@ export default function CodeGenWorkspace({
   selectedMapLabel,
   model,
   onRunningChange,
+  onJobIdChange,
 }: Props) {
   const job = useCodeGenJob();
   const [causalChoices, setCausalChoices] = useState<CausalChoice[]>([]);
@@ -145,6 +147,10 @@ export default function CodeGenWorkspace({
   useEffect(() => {
     onRunningChange?.(isRunning);
   }, [isRunning, onRunningChange]);
+
+  useEffect(() => {
+    onJobIdChange?.(job.jobId);
+  }, [job.jobId, onJobIdChange]);
 
   // Discover causal source documents for the selected causal components.
   useEffect(() => {

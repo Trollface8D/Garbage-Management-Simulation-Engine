@@ -26,7 +26,11 @@ import {
     softDeleteComponent,
     type ExtractionPayloadRecord,
 } from "@/lib/pm-storage";
-import { groupEntitiesWithGemini } from "@/lib/code-gen-api-client";
+import {
+    groupEntitiesWithGemini,
+    exportWorkspaceArchive,
+    importWorkspaceArchive,
+} from "@/lib/code-gen-api-client";
 import BackToHome from "../components/back-to-home";
 import ModelPicker from "@/app/components/model-picker";
 
@@ -457,6 +461,13 @@ export default function CodePage() {
     const groupAbortRef = useRef<AbortController | null>(null);
     const groupLogIdRef = useRef<number>(0);
     const groupStartRef = useRef<number>(0);
+    const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+    const [archiveBusy, setArchiveBusy] = useState<"idle" | "exporting" | "importing">(
+        "idle",
+    );
+    const [archiveMessage, setArchiveMessage] = useState<string>("");
+    const [archiveError, setArchiveError] = useState<string>("");
+    const importInputArchiveRef = useRef<HTMLInputElement | null>(null);
     const [selectedModel, setSelectedModel] = useState<string>("");
 
     const inputsLocked = isCodeGenRunning;
@@ -762,6 +773,121 @@ export default function CodePage() {
                 );
             } finally {
                 setIsExtracting(false);
+            }
+        })();
+    };
+
+    const buildWorkspaceSnapshot = () => ({
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        componentId,
+        selectedCausalIds: Array.from(selectedCausalIds),
+        selectedMapId,
+        entities,
+        isExtracted,
+        selectedModel,
+        collapsedParentIds: Array.from(collapsedParentIds),
+        jobId: currentJobId,
+    });
+
+    const handleExportArchive = () => {
+        if (archiveBusy !== "idle") return;
+        setArchiveBusy("exporting");
+        setArchiveError("");
+        setArchiveMessage("");
+        void (async () => {
+            try {
+                const blob = await exportWorkspaceArchive(
+                    buildWorkspaceSnapshot(),
+                    currentJobId,
+                );
+                const url = URL.createObjectURL(blob);
+                const stamp = new Date()
+                    .toISOString()
+                    .replace(/[:.]/g, "-")
+                    .replace("T", "_")
+                    .slice(0, 19);
+                const stub = currentJobId || componentId || "workspace";
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `code-workspace-${stub}-${stamp}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                setArchiveMessage("Workspace exported.");
+            } catch (err) {
+                setArchiveError(err instanceof Error ? err.message : "Export failed.");
+            } finally {
+                setArchiveBusy("idle");
+            }
+        })();
+    };
+
+    const restoreFromMetadata = (parsed: Record<string, unknown>): boolean => {
+        try {
+            if (Array.isArray(parsed.selectedCausalIds)) {
+                setSelectedCausalIds(
+                    new Set(
+                        (parsed.selectedCausalIds as unknown[])
+                            .filter((v): v is string => typeof v === "string" && v.length > 0),
+                    ),
+                );
+            }
+            if (typeof parsed.selectedMapId === "string" || parsed.selectedMapId === null) {
+                setSelectedMapId((parsed.selectedMapId as string | null) ?? null);
+            }
+            if (Array.isArray(parsed.entities)) {
+                setEntities(parsed.entities as GeneratedEntity[]);
+            }
+            if (typeof parsed.isExtracted === "boolean") {
+                setIsExtracted(parsed.isExtracted);
+            }
+            if (typeof parsed.selectedModel === "string") {
+                setSelectedModel(parsed.selectedModel);
+            }
+            if (Array.isArray(parsed.collapsedParentIds)) {
+                setCollapsedParentIds(
+                    new Set(
+                        (parsed.collapsedParentIds as unknown[])
+                            .filter((v): v is string => typeof v === "string" && v.length > 0),
+                    ),
+                );
+            }
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    const handleImportArchive = () => {
+        importInputArchiveRef.current?.click();
+    };
+
+    const handleImportArchiveFile = (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = ""; // allow re-selecting the same file
+        if (!file) return;
+        setArchiveBusy("importing");
+        setArchiveError("");
+        setArchiveMessage("");
+        void (async () => {
+            try {
+                const { metadata, artifactNames } = await importWorkspaceArchive(file);
+                const ok = restoreFromMetadata(metadata);
+                if (!ok) {
+                    setArchiveError("Imported metadata could not be applied.");
+                    return;
+                }
+                const artifactNote =
+                    artifactNames.length > 0
+                        ? ` Bundle includes ${String(artifactNames.length)} artifact file${artifactNames.length === 1 ? "" : "s"} (left untouched on the server).`
+                        : "";
+                setArchiveMessage(`Workspace restored from ${file.name}.${artifactNote}`);
+            } catch (err) {
+                setArchiveError(err instanceof Error ? err.message : "Import failed.");
+            } finally {
+                setArchiveBusy("idle");
             }
         })();
     };
@@ -1406,6 +1532,32 @@ export default function CodePage() {
                                           ? "Re-extract from causal"
                                           : "Extract from causal"}
                                 </button>
+                                <span className="mx-1 hidden h-6 w-px bg-neutral-700 sm:inline-block" />
+                                <button
+                                    type="button"
+                                    onClick={handleExportArchive}
+                                    disabled={archiveBusy !== "idle" || inputsLocked}
+                                    title="Export workspace state + any generated artifacts as a ZIP"
+                                    className="rounded-md border border-neutral-600 bg-neutral-800/40 px-3 py-2 text-xs font-semibold text-neutral-200 transition hover:bg-neutral-700/40 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {archiveBusy === "exporting" ? "Exporting…" : "Export"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleImportArchive}
+                                    disabled={archiveBusy !== "idle" || inputsLocked}
+                                    title="Restore workspace from a previously exported ZIP"
+                                    className="rounded-md border border-neutral-600 bg-neutral-800/40 px-3 py-2 text-xs font-semibold text-neutral-200 transition hover:bg-neutral-700/40 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {archiveBusy === "importing" ? "Importing…" : "Import"}
+                                </button>
+                                <input
+                                    ref={importInputArchiveRef}
+                                    type="file"
+                                    accept=".zip,application/zip"
+                                    onChange={handleImportArchiveFile}
+                                    className="hidden"
+                                />
                             </div>
                         </div>
 
@@ -1417,6 +1569,16 @@ export default function CodePage() {
                         {groupError ? (
                             <div className="mb-3 rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
                                 {groupError}
+                            </div>
+                        ) : null}
+                        {archiveError ? (
+                            <div className="mb-3 rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                                {archiveError}
+                            </div>
+                        ) : null}
+                        {archiveMessage && !archiveError ? (
+                            <div className="mb-3 rounded-md border border-emerald-700/60 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                                {archiveMessage}
                             </div>
                         ) : null}
                         {groupLog.length > 0 ? (
@@ -1647,6 +1809,7 @@ export default function CodePage() {
                         }
                         model={selectedModel}
                         onRunningChange={setIsCodeGenRunning}
+                        onJobIdChange={setCurrentJobId}
                     />
                 </section>
             </main>
