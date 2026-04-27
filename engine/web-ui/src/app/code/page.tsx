@@ -450,6 +450,7 @@ export default function CodePage() {
     const [isGroupingEntities, setIsGroupingEntities] = useState<boolean>(false);
     const [groupError, setGroupError] = useState<string>("");
     const [collapsedParentIds, setCollapsedParentIds] = useState<Set<string>>(new Set());
+    const [hydrated, setHydrated] = useState<boolean>(false);
     const [selectedModel, setSelectedModel] = useState<string>("");
 
     const inputsLocked = isCodeGenRunning;
@@ -561,6 +562,84 @@ export default function CodePage() {
             }
         };
     }, []);
+
+    const snapshotKey = useMemo(
+        () => `gms.code.workspace.v1:${componentId ?? "default"}`,
+        [componentId],
+    );
+
+    // Load persisted snapshot on first mount (per-component key).
+    useEffect(() => {
+        if (typeof window === "undefined") {
+            setHydrated(true);
+            return;
+        }
+        const saved = window.localStorage.getItem(snapshotKey);
+        if (!saved) {
+            setHydrated(true);
+            return;
+        }
+        try {
+            const parsed = JSON.parse(saved) as {
+                selectedCausalIds?: string[];
+                selectedMapId?: string | null;
+                entities?: GeneratedEntity[];
+                isExtracted?: boolean;
+                selectedModel?: string;
+                collapsedParentIds?: string[];
+            };
+            if (Array.isArray(parsed.selectedCausalIds)) {
+                setSelectedCausalIds(new Set(parsed.selectedCausalIds.filter(Boolean)));
+            }
+            if (typeof parsed.selectedMapId === "string" || parsed.selectedMapId === null) {
+                setSelectedMapId(parsed.selectedMapId ?? null);
+            }
+            if (Array.isArray(parsed.entities)) {
+                setEntities(parsed.entities);
+            }
+            if (typeof parsed.isExtracted === "boolean") {
+                setIsExtracted(parsed.isExtracted);
+            }
+            if (typeof parsed.selectedModel === "string") {
+                setSelectedModel(parsed.selectedModel);
+            }
+            if (Array.isArray(parsed.collapsedParentIds)) {
+                setCollapsedParentIds(new Set(parsed.collapsedParentIds.filter(Boolean)));
+            }
+        } catch {
+            // Ignore corrupted snapshot.
+        } finally {
+            setHydrated(true);
+        }
+    }, [snapshotKey]);
+
+    // Persist snapshot. Skipped until hydrated to avoid wiping the saved
+    // state with default values during the first render.
+    useEffect(() => {
+        if (!hydrated || typeof window === "undefined") return;
+        const snapshot = {
+            selectedCausalIds: Array.from(selectedCausalIds),
+            selectedMapId,
+            entities,
+            isExtracted,
+            selectedModel,
+            collapsedParentIds: Array.from(collapsedParentIds),
+        };
+        try {
+            window.localStorage.setItem(snapshotKey, JSON.stringify(snapshot));
+        } catch {
+            // Quota / disabled storage — ignore, the page still works.
+        }
+    }, [
+        hydrated,
+        snapshotKey,
+        selectedCausalIds,
+        selectedMapId,
+        entities,
+        isExtracted,
+        selectedModel,
+        collapsedParentIds,
+    ]);
 
     useEffect(() => {
         if (!isExtracted || wordCloudWords.length === 0) {
