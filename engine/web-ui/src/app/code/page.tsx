@@ -451,6 +451,12 @@ export default function CodePage() {
     const [groupError, setGroupError] = useState<string>("");
     const [collapsedParentIds, setCollapsedParentIds] = useState<Set<string>>(new Set());
     const [hydrated, setHydrated] = useState<boolean>(false);
+    const [groupLog, setGroupLog] = useState<
+        Array<{ id: number; ts: number; level: "info" | "warn" | "error"; message: string }>
+    >([]);
+    const groupAbortRef = useRef<AbortController | null>(null);
+    const groupLogIdRef = useRef<number>(0);
+    const groupStartRef = useRef<number>(0);
     const [selectedModel, setSelectedModel] = useState<string>("");
 
     const inputsLocked = isCodeGenRunning;
@@ -760,6 +766,19 @@ export default function CodePage() {
         })();
     };
 
+    const appendGroupLog = (level: "info" | "warn" | "error", message: string) => {
+        groupLogIdRef.current += 1;
+        const id = groupLogIdRef.current;
+        setGroupLog((prev) => [...prev, { id, ts: Date.now(), level, message }]);
+    };
+
+    const handleCancelGrouping = () => {
+        const controller = groupAbortRef.current;
+        if (!controller) return;
+        controller.abort();
+        appendGroupLog("warn", "Cancel requested — aborting request");
+    };
+
     const handleGroupWithGemini = () => {
         if (isGroupingEntities || inputsLocked) return;
         // Ungrouped originals (parents added by a previous run are excluded so
@@ -770,15 +789,35 @@ export default function CodePage() {
             return;
         }
         setGroupError("");
+        setGroupLog([]);
         setIsGroupingEntities(true);
         const counts: Record<string, number> = {};
         for (const entity of originals) {
             counts[entity.name] = (counts[entity.name] || 0) + entity.count;
         }
+        const controller = new AbortController();
+        groupAbortRef.current = controller;
+        groupStartRef.current = Date.now();
+        const distinctNames = Object.keys(counts).length;
+        const modelLabel = selectedModel.trim() || "(env default)";
+        appendGroupLog(
+            "info",
+            `Posting ${String(distinctNames)} distinct entities to ${modelLabel}…`,
+        );
         void (async () => {
             try {
-                const groups = await groupEntitiesWithGemini(counts, selectedModel);
+                const groups = await groupEntitiesWithGemini(
+                    counts,
+                    selectedModel,
+                    controller.signal,
+                );
+                const elapsed = Math.round((Date.now() - groupStartRef.current) / 100) / 10;
+                appendGroupLog(
+                    "info",
+                    `Received ${String(groups.length)} groups in ${String(elapsed)}s`,
+                );
                 if (groups.length === 0) {
+                    appendGroupLog("warn", "Gemini returned no groups");
                     setGroupError("Gemini returned no groups.");
                     return;
                 }
@@ -825,6 +864,10 @@ export default function CodePage() {
                 });
 
                 if (parents.length === 0) {
+                    appendGroupLog(
+                        "warn",
+                        "Returned groups did not match any extracted entity by name",
+                    );
                     setGroupError("Gemini grouping did not match any current entities.");
                     return;
                 }
@@ -857,11 +900,25 @@ export default function CodePage() {
                 // Collapse all groups by default — the user only wants to see
                 // canonical names until they expand a group to fine-tune.
                 setCollapsedParentIds(new Set(parents.map((p) => p.id)));
-            } catch (err) {
-                setGroupError(
-                    err instanceof Error ? err.message : "Semantic grouping failed.",
+                appendGroupLog(
+                    "info",
+                    `Built ${String(parents.length)} parent groups, ${String(next.length - parents.length)} child rows`,
                 );
+            } catch (err) {
+                if (
+                    (err instanceof DOMException && err.name === "AbortError") ||
+                    (err instanceof Error && err.name === "AbortError")
+                ) {
+                    appendGroupLog("warn", "Request cancelled");
+                    setGroupError("Grouping cancelled.");
+                } else {
+                    const message =
+                        err instanceof Error ? err.message : "Semantic grouping failed.";
+                    appendGroupLog("error", message);
+                    setGroupError(message);
+                }
             } finally {
+                groupAbortRef.current = null;
                 setIsGroupingEntities(false);
             }
         })();
@@ -1327,6 +1384,16 @@ export default function CodePage() {
                                         </svg>
                                     )}
                                 </button>
+                                {isGroupingEntities ? (
+                                    <button
+                                        type="button"
+                                        onClick={handleCancelGrouping}
+                                        title="Cancel the in-flight grouping request"
+                                        className="rounded-md border border-red-700 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-300 transition hover:bg-red-500/20"
+                                    >
+                                        Cancel grouping
+                                    </button>
+                                ) : null}
                                 <button
                                     type="button"
                                     onClick={handleExtractFromCausal}
@@ -1350,6 +1417,41 @@ export default function CodePage() {
                         {groupError ? (
                             <div className="mb-3 rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
                                 {groupError}
+                            </div>
+                        ) : null}
+                        {groupLog.length > 0 ? (
+                            <div className="mb-3 rounded-md border border-neutral-800 bg-neutral-950/60 p-3">
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
+                                        Grouping log
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setGroupLog([])}
+                                        className="text-[10px] uppercase tracking-wider text-neutral-500 transition hover:text-neutral-200"
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                                <ul className="max-h-32 overflow-y-auto font-mono text-xs">
+                                    {groupLog.map((entry) => {
+                                        const time = new Date(entry.ts).toLocaleTimeString();
+                                        const tone =
+                                            entry.level === "error"
+                                                ? "text-red-300"
+                                                : entry.level === "warn"
+                                                  ? "text-amber-300"
+                                                  : "text-neutral-300";
+                                        return (
+                                            <li key={entry.id} className={`py-0.5 ${tone}`}>
+                                                <span className="mr-2 text-neutral-500">
+                                                    [{time}]
+                                                </span>
+                                                {entry.message}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
                             </div>
                         ) : null}
 

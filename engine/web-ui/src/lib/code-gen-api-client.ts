@@ -179,12 +179,14 @@ export type EntityGroup = {
 export async function groupEntitiesWithGemini(
   counts: Record<string, number>,
   model?: string,
+  signal?: AbortSignal,
 ): Promise<EntityGroup[]> {
   const response = await fetch(`${BASE}/group_entities`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ counts, ...(model ? { model } : {}) }),
     cache: "no-store",
+    signal,
   });
   const payload = await jsonOrThrow<{ groups: EntityGroup[] }>(response);
   return payload.groups || [];
