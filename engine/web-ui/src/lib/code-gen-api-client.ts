@@ -59,8 +59,10 @@ export type CodeGenCreateRequest = {
 
 async function parseError(response: Response): Promise<string> {
   try {
-    const payload = (await response.json()) as { error?: string };
-    return payload.error || `Request failed (${String(response.status)})`;
+    const payload = (await response.json()) as { error?: string; detail?: string };
+    return (
+      payload.error || payload.detail || `Request failed (${String(response.status)})`
+    );
   } catch {
     return `Request failed (${String(response.status)})`;
   }

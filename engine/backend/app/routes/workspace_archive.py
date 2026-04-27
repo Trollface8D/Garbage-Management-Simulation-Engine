@@ -26,8 +26,9 @@ import logging
 import zipfile
 from typing import Any
 
-from fastapi import APIRouter, Body, UploadFile, File
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from ..services import code_gen_checkpoints as checkpoints
 
@@ -38,22 +39,48 @@ logger = logging.getLogger(__name__)
 MAX_IMPORT_BYTES = 50 * 1024 * 1024  # 50 MB cap on uploads
 
 
-@router.post("/code_gen/workspace_export")
-def export_workspace(payload: dict[str, Any] = Body(...)) -> StreamingResponse | JSONResponse:
-    metadata = payload.get("metadata")
-    if not isinstance(metadata, dict):
-        return JSONResponse(
-            {"error": "`metadata` must be a JSON object."}, status_code=400
-        )
+class WorkspaceExportRequest(BaseModel):
+    metadata: dict[str, Any] = Field(
+        ...,
+        description="Opaque JSON snapshot of the frontend workspace state.",
+    )
+    jobId: str | None = Field(
+        default=None,
+        description="Optional code-gen job id; if its artifact dir exists, every file under it is bundled at artifacts/<relative_path>.",
+    )
 
-    job_id = str(payload.get("jobId") or "").strip() or None
+
+class WorkspaceImportResponse(BaseModel):
+    metadata: dict[str, Any] = Field(
+        ...,
+        description="Parsed contents of metadata.json from the uploaded archive.",
+    )
+    artifactNames: list[str] = Field(
+        default_factory=list,
+        description="Relative paths of every artifacts/* entry inside the archive (sorted).",
+    )
+
+
+@router.post(
+    "/code_gen/workspace_export",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "ZIP archive containing metadata.json and any bundled artifacts/*.",
+            "content": {"application/zip": {}},
+        },
+        400: {"description": "Invalid request body."},
+    },
+)
+def export_workspace(payload: WorkspaceExportRequest) -> StreamingResponse:
+    job_id = (payload.jobId or "").strip() or None
 
     buffer = io.BytesIO()
     artifact_count = 0
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
             "metadata.json",
-            json.dumps(metadata, ensure_ascii=False, indent=2),
+            json.dumps(payload.metadata, ensure_ascii=False, indent=2),
         )
 
         if job_id:
@@ -79,40 +106,41 @@ def export_workspace(payload: dict[str, Any] = Body(...)) -> StreamingResponse |
     return StreamingResponse(buffer, media_type="application/zip", headers=headers)
 
 
-@router.post("/code_gen/workspace_import")
-async def import_workspace(file: UploadFile = File(...)) -> JSONResponse:
+@router.post(
+    "/code_gen/workspace_import",
+    response_model=WorkspaceImportResponse,
+)
+async def import_workspace(file: UploadFile = File(...)) -> WorkspaceImportResponse:
     raw = await file.read()
     if not raw:
-        return JSONResponse({"error": "Uploaded archive is empty."}, status_code=400)
+        raise HTTPException(status_code=400, detail="Uploaded archive is empty.")
     if len(raw) > MAX_IMPORT_BYTES:
-        return JSONResponse(
-            {"error": "Archive exceeds the 50 MB import cap."}, status_code=413
-        )
+        raise HTTPException(status_code=413, detail="Archive exceeds the 50 MB import cap.")
 
     try:
         archive = zipfile.ZipFile(io.BytesIO(raw))
-    except zipfile.BadZipFile:
-        return JSONResponse(
-            {"error": "Uploaded file is not a valid ZIP archive."}, status_code=400
-        )
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(
+            status_code=400, detail="Uploaded file is not a valid ZIP archive."
+        ) from exc
 
     names = archive.namelist()
     if "metadata.json" not in names:
-        return JSONResponse(
-            {"error": "Archive is missing metadata.json — not a code workspace export."},
+        raise HTTPException(
             status_code=400,
+            detail="Archive is missing metadata.json — not a code workspace export.",
         )
 
     try:
         metadata_bytes = archive.read("metadata.json")
         metadata = json.loads(metadata_bytes.decode("utf-8"))
     except (KeyError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        return JSONResponse(
-            {"error": f"metadata.json is unreadable: {exc}"}, status_code=400
-        )
+        raise HTTPException(
+            status_code=400, detail=f"metadata.json is unreadable: {exc}"
+        ) from exc
     if not isinstance(metadata, dict):
-        return JSONResponse(
-            {"error": "metadata.json must contain a JSON object."}, status_code=400
+        raise HTTPException(
+            status_code=400, detail="metadata.json must contain a JSON object."
         )
 
     artifact_names = sorted(
@@ -121,4 +149,4 @@ async def import_workspace(file: UploadFile = File(...)) -> JSONResponse:
         if n.startswith("artifacts/") and not n.endswith("/")
     )
 
-    return JSONResponse({"metadata": metadata, "artifactNames": artifact_names})
+    return WorkspaceImportResponse(metadata=metadata, artifactNames=artifact_names)
