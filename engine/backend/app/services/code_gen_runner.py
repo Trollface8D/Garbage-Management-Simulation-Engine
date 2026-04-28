@@ -11,6 +11,7 @@ status / SSE infrastructure can be reused without modification.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Callable
 
 from ...infra.gemini_client import GeminiCancelledError, GeminiGateway
@@ -130,6 +131,8 @@ def _generate_text(
     ctx: StageContext,
     stage: str,
     prompt: str,
+    *,
+    cached_content: str | None = None,
 ) -> str:
     """Run a free-form Gemini call returning raw text (for code generation)."""
     gateway = ctx.gateway()
@@ -140,6 +143,7 @@ def _generate_text(
             usage_collector=ctx.usage,
             on_retry=_gemini_retry_callback(ctx, stage),
             cancel_check=_gemini_cancel_check(ctx),
+            cached_content=cached_content,
         )
     except GeminiCancelledError as exc:
         raise JobCancelledError(str(exc)) from exc
@@ -335,6 +339,31 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
     iteration_summaries: list[dict[str, Any]] = []
     accumulator_files: list[tuple[str, str]] = []
 
+    # Caching: build a context cache once with the bits that don't change
+    # across iterations (causal data, policy snippets, entity time protocol).
+    # Each iteration then sends only the variable parts inline. Gracefully
+    # falls back to inline behavior when the cache create fails (e.g. content
+    # too small for explicit caching, quota issues, network blip).
+    cache_threshold = int(os.getenv("CODE_GEN_CACHE_MIN_ENTITIES", "5") or "5")
+    cache_ttl_seconds = int(os.getenv("CODE_GEN_CACHE_TTL_SECONDS", "1800") or "1800")
+    cache_name: str | None = None
+    if len(order) >= cache_threshold:
+        try:
+            cache_name = ctx.gateway().create_cache(
+                text_parts=prompts.build_state2_cached_context(causal_data=causal_data),
+                ttl_seconds=cache_ttl_seconds,
+            )
+        except Exception:
+            cache_name = None
+        ctx.emit_stage_message(
+            "state2_code_entity_object",
+            (
+                f"state2: cache enabled (entities={len(order)}, ttl={cache_ttl_seconds}s)"
+                if cache_name
+                else f"state2: cache disabled (create failed or content too small) entities={len(order)}"
+            ),
+        )
+
     for index, entity_id in enumerate(order):
         ctx.raise_if_cancelled()
         entity_obj = entity_by_id.get(entity_id) or {"id": entity_id}
@@ -379,8 +408,14 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
                 interface_digest=digest_collected,
                 policy_outline=policy_outline,
                 retry_error=retry_error,
+                omit_cached_context=cache_name is not None,
             )
-            code = _generate_text(ctx, "state2_code_entity_object", prompt)
+            code = _generate_text(
+                ctx,
+                "state2_code_entity_object",
+                prompt,
+                cached_content=cache_name,
+            )
             validation_errors = prompts.validate_entity_protocol(
                 code,
                 required_methods=_required_methods_for_entity(entity_id, policy_outline),
@@ -407,10 +442,17 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
         accumulator_files.append((filename, code))
         touch_activity(ctx.job)
 
+    if cache_name:
+        try:
+            ctx.gateway().delete_cache(cache_name)
+        except Exception:
+            pass
+
     return {
         "stage": "state2_code_entity_object",
         "iterations": iteration_summaries,
         "iterationCount": len(iteration_summaries),
+        "cacheUsed": bool(cache_name),
     }
 
 

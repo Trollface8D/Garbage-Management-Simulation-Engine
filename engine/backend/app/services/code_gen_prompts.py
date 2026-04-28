@@ -381,6 +381,24 @@ POLICY_TIME_PROTOCOL = (
 )
 
 
+def build_state2_cached_context(*, causal_data: str) -> list[str]:
+    """Pieces of State 2 that don't change across the per-entity loop.
+
+    Returned as a list of text chunks suitable to feed into
+    ``GeminiGateway.create_cache``. Pulling these out of every iteration
+    is the whole point of caching — the same causal data and policy
+    snippets currently get re-uploaded for every entity.
+    """
+    return [
+        ENTITY_TIME_PROTOCOL,
+        _runtime("codegen_template_routing_policy"),
+        _runtime("codegen_accumulation_policy"),
+        _runtime("codegen_entity_object_output_hint"),
+        _runtime("compact_output_policy"),
+        "Causal data:\n" + (causal_data or "").strip(),
+    ]
+
+
 def build_state2_entity_prompt(
     *,
     causal_data: str,
@@ -390,8 +408,15 @@ def build_state2_entity_prompt(
     interface_digest: dict[str, Any],
     policy_outline: list[dict[str, Any]],
     retry_error: str | None = None,
+    omit_cached_context: bool = False,
 ) -> str:
-    """Build the State 2 prompt for one entity iteration."""
+    """Build the State 2 prompt for one entity iteration.
+
+    When ``omit_cached_context`` is True the stable prefix returned by
+    :func:`build_state2_cached_context` is left out — the caller is
+    expected to pass the cache name via ``cached_content`` in the request
+    so Gemini stitches them back together upstream.
+    """
     base = (_stage("state2_code_entity_object").get("prompt") or "")
     base = base.replace("{entity_id}", entity_id)
     digest_json = json.dumps(interface_digest or {"classes": []}, ensure_ascii=False)
@@ -410,24 +435,25 @@ def build_state2_entity_prompt(
         if retry_error
         else ""
     )
-    prompt = _assemble(
+    sections: list[str] = [base]
+    if not omit_cached_context:
+        sections.extend(build_state2_cached_context(causal_data=causal_data))
+    sections.extend(
         [
-            base,
-            ENTITY_TIME_PROTOCOL,
-            _runtime("codegen_template_routing_policy"),
-            _runtime("codegen_accumulation_policy"),
-            _runtime("codegen_entity_object_output_hint"),
-            _runtime("compact_output_policy"),
             "Entity object (from State 1):\n"
             + json.dumps(entity_obj or {"id": entity_id}, ensure_ascii=False),
             "Methods this class MUST expose for policies (from State 1b):\n" + policy_json,
             "Interface digest of prior entities (signatures only):\n" + digest_json,
             accumulator_section,
-            "Causal data:\n" + (causal_data or "").strip(),
-            retry_section,
         ]
     )
-    return prompt
+    if omit_cached_context:
+        sections.append(
+            "(Stable causal data + policy boilerplate are provided via the request's cached_content.)"
+        )
+    if retry_section:
+        sections.append(retry_section)
+    return _assemble(sections)
 
 
 def build_state3_environment_prompt(

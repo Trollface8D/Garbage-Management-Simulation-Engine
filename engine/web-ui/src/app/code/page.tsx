@@ -1141,10 +1141,16 @@ export default function CodePage() {
 
     const handleSuggestMetrics = () => {
         if (isSuggestingMetrics || inputsLocked) return;
-        const sourceEntities = entities.filter((e) => e.selected);
+        // Use the full entity universe — leaves only (drop group "parent"
+        // rows since those are aggregates, not real entities). Whether the
+        // user has the row checked is irrelevant for metric suggestion;
+        // the LLM should reason over every named entity in the workspace.
+        const sourceEntities = entities.filter(
+            (e) => !(e.memberIds && e.memberIds.length > 0),
+        );
         if (sourceEntities.length === 0) {
             setMetricsError(
-                "Select at least one entity above before suggesting metrics.",
+                "Extract or add at least one entity above before suggesting metrics.",
             );
             return;
         }
