@@ -7,9 +7,10 @@ export async function extractRawTextFromUploadedFile(
     file: File,
     buffer: Buffer,
     uploadKind: SupportedUploadKind,
+    model?: string,
 ): Promise<string> {
     if (uploadKind === "audio") {
-        return transcribeAudioViaBackend(buffer, file.type, file.name);
+        return transcribeAudioViaBackend(buffer, file.type, file.name, model);
     }
 
     if (uploadKind === "pdf") {
