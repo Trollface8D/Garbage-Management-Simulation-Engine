@@ -230,6 +230,79 @@ export type EntityGroup = {
   members: Array<{ name: string; count: number }>;
 };
 
+export type SimulationStatus = "running" | "completed" | "failed" | "cancelled";
+
+export type SimulationRunInfo = {
+  simRunId: string;
+  jobId: string;
+  status: SimulationStatus;
+  ticks: number;
+  tickSeconds: number;
+  error: string | null;
+  logPath: string;
+};
+
+export type SimulationLogChunk = {
+  bytes: number;
+  nextOffset: number;
+  lines: string[];
+  status: SimulationStatus;
+  error?: string | null;
+};
+
+export async function startSimulation(
+  jobId: string,
+  ticks: number,
+  tickSeconds: number,
+): Promise<SimulationRunInfo> {
+  const response = await fetch(
+    `${BASE}/jobs/${encodeURIComponent(jobId)}/simulations`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ticks, tickSeconds }),
+      cache: "no-store",
+    },
+  );
+  return jsonOrThrow<SimulationRunInfo>(response);
+}
+
+export async function fetchSimulation(
+  jobId: string,
+  simRunId: string,
+): Promise<SimulationRunInfo> {
+  const response = await fetch(
+    `${BASE}/jobs/${encodeURIComponent(jobId)}/simulations/${encodeURIComponent(simRunId)}`,
+    { cache: "no-store" },
+  );
+  return jsonOrThrow<SimulationRunInfo>(response);
+}
+
+export async function cancelSimulation(
+  jobId: string,
+  simRunId: string,
+): Promise<SimulationRunInfo> {
+  const response = await fetch(
+    `${BASE}/jobs/${encodeURIComponent(jobId)}/simulations/${encodeURIComponent(simRunId)}/cancel`,
+    { method: "POST", cache: "no-store" },
+  );
+  return jsonOrThrow<SimulationRunInfo>(response);
+}
+
+export async function fetchSimulationLog(
+  jobId: string,
+  simRunId: string,
+  offset: number,
+): Promise<SimulationLogChunk> {
+  const url = new URL(
+    `${BASE}/jobs/${encodeURIComponent(jobId)}/simulations/${encodeURIComponent(simRunId)}/log`,
+    window.location.origin,
+  );
+  url.searchParams.set("offset", String(offset));
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  return jsonOrThrow<SimulationLogChunk>(response);
+}
+
 export async function exportWorkspaceArchive(
   metadata: Record<string, unknown>,
   jobId?: string | null,

@@ -6,6 +6,7 @@ import { type ChangeEvent, type ComponentType, useEffect, useMemo, useRef, useSt
 import ProjectPageHeader from "../components/project-page-header";
 import UsedItemsSection from "@/app/code/used-items-section";
 import CodeGenWorkspace from "@/app/code/code-gen-workspace";
+import SimulationViewer from "@/app/code/simulation-viewer";
 import {
     categoryPath,
     findComponentById as findSeedComponentById,
@@ -2347,6 +2348,23 @@ export default function CodePage() {
                         missingRequirements={missingRequirements}
                         onRunningChange={setIsCodeGenRunning}
                         onJobIdChange={setCurrentJobId}
+                    />
+
+                    <SimulationViewer
+                        jobId={currentJobId}
+                        selectedMetrics={selectedMetrics.map((m) => ({
+                            name: m.name,
+                            label: m.label,
+                            unit: m.unit,
+                            agg: m.agg,
+                            entities: m.entities,
+                            viz: m.viz,
+                            chart_group: m.chart_group ?? null,
+                            grounding: m.grounding ?? "domain_inference",
+                            required_attrs: m.required_attrs ?? [],
+                            sampling_event: m.sampling_event ?? "tick",
+                            rationale: m.rationale,
+                        }))}
                     />
                 </section>
             </main>

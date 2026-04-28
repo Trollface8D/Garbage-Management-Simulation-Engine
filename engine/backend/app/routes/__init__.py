@@ -11,6 +11,7 @@ from .jobs_create import router as jobs_create_router
 from .jobs_query import router as jobs_query_router
 from .jobs_stream import router as jobs_stream_router
 from .map_extract import router as map_extract_router
+from .simulate import router as simulate_router
 
 __all__ = [
 	"code_gen_router",
@@ -24,6 +25,7 @@ __all__ = [
 	"jobs_query_router",
 	"jobs_stream_router",
 	"map_extract_router",
+	"simulate_router",
 	"suggest_metrics_router",
 	"workspace_archive_router",
 ]
