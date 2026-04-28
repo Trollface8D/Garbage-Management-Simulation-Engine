@@ -624,11 +624,50 @@ def _stage_finalize_bundle(ctx: StageContext) -> dict[str, Any]:
         target.write_text(str(payload.get("code") or ""), encoding="utf-8")
         manifest_files.append({"path": f"policies/{filename}", "iterId": entry["iterId"], "kind": "policy"})
 
+    # Runtime assets — deterministic, no LLM call. The generated bundle
+    # gets a Reporter + run.py orchestrator + the metric contract JSON
+    # the user picked at job submission, plus a small PowerBI recipe so
+    # downstream BI consumes the same chart_group / viz hints.
+    from . import codegen_runtime_assets as _runtime_assets
+
+    selected_metrics_raw = ctx.inputs.get("selectedMetrics") or []
+    selected_metrics: list[dict[str, Any]] = [
+        m for m in selected_metrics_raw if isinstance(m, dict)
+    ]
+
+    (base / "reporter.py").write_text(_runtime_assets.REPORTER_PY, encoding="utf-8")
+    manifest_files.append({"path": "reporter.py", "kind": "runtime"})
+    (base / "run.py").write_text(_runtime_assets.RUN_PY, encoding="utf-8")
+    manifest_files.append({"path": "run.py", "kind": "runtime"})
+
+    contracts_payload = _runtime_assets.build_metric_contracts(
+        selected_metrics, job_id=ctx.job_id
+    )
+    (base / "metric_contracts.json").write_text(
+        _runtime_assets.serialize_json(contracts_payload), encoding="utf-8"
+    )
+    manifest_files.append({"path": "metric_contracts.json", "kind": "metrics"})
+
+    pbi_dir = base / "pbi"
+    pbi_dir.mkdir(parents=True, exist_ok=True)
+    recipe_payload = _runtime_assets.build_pbi_recipe(
+        selected_metrics, job_id=ctx.job_id
+    )
+    (pbi_dir / "recipe.json").write_text(
+        _runtime_assets.serialize_json(recipe_payload), encoding="utf-8"
+    )
+    manifest_files.append({"path": "pbi/recipe.json", "kind": "pbi"})
+    (pbi_dir / "theme.json").write_text(
+        _runtime_assets.serialize_json(_runtime_assets.PBI_THEME_JSON), encoding="utf-8"
+    )
+    manifest_files.append({"path": "pbi/theme.json", "kind": "pbi"})
+
     manifest = {
         "pipeline": "code_gen",
         "jobId": ctx.job_id,
         "files": manifest_files,
         "tokenUsage": dict(ctx.usage) if ctx.usage else {},
+        "selectedMetricsCount": len(selected_metrics),
     }
     import json as _json
 
