@@ -27,12 +27,19 @@ logger = logging.getLogger(__name__)
 
 MetricAggregation = Literal["sum", "mean", "max", "min", "count", "ratio"]
 MetricViz = Literal["line", "bar", "histogram", "gauge", "stacked_area"]
+MetricGrounding = Literal["causal_explicit", "causal_implicit", "domain_inference"]
+MetricSamplingEvent = Literal["tick", "policy_fired", "entity_created", "entity_destroyed"]
 
 MAX_CAUSAL_CHARS = 30_000
 
 
 class EntityRef(BaseModel):
     name: str = Field(..., description="Canonical entity name from the workspace.")
+
+
+class MetricAttrDependency(BaseModel):
+    entity: str = Field(..., description="Entity name the attribute belongs to.")
+    attr: str = Field(..., description="Attribute / property name to read for sampling.")
 
 
 class MetricSuggestionRequest(BaseModel):
@@ -62,6 +69,25 @@ class SuggestedMetric(BaseModel):
         description="Subset of input entity names this metric depends on.",
     )
     viz: MetricViz = Field(..., description="Suggested chart type for visualizing this metric.")
+    chart_group: str | None = Field(
+        default=None,
+        description="Optional shared key — metrics with the same chart_group render on one combined panel (overlay / dual-axis).",
+    )
+    grounding: MetricGrounding = Field(
+        default="domain_inference",
+        description=(
+            "How the metric was justified: causal_explicit (named in causal text), "
+            "causal_implicit (relations imply it), domain_inference (LLM filled the gap)."
+        ),
+    )
+    required_attrs: list[MetricAttrDependency] = Field(
+        default_factory=list,
+        description="Entity attributes the Reporter must sample to compute this metric.",
+    )
+    sampling_event: MetricSamplingEvent = Field(
+        default="tick",
+        description="Sim event that triggers a sample.",
+    )
     rationale: str = Field(
         default="",
         description="One-sentence explanation of why this metric matters for the domain.",
@@ -82,22 +108,52 @@ Entity names:
 
 {causal_block}
 
-Rules:
-1. Every metric must be derivable from observable state of one or more of
-   the listed entities. Do NOT propose metrics that require concepts not
-   represented above.
-2. Prefer metrics that surface bottlenecks, utilization, throughput,
+Hard rules:
+1. Every metric must be derivable from observable state / events of one
+   or more of the listed entities. Do NOT propose metrics that require
+   concepts not represented above.
+2. Each metric must declare the concrete entity attributes it samples in
+   ``required_attrs`` (entity + attr pairs). The Reporter the codegen
+   pipeline emits will read exactly these. If you can't name attributes
+   that almost certainly exist on a normal implementation of the entity,
+   drop the metric.
+3. Prefer metrics that surface bottlenecks, utilization, throughput,
    waiting / queue length, ratios, and equity / fairness across entity
-   instances. Mix domain-specific (e.g. waste collected, kg) with
-   universal (e.g. queue length, count) metrics.
-3. Produce 5 to 10 metrics. Quality > quantity.
-4. ``name`` must be snake_case Python identifier; ``label`` is the
-   human-readable form.
-5. ``agg`` is one of: sum, mean, max, min, count, ratio.
-6. ``viz`` is one of: line, bar, histogram, gauge, stacked_area.
-7. ``entities`` lists the input entity names this metric depends on; do
-   not invent new names.
-8. ``rationale`` is one sentence about why a domain reader cares.
+   instances. Mix domain-specific (e.g. waste_collected_kg) with
+   universal (e.g. queue length, count).
+4. Produce 5 to 10 metrics. Quality > quantity.
+
+Field rules:
+- ``name`` must be a snake_case Python identifier; ``label`` is the
+  human-readable form.
+- ``unit`` is the unit string (kg, items, %, ratio, ...). Empty for
+  dimensionless ratios.
+- ``agg`` is one of: sum, mean, max, min, count, ratio.
+- ``viz`` is one of: line, bar, histogram, gauge, stacked_area.
+  THINK ABOUT THE CHART FIRST: pick a viz the metric will actually look
+  meaningful in. If two metrics are best understood together, give them
+  the same ``chart_group`` so the in-engine viewer overlays them on one
+  panel.
+- ``grounding`` MUST reflect honesty:
+    * "causal_explicit"  — the metric is named or directly described in
+                            the causal text excerpt.
+    * "causal_implicit"  — the causal relations imply it (e.g. "trucks
+                            fill up" implies a fill-rate metric).
+    * "domain_inference" — domain knowledge you are contributing because
+                            the causal text didn't make it explicit.
+  Don't lie about grounding — domain_inference is fine, just label it.
+- ``entities`` lists which input entity names this metric reads from;
+  do not invent new names.
+- ``required_attrs`` is a list of {{"entity": "<name>", "attr": "<attr>"}}
+  pairs naming the attributes the Reporter samples. Use realistic
+  attribute names like ``capacity``, ``current_load``, ``status``,
+  ``queue_length`` — the entity-code stage will be told to expose them.
+- ``sampling_event`` is when the Reporter takes a sample. One of:
+  "tick" (every simulation tick — use for time-series),
+  "policy_fired" (when a policy rule executes),
+  "entity_created" / "entity_destroyed" (lifecycle counts).
+  Default to "tick" for almost all metrics.
+- ``rationale`` is one sentence about why a domain reader cares.
 
 Return ONLY a JSON object of this exact shape (no prose, no markdown, no
 code fences):
@@ -108,8 +164,15 @@ code fences):
       "label": "Display Name",
       "unit": "kg",
       "agg": "sum",
-      "entities": ["truck", "bin"],
       "viz": "line",
+      "chart_group": "capacity_pressure",
+      "grounding": "causal_implicit",
+      "entities": ["truck", "bin"],
+      "required_attrs": [
+        {{"entity": "truck", "attr": "current_load"}},
+        {{"entity": "truck", "attr": "capacity"}}
+      ],
+      "sampling_event": "tick",
       "rationale": "..."
     }}
   ]
@@ -185,6 +248,15 @@ def suggest_metrics(payload: MetricSuggestionRequest) -> MetricSuggestionRespons
             e for e in metric.entities if e.strip().lower() in entity_set
         ]
         metric.entities = metric_entities
+        # Same treatment for required_attrs — the Reporter can only sample
+        # attributes that belong to entities the user selected.
+        metric.required_attrs = [
+            dep for dep in metric.required_attrs if dep.entity.strip().lower() in entity_set
+        ]
+        # A metric without any grounded attribute can't be measured — drop it
+        # rather than letting the Reporter generate broken sampling code later.
+        if metric.sampling_event == "tick" and not metric.required_attrs:
+            continue
         valid.append(metric)
 
     if not valid:

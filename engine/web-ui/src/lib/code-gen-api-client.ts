@@ -49,6 +49,22 @@ export type CodeGenIterationEntry = {
   bytes: number;
 };
 
+export type MetricGrounding =
+  | "causal_explicit"
+  | "causal_implicit"
+  | "domain_inference";
+
+export type MetricSamplingEvent =
+  | "tick"
+  | "policy_fired"
+  | "entity_created"
+  | "entity_destroyed";
+
+export type MetricAttrDependency = {
+  entity: string;
+  attr: string;
+};
+
 export type SuggestedMetric = {
   name: string;
   label: string;
@@ -56,6 +72,10 @@ export type SuggestedMetric = {
   agg: "sum" | "mean" | "max" | "min" | "count" | "ratio";
   entities: string[];
   viz: "line" | "bar" | "histogram" | "gauge" | "stacked_area";
+  chart_group?: string | null;
+  grounding?: MetricGrounding;
+  required_attrs?: MetricAttrDependency[];
+  sampling_event?: MetricSamplingEvent;
   rationale: string;
 };
 

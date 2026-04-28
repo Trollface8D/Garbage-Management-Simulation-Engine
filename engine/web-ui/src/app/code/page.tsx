@@ -2202,6 +2202,38 @@ export default function CodePage() {
                                                             <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-neutral-300">
                                                                 {metric.viz}
                                                             </span>
+                                                            {metric.chart_group ? (
+                                                                <span
+                                                                    title="Metrics in the same chart group render on one combined panel."
+                                                                    className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-indigo-200"
+                                                                >
+                                                                    group: {metric.chart_group}
+                                                                </span>
+                                                            ) : null}
+                                                            {metric.grounding ? (
+                                                                <span
+                                                                    title={
+                                                                        metric.grounding === "causal_explicit"
+                                                                            ? "Named directly in the causal text."
+                                                                            : metric.grounding === "causal_implicit"
+                                                                              ? "Causal relations imply this metric."
+                                                                              : "Domain knowledge from the LLM — not stated in the causal text."
+                                                                    }
+                                                                    className={`rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider ${
+                                                                        metric.grounding === "causal_explicit"
+                                                                            ? "bg-emerald-500/15 text-emerald-200"
+                                                                            : metric.grounding === "causal_implicit"
+                                                                              ? "bg-amber-500/15 text-amber-200"
+                                                                              : "bg-rose-500/15 text-rose-200"
+                                                                    }`}
+                                                                >
+                                                                    {metric.grounding === "causal_explicit"
+                                                                        ? "explicit"
+                                                                        : metric.grounding === "causal_implicit"
+                                                                          ? "implicit"
+                                                                          : "inferred"}
+                                                                </span>
+                                                            ) : null}
                                                             {metric.unit ? (
                                                                 <span className="text-[10px] text-neutral-500">
                                                                     [{metric.unit}]
@@ -2216,6 +2248,17 @@ export default function CodePage() {
                                                         {metric.entities.length > 0 ? (
                                                             <p className="mt-1 text-[11px] text-neutral-500">
                                                                 from: {metric.entities.join(", ")}
+                                                            </p>
+                                                        ) : null}
+                                                        {metric.required_attrs && metric.required_attrs.length > 0 ? (
+                                                            <p
+                                                                className="mt-1 font-mono text-[10px] text-neutral-500"
+                                                                title="Attributes the Reporter will sample from each entity instance."
+                                                            >
+                                                                samples:{" "}
+                                                                {metric.required_attrs
+                                                                    .map((dep) => `${dep.entity}.${dep.attr}`)
+                                                                    .join(", ")}
                                                             </p>
                                                         ) : null}
                                                     </div>
@@ -2295,6 +2338,10 @@ export default function CodePage() {
                             agg: m.agg,
                             entities: m.entities,
                             viz: m.viz,
+                            chart_group: m.chart_group ?? null,
+                            grounding: m.grounding ?? "domain_inference",
+                            required_attrs: m.required_attrs ?? [],
+                            sampling_event: m.sampling_event ?? "tick",
                             rationale: m.rationale,
                         }))}
                         missingRequirements={missingRequirements}
