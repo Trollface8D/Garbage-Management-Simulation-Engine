@@ -117,9 +117,6 @@ function sanitizeFilenameSegment(value: string): string {
     return value.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "imported";
 }
 
-const PROGRESS_TICK_MS = 240;
-const PROGRESS_STEP = 6;
-
 type CausalComponentRef = { projectId: string; componentId: string };
 
 async function aggregateEntitiesFromCausalComponents(
@@ -451,8 +448,6 @@ export default function CodePage() {
     const [isExtracted, setIsExtracted] = useState<boolean>(false);
     const [isExtracting, setIsExtracting] = useState<boolean>(false);
     const [extractError, setExtractError] = useState<string>("");
-    const [isGenerating, setIsGenerating] = useState<boolean>(false);
-    const [progress, setProgress] = useState<number>(0);
     const [isImporting, setIsImporting] = useState<boolean>(false);
     const [importMessage, setImportMessage] = useState<string>("");
     const [importError, setImportError] = useState<string>("");
@@ -494,7 +489,6 @@ export default function CodePage() {
 
     const inputsLocked = isCodeGenRunning;
 
-    const progressTimerRef = useRef<number | null>(null);
     const importInputRef = useRef<HTMLInputElement | null>(null);
     const wordCloudHostRef = useRef<HTMLDivElement | null>(null);
 
@@ -592,14 +586,6 @@ export default function CodePage() {
 
     useEffect(() => {
         void refreshPmData();
-    }, []);
-
-    useEffect(() => {
-        return () => {
-            if (progressTimerRef.current) {
-                clearInterval(progressTimerRef.current);
-            }
-        };
     }, []);
 
     const snapshotKey = useMemo(
@@ -755,15 +741,6 @@ export default function CodePage() {
         };
     }, [isExtracted, wordCloudWords]);
 
-    const stopGeneration = () => {
-        if (progressTimerRef.current) {
-            clearInterval(progressTimerRef.current);
-            progressTimerRef.current = null;
-        }
-
-        setIsGenerating(false);
-    };
-
     const handleExtractFromCausal = () => {
         if (isExtracting) {
             return;
@@ -773,8 +750,6 @@ export default function CodePage() {
             return;
         }
 
-        stopGeneration();
-        setProgress(0);
         setExtractError("");
         setGroupError("");
         setCollapsedParentIds(new Set());
@@ -795,7 +770,6 @@ export default function CodePage() {
                 const aggregated = await aggregateEntitiesFromCausalComponents(refs);
                 setEntities(aggregated);
                 setIsExtracted(true);
-                setProgress(aggregated.length > 0 ? 12 : 0);
                 if (aggregated.length === 0) {
                     setExtractError(
                         "No extracted relations found in the selected causal artifacts.",
@@ -1102,7 +1076,6 @@ export default function CodePage() {
         });
         setIsExtracted(false);
         setEntities([]);
-        setProgress(0);
         setExtractError("");
         setGroupError("");
         setCollapsedParentIds(new Set());
@@ -1111,35 +1084,6 @@ export default function CodePage() {
     const handleToggleMapSelection = (id: string) => {
         if (inputsLocked) return;
         setSelectedMapId((prev) => (prev === id ? null : id));
-    };
-
-    const handleGenerate = () => {
-        if (!isExtracted || isGenerating) {
-            return;
-        }
-
-        if (missingRequirements.length > 0) {
-            setExtractError(
-                `Cannot generate yet. Required steps:\n• ${missingRequirements.join("\n• ")}`,
-            );
-            return;
-        }
-
-        if (progress >= 100) {
-            setProgress(0);
-        }
-
-        setIsGenerating(true);
-
-        progressTimerRef.current = window.setInterval(() => {
-            setProgress((currentProgress) => {
-                const next = Math.min(100, currentProgress + PROGRESS_STEP);
-                if (next >= 100) {
-                    stopGeneration();
-                }
-                return next;
-            });
-        }, PROGRESS_TICK_MS);
     };
 
     const handleDeleteComponent = (targetId: string) => {
@@ -2268,46 +2212,6 @@ export default function CodePage() {
                                         ))}
                                     </div>
                                 )}
-                            </div>
-                        </div>
-                    ) : null}
-
-                    {isExtracted ? (
-                        <div className="mt-6 space-y-4">
-                            <div className="flex flex-wrap items-center gap-3">
-                                <button
-                                    type="button"
-                                    onClick={handleGenerate}
-                                    disabled={isGenerating || missingRequirements.length > 0}
-                                    title={
-                                        missingRequirements.length > 0
-                                            ? `Required: ${missingRequirements.join(" / ")}`
-                                            : undefined
-                                    }
-                                    className="rounded-md border border-emerald-700 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    {isGenerating ? "generating..." : "generate"}
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={stopGeneration}
-                                    className="rounded-md border border-red-800 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-500/20"
-                                >
-                                    stop
-                                </button>
-                            </div>
-
-                            <div className="rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
-                                <div className="h-4 w-full overflow-hidden rounded-md bg-neutral-800">
-                                    <div
-                                        className="h-full rounded-md bg-sky-500 transition-[width] duration-200"
-                                        style={{ width: `${String(progress)}%` }}
-                                    />
-                                </div>
-                                <p className="mt-2 text-right text-xs font-semibold text-neutral-300">
-                                    {String(progress)}%
-                                </p>
                             </div>
                         </div>
                     ) : null}

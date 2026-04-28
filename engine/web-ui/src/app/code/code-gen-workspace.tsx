@@ -427,6 +427,45 @@ export default function CodeGenWorkspace({
         </button>
       </div>
 
+      {(() => {
+        const completed = job.status?.completedStages?.length ?? 0;
+        const remaining = job.status?.remainingStages ?? null;
+        const total = remaining !== null ? completed + remaining : null;
+        const percent = total && total > 0 ? Math.round((completed / total) * 100) : 0;
+        const showBar = isRunning || (jobStatus && jobStatus !== "queued") || completed > 0;
+        if (!showBar) return null;
+        return (
+          <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
+            <div className="mb-1 flex items-baseline justify-between text-xs text-neutral-400">
+              <span>
+                Progress:{" "}
+                <span className="text-neutral-200">
+                  {String(completed)}/{total !== null ? String(total) : "?"} stages
+                </span>
+                {currentStage ? (
+                  <span className="ml-2 font-mono text-neutral-300">{currentStage}</span>
+                ) : null}
+              </span>
+              <span className="font-mono text-neutral-300">{String(percent)}%</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-md bg-neutral-800">
+              <div
+                className={`h-full rounded-md transition-[width] duration-300 ${
+                  jobStatus === "failed"
+                    ? "bg-red-500"
+                    : jobStatus === "cancelled"
+                      ? "bg-amber-500"
+                      : jobStatus === "completed"
+                        ? "bg-emerald-500"
+                        : "bg-sky-500"
+                }`}
+                style={{ width: `${String(percent)}%` }}
+              />
+            </div>
+          </div>
+        );
+      })()}
+
       {actionError ? (
         <p className="mt-3 whitespace-pre-line rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
           {actionError}
