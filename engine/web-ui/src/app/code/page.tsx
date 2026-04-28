@@ -1117,6 +1117,13 @@ export default function CodePage() {
             return;
         }
 
+        if (missingRequirements.length > 0) {
+            setExtractError(
+                `Cannot generate yet. Required steps:\n• ${missingRequirements.join("\n• ")}`,
+            );
+            return;
+        }
+
         if (progress >= 100) {
             setProgress(0);
         }
@@ -1780,7 +1787,7 @@ export default function CodePage() {
                         </div>
 
                         {extractError ? (
-                            <div className="mb-3 rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                            <div className="mb-3 whitespace-pre-line rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
                                 {extractError}
                             </div>
                         ) : null}
@@ -2007,40 +2014,6 @@ export default function CodePage() {
                             )}
                         </div>
 
-                        {isExtracted ? (
-                            <div className="mt-4 space-y-4">
-                                <div className="flex flex-wrap items-center gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={handleGenerate}
-                                        disabled={isGenerating}
-                                        className="rounded-md border border-emerald-700 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
-                                        {isGenerating ? "generating..." : "generate"}
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={stopGeneration}
-                                        className="rounded-md border border-red-800 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-500/20"
-                                    >
-                                        stop
-                                    </button>
-                                </div>
-
-                                <div className="rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
-                                    <div className="h-4 w-full overflow-hidden rounded-md bg-neutral-800">
-                                        <div
-                                            className="h-full rounded-md bg-sky-500 transition-[width] duration-200"
-                                            style={{ width: `${String(progress)}%` }}
-                                        />
-                                    </div>
-                                    <p className="mt-2 text-right text-xs font-semibold text-neutral-300">
-                                        {String(progress)}%
-                                    </p>
-                                </div>
-                            </div>
-                        ) : null}
                     </div>
 
                     {isExtracted ? (
@@ -2251,6 +2224,46 @@ export default function CodePage() {
                                         ))}
                                     </div>
                                 )}
+                            </div>
+                        </div>
+                    ) : null}
+
+                    {isExtracted ? (
+                        <div className="mt-6 space-y-4">
+                            <div className="flex flex-wrap items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={handleGenerate}
+                                    disabled={isGenerating || missingRequirements.length > 0}
+                                    title={
+                                        missingRequirements.length > 0
+                                            ? `Required: ${missingRequirements.join(" / ")}`
+                                            : undefined
+                                    }
+                                    className="rounded-md border border-emerald-700 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {isGenerating ? "generating..." : "generate"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={stopGeneration}
+                                    className="rounded-md border border-red-800 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-500/20"
+                                >
+                                    stop
+                                </button>
+                            </div>
+
+                            <div className="rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
+                                <div className="h-4 w-full overflow-hidden rounded-md bg-neutral-800">
+                                    <div
+                                        className="h-full rounded-md bg-sky-500 transition-[width] duration-200"
+                                        style={{ width: `${String(progress)}%` }}
+                                    />
+                                </div>
+                                <p className="mt-2 text-right text-xs font-semibold text-neutral-300">
+                                    {String(progress)}%
+                                </p>
                             </div>
                         </div>
                     ) : null}

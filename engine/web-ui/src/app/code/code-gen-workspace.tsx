@@ -316,10 +316,15 @@ export default function CodeGenWorkspace({
     }
     try {
       const causalData = await aggregateCausalText(causalChoices);
+      // Policy stage needs the FULL entity universe so policies can reference
+      // any preview entity even if the user unchecked it in the workspace's
+      // entity list. The user's checkbox subset stays advisory for now.
+      const fullEntityList =
+        job.preview?.entities.map((e) => ({ id: e.id })) ?? [];
       const refinedJobId = await job.start({
         causalData,
         mapNodeJson,
-        selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
+        selectedEntities: fullEntityList,
         selectedPolicies: Array.from(selectedPolicyIds).map((rule_id) => ({ rule_id })),
         selectedMetrics,
         model,
