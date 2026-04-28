@@ -384,23 +384,28 @@ export default function CodeGenWorkspace({
         </button>
       </div>
 
+      {/* One entrypoint: "Generate" runs the State 1 / 1b preview first; the
+          confirm step is rendered below as a green button next to the
+          entity / policy preview lists. Cancel + Reset stay handy. */}
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={() => void handlePreview()}
-          disabled={isRunning}
+          disabled={isRunning || !!job.preview}
+          title={
+            job.preview
+              ? "Preview already loaded — confirm or reset below."
+              : undefined
+          }
           className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {job.isPreviewing ? "Previewing..." : job.isStarting ? "Starting..." : "Preview entities"}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => void handleGenerate()}
-          disabled={!job.preview || job.isResuming || job.isPolling}
-          className="rounded-md border border-emerald-700 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {job.isResuming ? "Resuming..." : job.isPolling ? "Generating..." : "Generate"}
+          {job.isPreviewing
+            ? "Previewing entities…"
+            : job.isStarting
+              ? "Starting…"
+              : job.preview
+                ? "Preview loaded ↓"
+                : "Generate"}
         </button>
 
         <button
@@ -532,6 +537,42 @@ export default function CodeGenWorkspace({
                 </li>
               ))}
             </ul>
+          </div>
+        </div>
+      ) : null}
+
+      {job.preview && !job.isResuming && !job.isPolling && jobStatus !== "running" ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-700/50 bg-emerald-500/5 p-3">
+          <p className="text-sm text-emerald-100">
+            Preview ready — review the {job.preview.entities.length} entities and{" "}
+            {job.preview.policies.length} policies above. Confirm to start the
+            full generation, or reset to re-preview.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setActionError("");
+                lastResultJobIdRef.current = null;
+                job.reset();
+              }}
+              className="rounded-md border border-neutral-700 bg-neutral-800/40 px-3 py-2 text-xs font-semibold text-neutral-200 transition hover:bg-neutral-700/40"
+            >
+              Reset & re-preview
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleGenerate()}
+              disabled={selectedEntityIds.size === 0}
+              title={
+                selectedEntityIds.size === 0
+                  ? "Select at least one preview entity above"
+                  : undefined
+              }
+              className="rounded-md border border-emerald-600 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Confirm &amp; start generation
+            </button>
           </div>
         </div>
       ) : null}
