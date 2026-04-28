@@ -1147,6 +1147,33 @@ export default function CodePage() {
 
     const selectedMetrics = useMemo(() => metrics.filter((m) => m.selected), [metrics]);
 
+    const missingRequirements = useMemo(() => {
+        const missing: string[] = [];
+        if (selectedCausalIds.size === 0) {
+            missing.push("Select at least one causal source above.");
+        }
+        if (!isExtracted) {
+            missing.push('Run "Extract from causal" to populate the entity list.');
+        } else if (selectedEntities.length === 0) {
+            missing.push("Select at least one entity in the entity list.");
+        }
+        if (!metricsExtracted || metrics.length === 0) {
+            missing.push(
+                'Generate or manually add metrics in the "Metric to be tracked" section.',
+            );
+        } else if (selectedMetrics.length === 0) {
+            missing.push("Select at least one metric in the metric list.");
+        }
+        return missing;
+    }, [
+        selectedCausalIds,
+        isExtracted,
+        selectedEntities,
+        metricsExtracted,
+        metrics,
+        selectedMetrics,
+    ]);
+
     const appendMetricsLog = (level: "info" | "warn" | "error", message: string) => {
         metricsLogIdRef.current += 1;
         const id = metricsLogIdRef.current;
@@ -1634,7 +1661,7 @@ export default function CodePage() {
 
                 <section className="space-y-8">
                     <UsedItemsSection
-                        title="Causal used"
+                        title="Causal used *"
                         category="Causal"
                         items={causalItems}
                         onDelete={handleDeleteComponent}
@@ -1656,7 +1683,10 @@ export default function CodePage() {
                     <div>
                         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                             <h2 className="text-xl font-bold text-neutral-100 md:text-2xl">
-                                Entity that will be generated
+                                Entity that will be generated{" "}
+                                <span className="text-red-400" aria-label="required">
+                                    *
+                                </span>
                             </h2>
                             <div className="flex flex-wrap items-center gap-2">
                                 <ModelPicker
@@ -2018,10 +2048,13 @@ export default function CodePage() {
                             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                     <h2 className="text-xl font-bold text-neutral-100 md:text-2xl">
-                                        Metric to be tracked
+                                        Metric to be tracked{" "}
+                                        <span className="text-red-400" aria-label="required">
+                                            *
+                                        </span>
                                     </h2>
                                     <p className="mt-1 text-xs text-neutral-400">
-                                        Required step. Pick at least one metric before code generation can start; selections lock once a job runs.
+                                        Pick at least one metric before code generation can start; selections lock once a job runs.
                                     </p>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
@@ -2251,6 +2284,7 @@ export default function CodePage() {
                             viz: m.viz,
                             rationale: m.rationale,
                         }))}
+                        missingRequirements={missingRequirements}
                         onRunningChange={setIsCodeGenRunning}
                         onJobIdChange={setCurrentJobId}
                     />
