@@ -11,9 +11,7 @@ import {
 import { useCodeGenJob } from "@/lib/use-code-gen-job";
 import {
   loadCausalArtifactsForItem,
-  loadCausalSourceItem,
   loadCausalSourceItems,
-  type CausalSourceItem,
 } from "@/lib/pm-storage";
 import type { MapGraphPayload } from "@/lib/map-types";
 
@@ -55,41 +53,23 @@ function loadMapGraphForComponent(componentId: string): MapGraphPayload | null {
 }
 
 async function aggregateCausalText(items: CausalChoice[]): Promise<string> {
+  // Codegen prompt input is only the `raw_extraction` field from each causal
+  // artifact — the original source/transcript text is intentionally omitted
+  // (too noisy, the structured relations are what State 1/1b actually need).
   const blocks: string[] = [];
   for (const item of items) {
-    let source: CausalSourceItem | null = null;
-    try {
-      source = await loadCausalSourceItem(item.id);
-    } catch {
-      source = null;
-    }
-    const heading = `# ${item.label}`;
-    const sourceText = source?.textContent?.trim() || "";
     let extractionBlock = "";
     try {
       const artifacts = await loadCausalArtifactsForItem(item.id);
-      const lines: string[] = [];
-      for (const chunk of artifacts.raw_extraction || []) {
-        for (const cls of chunk.classes || []) {
-          for (const rel of cls.extracted || []) {
-            const head = rel.head?.trim() || "";
-            const relationship = rel.relationship?.trim() || "";
-            const tail = rel.tail?.trim() || "";
-            const detail = rel.detail?.trim() || "";
-            if (!head && !relationship && !tail) continue;
-            lines.push(`- ${head} -[${relationship}]-> ${tail}${detail ? ` :: ${detail}` : ""}`);
-          }
-        }
-      }
-      if (lines.length > 0) {
-        extractionBlock = `## Extracted relations\n${lines.join("\n")}`;
+      const raw = artifacts.raw_extraction || [];
+      if (raw.length > 0) {
+        extractionBlock = `# ${item.label}\n${JSON.stringify(raw, null, 2)}`;
       }
     } catch {
       extractionBlock = "";
     }
-    const parts = [heading, sourceText, extractionBlock].filter((s) => s.length > 0);
-    if (parts.length > 0) {
-      blocks.push(parts.join("\n\n"));
+    if (extractionBlock) {
+      blocks.push(extractionBlock);
     }
   }
   return blocks.join("\n\n---\n\n").trim();
