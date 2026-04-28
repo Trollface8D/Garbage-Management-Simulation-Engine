@@ -415,6 +415,19 @@ def preview_entities(job_id: str):
             status_code=409,
         )
 
+    # Clear any sticky cancel flag left over from the
+    # create-then-cancel-then-preview client flow. By this point the
+    # auto-spawned worker has already bailed (or never started a stage);
+    # leaving cancel_requested=True would make the inline preview's
+    # Gemini call fail with "cancel requested" before running anything.
+    with JOBS_LOCK:
+        job.cancel_requested = False
+        if job.status in {"cancelled", "failed"}:
+            job.status = "queued"
+            job.current_stage = None
+            job.error = None
+        job.updated_at = utc_now_iso()
+
     inputs = {
         "causalData": manifest.get("causalData") or "",
         "mapNodeJson": manifest.get("mapNodeJson"),
