@@ -49,11 +49,43 @@ export type CodeGenIterationEntry = {
   bytes: number;
 };
 
+export type SuggestedMetric = {
+  name: string;
+  label: string;
+  unit: string;
+  agg: "sum" | "mean" | "max" | "min" | "count" | "ratio";
+  entities: string[];
+  viz: "line" | "bar" | "histogram" | "gauge" | "stacked_area";
+  rationale: string;
+};
+
+export async function suggestMetrics(
+  entities: Array<{ name: string }>,
+  causalText?: string,
+  model?: string,
+  signal?: AbortSignal,
+): Promise<SuggestedMetric[]> {
+  const response = await fetch(`${BASE}/suggest_metrics`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      entities,
+      ...(causalText ? { causalText } : {}),
+      ...(model ? { model } : {}),
+    }),
+    cache: "no-store",
+    signal,
+  });
+  const payload = await jsonOrThrow<{ metrics: SuggestedMetric[] }>(response);
+  return payload.metrics || [];
+}
+
 export type CodeGenCreateRequest = {
   causalData: string;
   mapNodeJson?: Record<string, unknown> | null;
   selectedEntities?: Array<{ id: string }>;
   selectedPolicies?: Array<{ rule_id: string }>;
+  selectedMetrics?: SuggestedMetric[];
   model?: string;
 };
 

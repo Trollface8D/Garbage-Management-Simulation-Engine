@@ -16,6 +16,7 @@ from .routes import (
     jobs_query_router,
     jobs_stream_router,
     map_extract_router,
+    suggest_metrics_router,
     workspace_archive_router,
 )
 
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs_artifacts_router)
     app.include_router(map_extract_router)
     app.include_router(code_gen_router)
+    app.include_router(suggest_metrics_router)
     app.include_router(workspace_archive_router)
     app.include_router(compat_router)
     return app

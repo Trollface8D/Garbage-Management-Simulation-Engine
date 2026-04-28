@@ -6,6 +6,7 @@ import {
   fetchCodeGenResult,
   type CodeGenEntity,
   type CodeGenPolicyOutline,
+  type SuggestedMetric,
 } from "@/lib/code-gen-api-client";
 import { useCodeGenJob } from "@/lib/use-code-gen-job";
 import {
@@ -35,6 +36,7 @@ type Props = {
   selectedMapId?: string | null;
   selectedMapLabel?: string | null;
   model: string;
+  selectedMetrics: SuggestedMetric[];
   onRunningChange?: (running: boolean) => void;
   onJobIdChange?: (jobId: string | null) => void;
 };
@@ -97,6 +99,7 @@ export default function CodeGenWorkspace({
   selectedMapId,
   selectedMapLabel,
   model,
+  selectedMetrics,
   onRunningChange,
   onJobIdChange,
 }: Props) {
@@ -268,11 +271,18 @@ export default function CodeGenWorkspace({
       setActionError("Selected causal sources have no extractable text.");
       return;
     }
+    if (selectedMetrics.length === 0) {
+      setActionError(
+        "Select at least one metric in the metric section before previewing.",
+      );
+      return;
+    }
 
     try {
       const newJobId = await job.start({
         causalData,
         mapNodeJson,
+        selectedMetrics,
         model,
       });
       await job.runPreview(newJobId);
@@ -298,6 +308,7 @@ export default function CodeGenWorkspace({
         mapNodeJson,
         selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
         selectedPolicies: Array.from(selectedPolicyIds).map((rule_id) => ({ rule_id })),
+        selectedMetrics,
         model,
       });
       await job.generate(refinedJobId);

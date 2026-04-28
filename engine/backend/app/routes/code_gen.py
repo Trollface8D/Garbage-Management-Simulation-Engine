@@ -154,6 +154,12 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         return JSONResponse({"error": "mapNodeJson must be an object or null."}, status_code=400)
     selected_entities = list(payload.get("selectedEntities") or [])
     selected_policies = list(payload.get("selectedPolicies") or [])
+    selected_metrics = list(payload.get("selectedMetrics") or [])
+    if not selected_metrics:
+        return JSONResponse(
+            {"error": "selectedMetrics is required — pick at least one metric to track."},
+            status_code=400,
+        )
 
     now = utc_now_iso()
     job_id = f"code_gen-{uuid4().hex}"
@@ -168,6 +174,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         map_node_json=map_node_json,
         selected_entities=selected_entities,
         selected_policies=selected_policies,
+        selected_metrics=selected_metrics,
         model_name=resolved_model,
         use_env_model_overrides=use_env_model_overrides,
     )
@@ -177,6 +184,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         "mapNodeJson": map_node_json,
         "selectedEntities": selected_entities,
         "selectedPolicies": selected_policies,
+        "selectedMetrics": selected_metrics,
     }
     _spawn_worker(
         job,
@@ -187,10 +195,11 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
     )
 
     logger.info(
-        "[code_gen] job queued jobId=%s entityCount=%s policyCount=%s",
+        "[code_gen] job queued jobId=%s entityCount=%s policyCount=%s metricCount=%s",
         job_id,
         len(selected_entities),
         len(selected_policies),
+        len(selected_metrics),
     )
     return {
         "pipeline": "code_gen",
@@ -304,6 +313,7 @@ def resume_code_gen_job(job_id: str):
         "mapNodeJson": manifest.get("mapNodeJson"),
         "selectedEntities": manifest.get("selectedEntities") or [],
         "selectedPolicies": manifest.get("selectedPolicies") or [],
+        "selectedMetrics": manifest.get("selectedMetrics") or [],
     }
     _spawn_worker(
         job,
@@ -410,6 +420,7 @@ def preview_entities(job_id: str):
         "mapNodeJson": manifest.get("mapNodeJson"),
         "selectedEntities": manifest.get("selectedEntities") or [],
         "selectedPolicies": manifest.get("selectedPolicies") or [],
+        "selectedMetrics": manifest.get("selectedMetrics") or [],
     }
     model_name = str(manifest.get("modelName") or DEFAULT_MODEL_NAME)
     use_env_model_overrides = bool(manifest.get("useEnvModelOverrides", True))
