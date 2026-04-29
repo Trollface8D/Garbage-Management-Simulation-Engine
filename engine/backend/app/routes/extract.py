@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from google.genai.types import Part
 
 from ...infra.gemini_client import GeminiGateway
-from ...infra.io_utils import read_text, resolve_api_key
+from ...infra.io_utils import is_auth_available, read_text, resolve_api_key
 from ...infra.paths import BACKEND_DIR, AUDIO_MIME_MAP, DEFAULT_MODEL_NAME
 from ..services.causal_store import (
     CausalStoreConstraintError,
@@ -240,14 +240,14 @@ async def chunk_text_with_gemini(
     inputText: str | None = Form(default=None),
     model: str = Form(DEFAULT_MODEL_NAME),
 ):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     json_text: str | None = None
     json_payload: dict[str, Any] = {}
@@ -372,14 +372,14 @@ async def extract_structure(
     chunkId: str | None = Form(default=None),
     dbPath: str | None = Form(default=None),
 ):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     json_text: str | None = None
     json_payload: dict[str, Any] = {}
@@ -472,14 +472,14 @@ async def transcribe_audio(
     audioFile: UploadFile = File(...),
     model: str | None = Form(default=None),
 ):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     file_bytes = await audioFile.read()
     if not file_bytes:
@@ -543,14 +543,14 @@ async def transcribe_audio(
 
 @router.post("/follow-up")
 async def generate_follow_up_questions(request: Request):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     try:
         payload = await request.json()
@@ -616,14 +616,14 @@ async def transcribe_audio(
     audioFile: UploadFile = File(...),
     model: str | None = Form(default=None),
 ):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     file_bytes = await audioFile.read()
     if not file_bytes:
@@ -686,14 +686,14 @@ async def transcribe_audio(
 
 @router.post("/follow-up")
 async def generate_follow_up_questions(request: Request):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     try:
         payload = await request.json()

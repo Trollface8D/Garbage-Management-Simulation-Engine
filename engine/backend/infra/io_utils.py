@@ -9,9 +9,8 @@ def resolve_api_key() -> str | None:
     return os.getenv("GEMINI_API_KEY") or os.getenv("API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 
-def vertex_ai_available() -> bool:
-    """True when GOOGLE_APPLICATION_CREDENTIALS is set — use Vertex AI instead of AI Studio."""
-    return bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+def is_auth_available() -> bool:
+    return bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or resolve_api_key())
 
 
 def read_text(path: Path) -> str:

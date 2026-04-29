@@ -18,7 +18,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse, JSONResponse
 
-from ...infra.io_utils import resolve_api_key, vertex_ai_available
+from ...infra.io_utils import is_auth_available, resolve_api_key
 from ...infra.paths import DEFAULT_MODEL_NAME
 from ..models.job_models import JobRecord
 from ..services import code_gen_checkpoints as checkpoints
@@ -142,12 +142,12 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
     resolved_model = requested_model or DEFAULT_MODEL_NAME
     use_env_model_overrides = not bool(requested_model)
 
-    api_key = resolve_api_key()
-    if not api_key and not vertex_ai_available():
+    if not is_auth_available():
         return JSONResponse(
-            {"error": "API key is required (GEMINI_API_KEY / API_KEY / GOOGLE_API_KEY) unless GOOGLE_APPLICATION_CREDENTIALS is set for Vertex AI."},
+            {"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."},
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     map_node_json = payload.get("mapNodeJson")
     if map_node_json is not None and not isinstance(map_node_json, dict):
@@ -286,9 +286,9 @@ def resume_code_gen_job(job_id: str):
     with JOBS_LOCK:
         job = JOBS.get(job_id)
 
+    if not is_auth_available():
+        return JSONResponse({"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."}, status_code=500)
     api_key = resolve_api_key()
-    if not api_key and not vertex_ai_available():
-        return JSONResponse({"error": "API key required."}, status_code=500)
 
     manifest = checkpoints.load_inputs(job_id)
     if manifest is None:
@@ -397,9 +397,9 @@ def preview_entities(job_id: str):
     Caller is expected to confirm the preview before kicking off the full job
     (see ``POST /code_gen/jobs/{id}/resume``).
     """
+    if not is_auth_available():
+        return JSONResponse({"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."}, status_code=500)
     api_key = resolve_api_key()
-    if not api_key and not vertex_ai_available():
-        return JSONResponse({"error": "API key required."}, status_code=500)
 
     manifest = checkpoints.load_inputs(job_id)
     if manifest is None:

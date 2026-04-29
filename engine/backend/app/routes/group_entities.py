@@ -16,7 +16,7 @@ from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 
 from ...infra.gemini_client import GeminiGateway
-from ...infra.io_utils import resolve_api_key
+from ...infra.io_utils import is_auth_available, resolve_api_key
 from ...infra.paths import DEFAULT_MODEL_NAME
 
 
@@ -100,9 +100,9 @@ def group_entities(payload: dict[str, Any] = Body(...)) -> JSONResponse:
     if not counts:
         return JSONResponse({"counts": {}})
 
+    if not is_auth_available():
+        return JSONResponse({"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."}, status_code=500)
     api_key = resolve_api_key()
-    if not api_key:
-        return JSONResponse({"error": "GEMINI_API_KEY is not configured."}, status_code=500)
 
     model_name = (str(payload.get("model") or "").strip() or DEFAULT_MODEL_NAME)
     gateway = GeminiGateway(api_key=api_key, model_name=model_name)

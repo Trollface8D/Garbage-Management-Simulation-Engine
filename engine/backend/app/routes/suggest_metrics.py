@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ...infra.gemini_client import GeminiGateway
-from ...infra.io_utils import resolve_api_key
+from ...infra.io_utils import is_auth_available, resolve_api_key
 from ...infra.paths import DEFAULT_MODEL_NAME
 
 
@@ -200,11 +200,11 @@ def suggest_metrics(payload: MetricSuggestionRequest) -> MetricSuggestionRespons
             status_code=400, detail="At least one entity is required."
         )
 
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         raise HTTPException(
-            status_code=500, detail="GEMINI_API_KEY is not configured."
+            status_code=500, detail="No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."
         )
+    api_key = resolve_api_key()
 
     model_name = (payload.model or "").strip() or DEFAULT_MODEL_NAME
     gateway = GeminiGateway(api_key=api_key, model_name=model_name)

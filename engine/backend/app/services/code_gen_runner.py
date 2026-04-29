@@ -42,7 +42,7 @@ class StageContext:
     def __init__(
         self,
         job: JobRecord,
-        api_key: str,
+        api_key: str | None,
         model_name: str,
         use_env_model_overrides: bool,
         inputs: dict[str, Any],
@@ -781,7 +781,7 @@ def run_stage_inline(
     *,
     stage: str,
     job: JobRecord,
-    api_key: str,
+    api_key: str | None,
     model_name: str,
     use_env_model_overrides: bool,
     inputs: dict[str, Any],
@@ -817,7 +817,7 @@ def run_stage_inline(
 def run_code_gen_worker(
     *,
     job: JobRecord,
-    api_key: str,
+    api_key: str | None,
     model_name: str,
     use_env_model_overrides: bool,
     inputs: dict[str, Any],
