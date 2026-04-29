@@ -1773,7 +1773,7 @@ export default function MapExtractionWorkspace({
   };
 
   return (
-    <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+    <div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]">
       <main className="mx-auto w-full max-w-[1600px] px-4 py-6 md:px-6 md:py-8 lg:px-8">
         <ProjectPageHeader
           title="Map Extraction Section"

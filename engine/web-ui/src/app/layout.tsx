@@ -28,7 +28,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-[#1e1e1e] text-neutral-100">
+      <body className="min-h-full bg-[var(--surface-0)] text-[var(--text-1)]">
         <div className="flex min-h-screen flex-col md:flex-row">
           <PMSidebar />
           <div className="min-w-0 flex-1">{children}</div>

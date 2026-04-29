@@ -159,7 +159,7 @@ function CausalFollowUpPageContent() {
   }, [itemId]);
 
   return (
-    <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+    <div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]">
       <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
         <CausalWorkflowHeader
           title="Causal Extract - Follow Up"
@@ -211,7 +211,7 @@ function CausalFollowUpPageContent() {
 
 export default function CausalFollowUpPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#1e1e1e] text-neutral-100" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]" />}>
       <CausalFollowUpPageContent />
     </Suspense>
   );

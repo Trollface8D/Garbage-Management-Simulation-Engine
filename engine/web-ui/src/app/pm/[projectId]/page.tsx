@@ -138,7 +138,7 @@ export default function ProjectDashboardPage() {
 
   if (isLoadingData) {
     return (
-      <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+      <div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]">
         <main className="mx-auto w-full max-w-4xl px-5 py-12 md:px-8 md:py-16">
           <p className="text-sm text-neutral-400">Loading project dashboard...</p>
         </main>
@@ -148,7 +148,7 @@ export default function ProjectDashboardPage() {
 
   if (!project) {
     return (
-      <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+      <div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]">
         <main className="mx-auto w-full max-w-4xl px-5 py-12 md:px-8 md:py-16">
           <p className="text-sm text-neutral-400">
             <Link href="/" className="hover:text-neutral-200">
@@ -255,7 +255,7 @@ export default function ProjectDashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+    <div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]">
       <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
         <header className="mb-10">
           <p className="text-sm text-neutral-400">

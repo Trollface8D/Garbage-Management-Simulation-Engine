@@ -858,7 +858,7 @@ function CausalExtractHomeContent() {
     const projectBackHref = selectedProjectId ? `/pm/${encodeURIComponent(selectedProjectId)}` : "/";
 
     return (
-        <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+        <div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]">
             <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
                 <ProjectPageHeader
                     title="Garbage Flow Simulation Engine"
@@ -1152,7 +1152,7 @@ function CausalExtractHomeContent() {
 
 export default function CausalExtractHomePage() {
     return (
-        <Suspense fallback={<div className="min-h-screen bg-[#1e1e1e] text-neutral-100" />}>
+        <Suspense fallback={<div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]" />}>
             <CausalExtractHomeContent />
         </Suspense>
     );

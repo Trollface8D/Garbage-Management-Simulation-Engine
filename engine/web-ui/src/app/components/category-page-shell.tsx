@@ -8,7 +8,7 @@ type CategoryPageShellProps = {
 
 export default function CategoryPageShell({ title, description, children }: CategoryPageShellProps) {
   return (
-    <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+    <div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]">
       <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
         <header className="mb-8">
           <h1 className="text-3xl font-black uppercase tracking-tight text-neutral-100 md:text-5xl">{title}</h1>
