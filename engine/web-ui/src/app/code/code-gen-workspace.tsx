@@ -7,6 +7,7 @@ import {
   type CodeGenEntity,
   type CodeGenPolicyOutline,
   type SuggestedMetric,
+  type UserEntityItem,
 } from "@/lib/code-gen-api-client";
 import { useCodeGenJob } from "@/lib/use-code-gen-job";
 import {
@@ -35,6 +36,8 @@ type Props = {
   selectedMapLabel?: string | null;
   model: string;
   selectedMetrics: SuggestedMetric[];
+  /** Page-level entity list — source of truth for codegen. Passed as userEntityList to backend. */
+  pageEntities: UserEntityItem[];
   missingRequirements?: readonly string[];
   onRunningChange?: (running: boolean) => void;
   onJobIdChange?: (jobId: string | null) => void;
@@ -81,6 +84,7 @@ export default function CodeGenWorkspace({
   selectedMapLabel,
   model,
   selectedMetrics,
+  pageEntities,
   missingRequirements,
   onRunningChange,
   onJobIdChange,
@@ -165,11 +169,11 @@ export default function CodeGenWorkspace({
     };
   }, [causalSourceRefs]);
 
-  // When preview entities arrives, auto-select all by default.
+  // When preview arrives, auto-select all policies. Entity selection is driven
+  // by the page-level entity list (pageEntities), not the preview result.
   useEffect(() => {
     const preview = job.preview;
     if (!preview) return;
-    setSelectedEntityIds(new Set(preview.entities.map((e: CodeGenEntity) => e.id)));
     setSelectedPolicyIds(new Set(preview.policies.map((p: CodeGenPolicyOutline) => p.rule_id)));
   }, [job.preview]);
 
@@ -274,6 +278,7 @@ export default function CodeGenWorkspace({
         selectedMetrics,
         model,
         previewOnly: true,
+        userEntityList: pageEntities,
       });
       await job.runPreview(newJobId);
     } catch (err) {
@@ -291,25 +296,21 @@ export default function CodeGenWorkspace({
       setActionError("No active job. Run preview first.");
       return;
     }
-    if (selectedEntityIds.size === 0) {
-      setActionError("Select at least one entity.");
+    if (pageEntities.length === 0) {
+      setActionError("Add at least one entity in the entity section above before generating.");
       return;
     }
     try {
       const causalData = await aggregateCausalText(causalChoices);
-      // Policy stage needs the FULL entity universe so policies can reference
-      // any preview entity even if the user unchecked it in the workspace's
-      // entity list. The user's checkbox subset stays advisory for now.
-      const fullEntityList =
-        job.preview?.entities.map((e) => ({ id: e.id })) ?? [];
       const refinedJobId = await job.start({
         causalData,
         mapNodeJson,
-        selectedEntities: fullEntityList,
+        selectedEntities: pageEntities.map((e) => ({ id: e.id })),
         selectedPolicies: Array.from(selectedPolicyIds).map((rule_id) => ({ rule_id })),
         selectedMetrics,
         model,
         previewOnly: true,
+        userEntityList: pageEntities,
       });
       await job.generate(refinedJobId);
     } catch (err) {
@@ -466,14 +467,11 @@ export default function CodeGenWorkspace({
 
       {job.preview ? (
         <div className="mt-6">
-          {/* Entity panel intentionally hidden — the page-level entity list
-              is the source of truth. job.preview.entities still flows
-              through to the policy stage as the entity universe. */}
           <div className="rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
             <p className="mb-2 text-sm font-semibold text-neutral-200">
               Policies ({job.preview.policies.length})
               <span className="ml-2 text-[10px] font-normal text-neutral-500">
-                derived from {job.preview.entities.length} entity universe
+                targeting {pageEntities.length} {pageEntities.length === 1 ? "entity" : "entities"}
               </span>
             </p>
             <ul className="max-h-96 overflow-y-auto">
@@ -542,10 +540,10 @@ export default function CodeGenWorkspace({
             <button
               type="button"
               onClick={() => void handleGenerate()}
-              disabled={selectedEntityIds.size === 0}
+              disabled={pageEntities.length === 0}
               title={
-                selectedEntityIds.size === 0
-                  ? "Select at least one preview entity above"
+                pageEntities.length === 0
+                  ? "Add at least one entity in the entity section above"
                   : undefined
               }
               className="rounded-md border border-emerald-600 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"

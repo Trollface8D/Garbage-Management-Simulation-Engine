@@ -100,12 +100,21 @@ export async function suggestMetrics(
   return payload.metrics || [];
 }
 
+export type UserEntityItem = {
+  id: string;
+  label: string;
+  type: string;
+  frequency: number;
+};
+
 export type CodeGenCreateRequest = {
   causalData: string;
   mapNodeJson?: Record<string, unknown> | null;
   selectedEntities?: Array<{ id: string }>;
   selectedPolicies?: Array<{ rule_id: string }>;
   selectedMetrics?: SuggestedMetric[];
+  /** User-curated entity list — source of truth for State 1. When present, State 1 skips Gemini extraction. */
+  userEntityList?: UserEntityItem[];
   model?: string;
   /**
    * When true the backend creates the job + writes inputs.json but does not

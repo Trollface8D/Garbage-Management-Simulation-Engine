@@ -30,6 +30,24 @@ INSTRUCTIONS_PATH: Path = (
     Path(__file__).resolve().parents[2] / "prompt" / "code_generation_instruction.json"
 )
 
+_TEMPLATE_DIR: Path = (
+    Path(__file__).resolve().parents[4]
+    / "Experiment/code_generation/entity_design/entity/gemini_3_pro_entity/template"
+)
+
+
+def _read_template(name: str) -> str:
+    try:
+        return (_TEMPLATE_DIR / name).read_text(encoding="utf-8")
+    except OSError:
+        logger.warning("[code_gen][prompts] template not found: %s", name)
+        return ""
+
+
+ENTITY_OBJECT_TEMPLATE: str = _read_template("entity_object_template.py")
+ENVIRONMENT_TEMPLATE: str = _read_template("environment_template.py")
+POLICY_BASE_TEMPLATE: str = _read_template("policy_template.py")
+
 
 @lru_cache(maxsize=1)
 def load_instructions() -> dict[str, Any]:
@@ -389,7 +407,7 @@ def build_state2_cached_context(*, causal_data: str) -> list[str]:
     is the whole point of caching — the same causal data and policy
     snippets currently get re-uploaded for every entity.
     """
-    return [
+    parts = [
         ENTITY_TIME_PROTOCOL,
         _runtime("codegen_template_routing_policy"),
         _runtime("codegen_accumulation_policy"),
@@ -397,6 +415,15 @@ def build_state2_cached_context(*, causal_data: str) -> list[str]:
         _runtime("compact_output_policy"),
         "Causal data:\n" + (causal_data or "").strip(),
     ]
+    if ENTITY_OBJECT_TEMPLATE:
+        parts.append(
+            "Base class — your entity class MUST subclass `entity_object` defined below. "
+            "Implement only the trait methods relevant to this entity (active/passive/hybrid). "
+            "Do NOT redefine the base class itself:\n\n```python\n"
+            + ENTITY_OBJECT_TEMPLATE
+            + "\n```"
+        )
+    return parts
 
 
 def build_state2_entity_prompt(
@@ -479,6 +506,13 @@ def build_state3_environment_prompt(
         if retry_error
         else ""
     )
+    env_template_section = (
+        "Base class — your Environment class MUST extend `SimulationEnvironment` defined below. "
+        "Override or extend only what this simulation needs; do NOT redefine the base:\n\n"
+        "```python\n" + ENVIRONMENT_TEMPLATE + "\n```"
+        if ENVIRONMENT_TEMPLATE
+        else ""
+    )
     return _assemble(
         [
             base,
@@ -487,6 +521,7 @@ def build_state3_environment_prompt(
             fallback,
             _runtime("codegen_environment_output_hint"),
             _runtime("compact_output_policy"),
+            env_template_section,
             "Entity classes (single delimited blob — import / reference, do NOT redefine):\n"
             + (entities_blob.strip() if entities_blob.strip() else "(empty)"),
             map_section,
@@ -514,6 +549,14 @@ def build_state4_policy_prompt(
         if retry_error
         else ""
     )
+    policy_template_section = (
+        "Base class — your Policy class MUST subclass `Policy` defined below. "
+        "Implement `apply` and optionally override `is_applicable_to`. "
+        "Do NOT redefine the base class:\n\n"
+        "```python\n" + POLICY_BASE_TEMPLATE + "\n```"
+        if POLICY_BASE_TEMPLATE
+        else ""
+    )
     return _assemble(
         [
             base,
@@ -522,6 +565,7 @@ def build_state4_policy_prompt(
             _runtime("codegen_fallback_policy_context"),
             _runtime("codegen_policy_output_hint"),
             _runtime("compact_output_policy"),
+            policy_template_section,
             "Policy rule contract (from State 1b):\n" + rule_json,
             "Entity classes (single delimited blob):\n"
             + (entities_blob.strip() if entities_blob.strip() else "(empty)"),

@@ -2255,6 +2255,12 @@ export default function CodePage() {
                             sampling_event: m.sampling_event ?? "tick",
                             rationale: m.rationale,
                         }))}
+                        pageEntities={selectedEntities.map((e) => ({
+                            id: e.id,
+                            label: e.name,
+                            type: "actor",
+                            frequency: e.count,
+                        }))}
                         missingRequirements={missingRequirements}
                         onRunningChange={setIsCodeGenRunning}
                         onJobIdChange={setCurrentJobId}

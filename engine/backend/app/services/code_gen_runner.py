@@ -173,6 +173,31 @@ def _resume_skip_completed(job: JobRecord) -> set[str]:
 
 def _stage_state1_entity_list(ctx: StageContext) -> dict[str, Any]:
     ctx.raise_if_cancelled()
+    user_list = list(ctx.inputs.get("userEntityList") or [])
+    if user_list:
+        # User-curated list is source of truth — skip Gemini extraction.
+        cleaned: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for entry in user_list:
+            if not isinstance(entry, dict):
+                continue
+            eid = str(entry.get("id") or "").strip()
+            if not eid or eid in seen_ids:
+                continue
+            seen_ids.add(eid)
+            cleaned.append(
+                {
+                    "id": eid,
+                    "label": str(entry.get("label") or eid),
+                    "type": str(entry.get("type") or "actor"),
+                    "frequency": int(entry.get("frequency") or 0),
+                }
+            )
+        logger.info(
+            "[code_gen][state1] using user entity list (%d entities), skipping Gemini extraction",
+            len(cleaned),
+        )
+        return {"stage": "state1_entity_list", "entities": cleaned}
     causal_data = str(ctx.inputs.get("causalData") or "")
     prompt, schema = prompts.build_state1_entity_list_prompt(causal_data)
     parsed = _generate_json(ctx, "state1_entity_list", prompt, schema)
@@ -181,16 +206,16 @@ def _stage_state1_entity_list(ctx: StageContext) -> dict[str, Any]:
     entities = parsed.get("entities") or []
     if not isinstance(entities, list):
         entities = []
-    cleaned: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
+    cleaned2: list[dict[str, Any]] = []
+    seen_ids2: set[str] = set()
     for entry in entities:
         if not isinstance(entry, dict):
             continue
         eid = str(entry.get("id") or "").strip()
-        if not eid or eid in seen_ids:
+        if not eid or eid in seen_ids2:
             continue
-        seen_ids.add(eid)
-        cleaned.append(
+        seen_ids2.add(eid)
+        cleaned2.append(
             {
                 "id": eid,
                 "label": str(entry.get("label") or eid),
@@ -200,7 +225,7 @@ def _stage_state1_entity_list(ctx: StageContext) -> dict[str, Any]:
         )
     return {
         "stage": "state1_entity_list",
-        "entities": cleaned,
+        "entities": cleaned2,
         "warning": parsed.get("warning"),
     }
 

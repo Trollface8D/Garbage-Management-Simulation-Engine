@@ -155,6 +155,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
     selected_entities = list(payload.get("selectedEntities") or [])
     selected_policies = list(payload.get("selectedPolicies") or [])
     selected_metrics = list(payload.get("selectedMetrics") or [])
+    user_entity_list = list(payload.get("userEntityList") or [])
     preview_only = bool(payload.get("previewOnly", False))
     if not selected_metrics:
         return JSONResponse(
@@ -176,6 +177,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         selected_entities=selected_entities,
         selected_policies=selected_policies,
         selected_metrics=selected_metrics,
+        user_entity_list=user_entity_list,
         model_name=resolved_model,
         use_env_model_overrides=use_env_model_overrides,
     )
@@ -186,6 +188,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         "selectedEntities": selected_entities,
         "selectedPolicies": selected_policies,
         "selectedMetrics": selected_metrics,
+        "userEntityList": user_entity_list,
     }
     if not preview_only:
         _spawn_worker(
@@ -317,6 +320,7 @@ def resume_code_gen_job(job_id: str):
         "selectedEntities": manifest.get("selectedEntities") or [],
         "selectedPolicies": manifest.get("selectedPolicies") or [],
         "selectedMetrics": manifest.get("selectedMetrics") or [],
+        "userEntityList": manifest.get("userEntityList") or [],
     }
     _spawn_worker(
         job,
@@ -437,6 +441,7 @@ def preview_entities(job_id: str):
         "selectedEntities": manifest.get("selectedEntities") or [],
         "selectedPolicies": manifest.get("selectedPolicies") or [],
         "selectedMetrics": manifest.get("selectedMetrics") or [],
+        "userEntityList": manifest.get("userEntityList") or [],
     }
     model_name = str(manifest.get("modelName") or DEFAULT_MODEL_NAME)
     use_env_model_overrides = bool(manifest.get("useEnvModelOverrides", True))
