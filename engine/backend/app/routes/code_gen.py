@@ -18,7 +18,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse, JSONResponse
 
-from ...infra.io_utils import resolve_api_key
+from ...infra.io_utils import resolve_api_key, vertex_ai_available
 from ...infra.paths import DEFAULT_MODEL_NAME
 from ..models.job_models import JobRecord
 from ..services import code_gen_checkpoints as checkpoints
@@ -143,9 +143,9 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
     use_env_model_overrides = not bool(requested_model)
 
     api_key = resolve_api_key()
-    if not api_key:
+    if not api_key and not vertex_ai_available():
         return JSONResponse(
-            {"error": "API key is required (GEMINI_API_KEY / API_KEY / GOOGLE_API_KEY)."},
+            {"error": "API key is required (GEMINI_API_KEY / API_KEY / GOOGLE_API_KEY) unless GOOGLE_APPLICATION_CREDENTIALS is set for Vertex AI."},
             status_code=500,
         )
 
@@ -287,7 +287,7 @@ def resume_code_gen_job(job_id: str):
         job = JOBS.get(job_id)
 
     api_key = resolve_api_key()
-    if not api_key:
+    if not api_key and not vertex_ai_available():
         return JSONResponse({"error": "API key required."}, status_code=500)
 
     manifest = checkpoints.load_inputs(job_id)
@@ -398,7 +398,7 @@ def preview_entities(job_id: str):
     (see ``POST /code_gen/jobs/{id}/resume``).
     """
     api_key = resolve_api_key()
-    if not api_key:
+    if not api_key and not vertex_ai_available():
         return JSONResponse({"error": "API key required."}, status_code=500)
 
     manifest = checkpoints.load_inputs(job_id)

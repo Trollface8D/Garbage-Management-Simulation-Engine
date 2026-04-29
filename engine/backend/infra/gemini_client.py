@@ -25,9 +25,28 @@ class GeminiCancelledError(RuntimeError):
     """
 
 
+_VERTEX_PROJECT = os.getenv("VERTEX_PROJECT", "glowing-bird-494811-s6")
+# asia-southeast1 (Singapore) is closest to Thailand; override via VERTEX_LOCATION.
+_VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "asia-southeast1")
+
+
 class GeminiGateway:
-    def __init__(self, *, api_key: str, model_name: str) -> None:
-        self.client = genai.Client(api_key=api_key)
+    def __init__(self, *, api_key: str | None, model_name: str) -> None:
+        if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+            self.client = genai.Client(
+                vertexai=True,
+                project=_VERTEX_PROJECT,
+                location=_VERTEX_LOCATION,
+            )
+            logger.info(
+                "[gemini] using Vertex AI project=%s location=%s",
+                _VERTEX_PROJECT,
+                _VERTEX_LOCATION,
+            )
+        else:
+            if not api_key:
+                raise ValueError("api_key required when GOOGLE_APPLICATION_CREDENTIALS is not set")
+            self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
 
     def create_cache(
