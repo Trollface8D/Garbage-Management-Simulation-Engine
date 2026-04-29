@@ -13,9 +13,10 @@ import {
   fetchMapExtractInputs,
   fetchMapExtractResult,
   fetchMapExtractStatusOnce,
+  initializeMapExtractJobWithFiles,
   resumeMapExtractJob,
 } from "@/lib/map-api-client";
-import { CaretIcon, ExportIcon, ImportIcon, SaveIcon, TrashIcon } from "@/app/components/icons/common-icons";
+import { CaretIcon, ExportIcon, ImportIcon, TrashIcon } from "@/app/components/icons/common-icons";
 import type {
   GraphSelection,
   MapEdge,
@@ -1098,6 +1099,47 @@ export default function MapExtractionWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, jobId]);
 
+  // Initialize a job immediately when files are first uploaded (Option B: Immediate Backend Upload)
+  // This persists files to the backend so they survive page refresh.
+  // Only runs once per unique set of files, and only if no job is already running.
+  useEffect(() => {
+    if (!hydrated || jobId || isExtracting || isResuming || isJobActive) {
+      return;
+    }
+    if (overviewFiles.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const newJobId = await initializeMapExtractJobWithFiles(
+          componentId,
+          overviewFiles.map((entry) => entry.file),
+          binFiles.map((entry) => entry.file),
+        );
+        if (cancelled) {
+          return;
+        }
+        setJobId(newJobId);
+        setEditStatus("Files uploaded to backend for persistence. Ready for extraction.");
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        // Silently fail — files stay in local state, extraction can still proceed later
+        const message = error instanceof Error ? error.message : "Failed to upload files to backend";
+        console.warn(`[map-extraction-workspace] Job initialization failed: ${message}`);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, overviewFiles.length]);
+
   const onPickOverviewFiles = (files: FileList | null) => {
     const picked = Array.from(files || []);
     if (picked.length === 0) {
@@ -1512,31 +1554,6 @@ export default function MapExtractionWorkspace({
     setSelection({ kind: "none" });
   };
 
-  const handleSaveLocally = () => {
-    if (!graphData) {
-      setEditStatus("No graph to save yet.");
-      return;
-    }
-
-    // TODO(db): persist map extraction snapshots into SQLite when map tables are finalized.
-    window.localStorage.setItem(
-      snapshotKey,
-      JSON.stringify({
-        graph: graphData,
-        jobId,
-        selectedModel,
-        overviewAdditionalInfo,
-        binAdditionalInfo,
-        overviewFileNames: overviewDisplayNames,
-        binFileNames: binDisplayNames,
-        changeLog,
-        editStatus,
-        selection: selectionToRef(selection),
-      } satisfies MapWorkspaceSnapshot),
-    );
-    setEditStatus("Saved current map workspace snapshot locally.");
-  };
-
   const handleExportArtifacts = async () => {
     const snapshot: MapWorkspaceSnapshot = {
       graph: graphData,
@@ -1783,16 +1800,6 @@ export default function MapExtractionWorkspace({
 
         <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleSaveLocally}
-              aria-label="Save map workspace"
-              title="Save"
-              className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20"
-            >
-              <SaveIcon className="h-4 w-4" />
-              <span>Save</span>
-            </button>
             <button
               type="button"
               onClick={() => {
