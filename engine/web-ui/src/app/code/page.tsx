@@ -5,8 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { type ChangeEvent, type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import ProjectPageHeader from "../components/project-page-header";
 import UsedItemsSection from "@/app/code/used-items-section";
-import CodeGenWorkspace from "@/app/code/code-gen-workspace";
+import CodeGenWorkspace, { type ArtifactFile } from "@/app/code/code-gen-workspace";
 import SimulationViewer from "@/app/code/simulation-viewer";
+import FloatingWorkspaceToolbar from "@/app/code/floating-workspace-toolbar";
 import {
     categoryPath,
     findComponentById as findSeedComponentById,
@@ -470,7 +471,7 @@ export default function CodePage() {
     );
     const [archiveMessage, setArchiveMessage] = useState<string>("");
     const [archiveError, setArchiveError] = useState<string>("");
-    const importInputArchiveRef = useRef<HTMLInputElement | null>(null);
+    const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([]);
     const [manualEntityName, setManualEntityName] = useState<string>("");
     const [manualEntityError, setManualEntityError] = useState<string>("");
     const [metrics, setMetrics] = useState<WorkspaceMetric[]>([]);
@@ -489,7 +490,6 @@ export default function CodePage() {
 
     const inputsLocked = isCodeGenRunning;
 
-    const importInputRef = useRef<HTMLInputElement | null>(null);
     const wordCloudHostRef = useRef<HTMLDivElement | null>(null);
 
     const selectedEntities = useMemo(
@@ -797,6 +797,7 @@ export default function CodePage() {
         collapsedParentIds: Array.from(collapsedParentIds),
         metrics,
         metricsExtracted,
+        artifactFiles,
         jobId: currentJobId,
     });
 
@@ -870,14 +871,13 @@ export default function CodePage() {
             if (typeof parsed.metricsExtracted === "boolean") {
                 setMetricsExtracted(parsed.metricsExtracted);
             }
+            if (Array.isArray(parsed.artifactFiles)) {
+                setArtifactFiles(parsed.artifactFiles as ArtifactFile[]);
+            }
             return true;
         } catch {
             return false;
         }
-    };
-
-    const handleImportArchive = () => {
-        importInputArchiveRef.current?.click();
     };
 
     const handleImportArchiveFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -897,7 +897,7 @@ export default function CodePage() {
                 }
                 const artifactNote =
                     artifactNames.length > 0
-                        ? ` Bundle includes ${String(artifactNames.length)} artifact file${artifactNames.length === 1 ? "" : "s"} (left untouched on the server).`
+                        ? ` Bundle includes ${String(artifactNames.length)} generated code file${artifactNames.length === 1 ? "" : "s"} — extract the ZIP under artifacts/ to access them.`
                         : "";
                 setArchiveMessage(`Workspace restored from ${file.name}.${artifactNote}`);
             } catch (err) {
@@ -1335,10 +1335,6 @@ export default function CodePage() {
         })();
     };
 
-    const handleOpenImportDialog = () => {
-        importInputRef.current?.click();
-    };
-
     const persistImportedCausalArtifacts = async (
         entry: JsonImportItem,
         component: SimulationComponent,
@@ -1586,37 +1582,6 @@ export default function CodePage() {
                     }
                 />
 
-                <div className="mb-4 flex justify-start">
-                    <input
-                        ref={importInputRef}
-                        type="file"
-                        accept="application/json,.json"
-                        className="hidden"
-                        onChange={handleImportJson}
-                    />
-
-                    <button
-                        type="button"
-                        onClick={handleOpenImportDialog}
-                        disabled={isImporting || inputsLocked}
-                        className="rounded-md border border-emerald-700 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        {isImporting ? "Importing JSON..." : "Import JSON (Causal/Map)"}
-                    </button>
-                </div>
-
-                {importMessage ? (
-                    <div className="mb-4 rounded-md border border-emerald-700/70 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200">
-                        {importMessage}
-                    </div>
-                ) : null}
-
-                {importError ? (
-                    <div className="mb-4 rounded-md border border-red-800/70 bg-red-500/10 px-4 py-2 text-sm text-red-200">
-                        Import failed: {importError}
-                    </div>
-                ) : null}
-
                 <section className="space-y-8">
                     <UsedItemsSection
                         title="Causal used *"
@@ -1708,32 +1673,6 @@ export default function CodePage() {
                                           ? "Re-extract from causal"
                                           : "Extract from causal"}
                                 </button>
-                                <span className="mx-1 hidden h-6 w-px bg-neutral-700 sm:inline-block" />
-                                <button
-                                    type="button"
-                                    onClick={handleExportArchive}
-                                    disabled={archiveBusy !== "idle" || inputsLocked}
-                                    title="Export workspace state + any generated artifacts as a ZIP"
-                                    className="rounded-md border border-neutral-600 bg-neutral-800/40 px-3 py-2 text-xs font-semibold text-neutral-200 transition hover:bg-neutral-700/40 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    {archiveBusy === "exporting" ? "Exporting…" : "Export"}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleImportArchive}
-                                    disabled={archiveBusy !== "idle" || inputsLocked}
-                                    title="Restore workspace from a previously exported ZIP"
-                                    className="rounded-md border border-neutral-600 bg-neutral-800/40 px-3 py-2 text-xs font-semibold text-neutral-200 transition hover:bg-neutral-700/40 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                    {archiveBusy === "importing" ? "Importing…" : "Import"}
-                                </button>
-                                <input
-                                    ref={importInputArchiveRef}
-                                    type="file"
-                                    accept=".zip,application/zip"
-                                    onChange={handleImportArchiveFile}
-                                    className="hidden"
-                                />
                             </div>
                         </div>
 
@@ -1745,16 +1684,6 @@ export default function CodePage() {
                         {groupError ? (
                             <div className="mb-3 rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
                                 {groupError}
-                            </div>
-                        ) : null}
-                        {archiveError ? (
-                            <div className="mb-3 rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                                {archiveError}
-                            </div>
-                        ) : null}
-                        {archiveMessage && !archiveError ? (
-                            <div className="mb-3 rounded-md border border-emerald-700/60 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
-                                {archiveMessage}
                             </div>
                         ) : null}
                         {groupLog.length > 0 ? (
@@ -2264,6 +2193,8 @@ export default function CodePage() {
                         missingRequirements={missingRequirements}
                         onRunningChange={setIsCodeGenRunning}
                         onJobIdChange={setCurrentJobId}
+                        artifactFiles={artifactFiles}
+                        onArtifactFilesChange={setArtifactFiles}
                     />
 
                     <SimulationViewer
@@ -2284,6 +2215,18 @@ export default function CodePage() {
                     />
                 </section>
             </main>
+            <FloatingWorkspaceToolbar
+                archiveBusy={archiveBusy}
+                archiveError={archiveError}
+                archiveMessage={archiveMessage}
+                importError={importError}
+                importMessage={importMessage}
+                isImporting={isImporting}
+                inputsLocked={inputsLocked}
+                onExport={handleExportArchive}
+                onArchiveFileChange={handleImportArchiveFile}
+                onJsonFileChange={handleImportJson}
+            />
         </div>
     );
 }

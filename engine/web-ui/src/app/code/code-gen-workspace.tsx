@@ -6,6 +6,7 @@ import {
   fetchCodeGenResult,
   type CodeGenEntity,
   type CodeGenPolicyOutline,
+  type CodeGenPreviewResult,
   type SuggestedMetric,
   type UserEntityItem,
 } from "@/lib/code-gen-api-client";
@@ -22,7 +23,7 @@ type CausalChoice = {
   label: string;
 };
 
-type ArtifactFile = {
+export type ArtifactFile = {
   path: string;
   kind?: string;
   iterId?: string;
@@ -39,6 +40,8 @@ type Props = {
   /** Page-level entity list — source of truth for codegen. Passed as userEntityList to backend. */
   pageEntities: UserEntityItem[];
   missingRequirements?: readonly string[];
+  artifactFiles: ArtifactFile[];
+  onArtifactFilesChange: (files: ArtifactFile[]) => void;
   onRunningChange?: (running: boolean) => void;
   onJobIdChange?: (jobId: string | null) => void;
 };
@@ -86,6 +89,8 @@ export default function CodeGenWorkspace({
   selectedMetrics,
   pageEntities,
   missingRequirements,
+  artifactFiles,
+  onArtifactFilesChange,
   onRunningChange,
   onJobIdChange,
 }: Props) {
@@ -95,11 +100,12 @@ export default function CodeGenWorkspace({
   const [mapStatus, setMapStatus] = useState<string>("no map selected");
   const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(new Set());
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<Set<string>>(new Set());
-  const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([]);
   const [actionError, setActionError] = useState<string>("");
   const [previewOpen, setPreviewOpen] = useState<boolean>(false);
   const [previewText, setPreviewText] = useState<string>("");
   const [previewLoading, setPreviewLoading] = useState<boolean>(false);
+  const [confirmedPreview, setConfirmedPreview] = useState<CodeGenPreviewResult | null>(null);
+  const [policiesCollapsed, setPoliciesCollapsed] = useState<boolean>(false);
   const lastResultJobIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -171,10 +177,13 @@ export default function CodeGenWorkspace({
 
   // When preview arrives, auto-select all policies. Entity selection is driven
   // by the page-level entity list (pageEntities), not the preview result.
+  // Mirror into confirmedPreview so the policy list survives the start() call
+  // inside handleGenerate (which resets job.preview to null).
   useEffect(() => {
     const preview = job.preview;
     if (!preview) return;
     setSelectedPolicyIds(new Set(preview.policies.map((p: CodeGenPolicyOutline) => p.rule_id)));
+    setConfirmedPreview(preview);
   }, [job.preview]);
 
   // When job completes, fetch the artifact manifest from the result.
@@ -191,7 +200,7 @@ export default function CodeGenWorkspace({
         };
         const finalize = result.stages?.find((s) => s.stage === "finalize_bundle");
         const files = finalize?.result?.files || [];
-        setArtifactFiles(files);
+        onArtifactFilesChange(files);
       } catch (err) {
         setActionError(err instanceof Error ? err.message : "Failed to load artifact manifest.");
       }
@@ -302,6 +311,9 @@ export default function CodeGenWorkspace({
     }
     try {
       const causalData = await aggregateCausalText(causalChoices);
+      // Auto-collapse the policy list once the user confirms — keeps it
+      // accessible (header + show toggle) without dominating the run view.
+      setPoliciesCollapsed(true);
       const refinedJobId = await job.start({
         causalData,
         mapNodeJson,
@@ -404,8 +416,10 @@ export default function CodeGenWorkspace({
           type="button"
           onClick={() => {
             setActionError("");
-            setArtifactFiles([]);
+            onArtifactFilesChange([]);
             lastResultJobIdRef.current = null;
+            setConfirmedPreview(null);
+            setPoliciesCollapsed(false);
             job.reset();
           }}
           disabled={isRunning}
@@ -465,17 +479,33 @@ export default function CodeGenWorkspace({
         </p>
       ) : null}
 
-      {job.preview ? (
+      {confirmedPreview ? (
         <div className="mt-6">
           <div className="rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
-            <p className="mb-2 text-sm font-semibold text-neutral-200">
-              Policies ({job.preview.policies.length})
-              <span className="ml-2 text-[10px] font-normal text-neutral-500">
-                targeting {pageEntities.length} {pageEntities.length === 1 ? "entity" : "entities"}
+            <button
+              type="button"
+              onClick={() => setPoliciesCollapsed((prev) => !prev)}
+              className="mb-2 flex w-full items-center justify-between gap-2 text-left"
+              aria-expanded={!policiesCollapsed}
+            >
+              <p className="text-sm font-semibold text-neutral-200">
+                Policies ({confirmedPreview.policies.length})
+                <span className="ml-2 text-[10px] font-normal text-neutral-500">
+                  targeting {pageEntities.length} {pageEntities.length === 1 ? "entity" : "entities"}
+                </span>
+                {!job.preview ? (
+                  <span className="ml-2 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-200">
+                    confirmed
+                  </span>
+                ) : null}
+              </p>
+              <span className="text-xs text-neutral-400">
+                {policiesCollapsed ? "▸ show" : "▾ hide"}
               </span>
-            </p>
+            </button>
+            {policiesCollapsed ? null : (
             <ul className="max-h-96 overflow-y-auto">
-              {job.preview.policies.map((policy) => (
+              {confirmedPreview.policies.map((policy) => (
                 <li key={policy.rule_id}>
                   <label className="flex cursor-pointer flex-col gap-1 border-b border-neutral-800/70 px-2 py-2 text-sm last:border-b-0 hover:bg-neutral-900/40">
                     <div className="flex items-start gap-2">
@@ -513,6 +543,7 @@ export default function CodeGenWorkspace({
                 </li>
               ))}
             </ul>
+            )}
           </div>
         </div>
       ) : null}
@@ -531,6 +562,8 @@ export default function CodeGenWorkspace({
               onClick={() => {
                 setActionError("");
                 lastResultJobIdRef.current = null;
+                setConfirmedPreview(null);
+                setPoliciesCollapsed(false);
                 job.reset();
               }}
               className="rounded-md border border-neutral-700 bg-neutral-800/40 px-3 py-2 text-xs font-semibold text-neutral-200 transition hover:bg-neutral-700/40"
