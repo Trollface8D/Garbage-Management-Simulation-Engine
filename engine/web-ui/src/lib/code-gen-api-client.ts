@@ -107,6 +107,12 @@ export type CodeGenCreateRequest = {
   selectedPolicies?: Array<{ rule_id: string }>;
   selectedMetrics?: SuggestedMetric[];
   model?: string;
+  /**
+   * When true the backend creates the job + writes inputs.json but does not
+   * spawn the auto-run worker. Used by the preview flow so the inline
+   * preview_entities call doesn't race a worker that's already mid-State 1.
+   */
+  previewOnly?: boolean;
 };
 
 async function parseError(response: Response): Promise<string> {

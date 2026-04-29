@@ -155,6 +155,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
     selected_entities = list(payload.get("selectedEntities") or [])
     selected_policies = list(payload.get("selectedPolicies") or [])
     selected_metrics = list(payload.get("selectedMetrics") or [])
+    preview_only = bool(payload.get("previewOnly", False))
     if not selected_metrics:
         return JSONResponse(
             {"error": "selectedMetrics is required — pick at least one metric to track."},
@@ -186,20 +187,22 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         "selectedPolicies": selected_policies,
         "selectedMetrics": selected_metrics,
     }
-    _spawn_worker(
-        job,
-        api_key=api_key,
-        model_name=resolved_model,
-        use_env_model_overrides=use_env_model_overrides,
-        inputs=inputs,
-    )
+    if not preview_only:
+        _spawn_worker(
+            job,
+            api_key=api_key,
+            model_name=resolved_model,
+            use_env_model_overrides=use_env_model_overrides,
+            inputs=inputs,
+        )
 
     logger.info(
-        "[code_gen] job queued jobId=%s entityCount=%s policyCount=%s metricCount=%s",
+        "[code_gen] job queued jobId=%s entityCount=%s policyCount=%s metricCount=%s previewOnly=%s",
         job_id,
         len(selected_entities),
         len(selected_policies),
         len(selected_metrics),
+        preview_only,
     )
     return {
         "pipeline": "code_gen",

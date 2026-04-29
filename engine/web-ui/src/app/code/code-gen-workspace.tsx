@@ -273,6 +273,7 @@ export default function CodeGenWorkspace({
         mapNodeJson,
         selectedMetrics,
         model,
+        previewOnly: true,
       });
       await job.runPreview(newJobId);
     } catch (err) {
@@ -308,6 +309,7 @@ export default function CodeGenWorkspace({
         selectedPolicies: Array.from(selectedPolicyIds).map((rule_id) => ({ rule_id })),
         selectedMetrics,
         model,
+        previewOnly: true,
       });
       await job.generate(refinedJobId);
     } catch (err) {
