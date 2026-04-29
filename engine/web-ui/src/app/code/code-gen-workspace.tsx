@@ -465,56 +465,52 @@ export default function CodeGenWorkspace({
       ) : null}
 
       {job.preview ? (
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
-            <p className="mb-2 text-sm font-semibold text-neutral-200">
-              Entities ({job.preview.entities.length})
-            </p>
-            <ul className="max-h-72 overflow-y-auto">
-              {job.preview.entities.map((entity) => (
-                <li key={entity.id}>
-                  <label className="flex items-center justify-between gap-2 border-b border-neutral-800/70 px-1 py-1 text-sm last:border-b-0">
-                    <span className="flex items-center gap-2 text-neutral-100">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
-                        checked={selectedEntityIds.has(entity.id)}
-                        onChange={() => toggleEntity(entity.id)}
-                        disabled={isRunning}
-                      />
-                      <span>
-                        {entity.label}{" "}
-                        <span className="text-xs text-neutral-500">[{entity.type}]</span>
-                      </span>
-                    </span>
-                    <span className="text-xs font-semibold text-neutral-400">×{entity.frequency}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-
+        <div className="mt-6">
+          {/* Entity panel intentionally hidden — the page-level entity list
+              is the source of truth. job.preview.entities still flows
+              through to the policy stage as the entity universe. */}
           <div className="rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
             <p className="mb-2 text-sm font-semibold text-neutral-200">
               Policies ({job.preview.policies.length})
+              <span className="ml-2 text-[10px] font-normal text-neutral-500">
+                derived from {job.preview.entities.length} entity universe
+              </span>
             </p>
-            <ul className="max-h-72 overflow-y-auto">
+            <ul className="max-h-96 overflow-y-auto">
               {job.preview.policies.map((policy) => (
                 <li key={policy.rule_id}>
-                  <label className="flex flex-col gap-1 border-b border-neutral-800/70 px-1 py-2 text-sm last:border-b-0">
-                    <span className="flex items-center gap-2 text-neutral-100">
+                  <label className="flex cursor-pointer flex-col gap-1 border-b border-neutral-800/70 px-2 py-2 text-sm last:border-b-0 hover:bg-neutral-900/40">
+                    <div className="flex items-start gap-2">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="mt-0.5 h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                         checked={selectedPolicyIds.has(policy.rule_id)}
                         onChange={() => togglePolicy(policy.rule_id)}
                         disabled={isRunning}
                       />
-                      <span className="font-semibold">{policy.label}</span>
-                    </span>
-                    <span className="ml-6 text-xs text-neutral-400">
-                      {policy.target_entity_id}.{policy.target_method} on {policy.trigger}
-                    </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <span className="font-semibold text-neutral-100">{policy.label}</span>
+                          <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-200">
+                            {policy.trigger}
+                          </span>
+                          <span className="font-mono text-[10px] text-neutral-500">
+                            {policy.rule_id}
+                          </span>
+                        </div>
+                        <p className="mt-1 font-mono text-[11px] text-neutral-400">
+                          target: {policy.target_entity_id}.{policy.target_method}
+                          {policy.inputs && policy.inputs.length > 0
+                            ? `(${policy.inputs.join(", ")})`
+                            : "()"}
+                        </p>
+                        {policy.description ? (
+                          <p className="mt-1 text-xs text-neutral-300">
+                            {policy.description}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
                   </label>
                 </li>
               ))}
@@ -526,9 +522,10 @@ export default function CodeGenWorkspace({
       {job.preview && !job.isResuming && !job.isPolling && jobStatus !== "running" ? (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-700/50 bg-emerald-500/5 p-3">
           <p className="text-sm text-emerald-100">
-            Preview ready — review the {job.preview.entities.length} entities and{" "}
-            {job.preview.policies.length} policies above. Confirm to start the
-            full generation, or reset to re-preview.
+            Preview ready — {job.preview.policies.length} policies derived
+            from {job.preview.entities.length} entities. Review the policy
+            list above and confirm to start the full generation, or reset to
+            re-preview.
           </p>
           <div className="flex items-center gap-2">
             <button

@@ -108,6 +108,21 @@ export function useCodeGenJob() {
       }
       setError(null);
       setIsPreviewing(true);
+      // preview_entities is a single blocking POST that runs State 1 + 1b
+      // inline server-side; the worker emits stage events to the same job
+      // record, so a parallel status poll surfaces "state1_entity_list:
+      // starting", token usage, etc. into job.status while we wait. Without
+      // this the UI looks frozen for the 10-60s the LLM call takes.
+      let pollHandle: number | null = window.setInterval(() => {
+        void (async () => {
+          try {
+            const next = await fetchCodeGenStatus(id);
+            setStatus(next);
+          } catch {
+            /* swallow — preview's own response will surface real errors */
+          }
+        })();
+      }, POLL_INTERVAL_MS);
       try {
         const result = await previewEntities(id);
         setPreview(result);
@@ -117,6 +132,10 @@ export function useCodeGenJob() {
         setError(message);
         throw err;
       } finally {
+        if (pollHandle !== null) {
+          window.clearInterval(pollHandle);
+          pollHandle = null;
+        }
         setIsPreviewing(false);
       }
     },
