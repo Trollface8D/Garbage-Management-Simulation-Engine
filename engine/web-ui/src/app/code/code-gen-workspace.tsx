@@ -422,7 +422,7 @@ export default function CodeGenWorkspace({
         const remaining = job.status?.remainingStages ?? null;
         const total = remaining !== null ? completed + remaining : null;
         const percent = total && total > 0 ? Math.round((completed / total) * 100) : 0;
-        const showBar = isRunning || (jobStatus && jobStatus !== "queued") || completed > 0;
+        const showBar = isRunning || (typeof jobStatus === "string" && completed > 0);
         if (!showBar) return null;
         return (
           <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
