@@ -7,6 +7,7 @@ import {
   fetchCodeGenCheckpoints,
   rollbackCodeGenJob,
   type CodeGenCheckpointDetail,
+  type CodeGenPolicyOutline,
 } from "@/lib/code-gen-api-client";
 
 type StageEntry = {
@@ -118,6 +119,9 @@ export type CodeGenStageLogProps = {
   previewDisabled?: boolean;
   previewDisabledReason?: string;
   onStatusUpdate?: (message: string) => void;
+  selectedPolicyIds?: Set<string>;
+  onTogglePolicy?: (id: string) => void;
+  policyConfirmReady?: boolean;
 };
 
 export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
@@ -138,6 +142,9 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
     previewDisabled,
     previewDisabledReason,
     onStatusUpdate,
+    selectedPolicyIds,
+    onTogglePolicy,
+    policyConfirmReady,
   } = props;
 
   const [collapsed, setCollapsed] = useState(true);
@@ -442,11 +449,25 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                       ) : null}
 
                       {status === "done" ? (
-                        <StageDetailBlock
-                          detail={stageDetails[entry.key]}
-                          loading={detailLoading === entry.key}
-                          error={detailLoading === entry.key ? "" : detailError}
-                        />
+                        entry.key === "state1b_policy_outline" ? (
+                          <PolicyConfirmBlock
+                            detail={stageDetails[entry.key]}
+                            loading={detailLoading === entry.key}
+                            error={detailLoading === entry.key ? "" : detailError}
+                            selectedPolicyIds={selectedPolicyIds}
+                            onTogglePolicy={onTogglePolicy}
+                            onConfirm={onResumeRequested}
+                            confirmReady={policyConfirmReady}
+                            isRunning={isActive}
+                            actionPending={actionPending}
+                          />
+                        ) : (
+                          <StageDetailBlock
+                            detail={stageDetails[entry.key]}
+                            loading={detailLoading === entry.key}
+                            error={detailLoading === entry.key ? "" : detailError}
+                          />
+                        )
                       ) : null}
 
                       <div className="flex flex-wrap items-center gap-2">
@@ -554,6 +575,116 @@ function StageDetailBlock({
           {trimmedPreview}
         </pre>
       </details>
+    </div>
+  );
+}
+
+function PolicyConfirmBlock({
+  detail,
+  loading,
+  error,
+  selectedPolicyIds,
+  onTogglePolicy,
+  onConfirm,
+  confirmReady,
+  isRunning,
+  actionPending,
+}: {
+  detail: CodeGenCheckpointDetail | undefined;
+  loading: boolean;
+  error: string;
+  selectedPolicyIds?: Set<string>;
+  onTogglePolicy?: (id: string) => void;
+  onConfirm?: () => void;
+  confirmReady?: boolean;
+  isRunning: boolean;
+  actionPending: boolean;
+}) {
+  if (loading) {
+    return <p className="text-[11px] text-neutral-500">Loading checkpoint…</p>;
+  }
+  if (error) {
+    return (
+      <p className="break-words text-[11px] text-red-300">Failed to load: {error}</p>
+    );
+  }
+  if (!detail) return null;
+
+  const token = detail.tokenUsage || undefined;
+  const policies: CodeGenPolicyOutline[] = (() => {
+    try {
+      const raw = detail.preview as { policies?: unknown } | null;
+      if (Array.isArray(raw)) return raw as CodeGenPolicyOutline[];
+      if (raw && Array.isArray(raw.policies)) return raw.policies as CodeGenPolicyOutline[];
+      return [];
+    } catch {
+      return [];
+    }
+  })();
+
+  return (
+    <div className="space-y-2 rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
+      {token ? (
+        <div className="text-[10px] text-neutral-400">
+          tokens: in {String(token.promptTokens ?? 0)} / out {String(token.outputTokens ?? 0)} /
+          total {String(token.totalTokens ?? 0)} · calls {String(token.callCount ?? 0)}
+        </div>
+      ) : (
+        <div className="text-[10px] text-neutral-500">No token usage recorded for this stage.</div>
+      )}
+
+      {policies.length > 0 ? (
+        <div>
+          <p className="mb-1 text-[11px] font-semibold text-neutral-300">
+            Policies ({policies.length}) — select to include
+          </p>
+          <ul className="max-h-72 overflow-y-auto">
+            {policies.map((policy) => (
+              <li key={policy.rule_id}>
+                <label className="flex flex-col gap-1 border-b border-neutral-800/70 px-1 py-2 text-sm last:border-b-0">
+                  <span className="flex items-center gap-2 text-neutral-100">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      checked={selectedPolicyIds?.has(policy.rule_id) ?? true}
+                      onChange={() => onTogglePolicy?.(policy.rule_id)}
+                      disabled={isRunning || actionPending}
+                    />
+                    <span className="font-semibold">{policy.label}</span>
+                  </span>
+                  <span className="ml-6 text-xs text-neutral-400">
+                    {policy.target_entity_id}.{policy.target_method} on {policy.trigger}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="text-[11px] text-neutral-500">No policies in checkpoint.</p>
+      )}
+
+      {confirmReady ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-700/50 bg-emerald-500/5 p-3">
+          <p className="text-xs text-emerald-100">
+            Review {policies.length} {policies.length === 1 ? "policy" : "policies"} above.
+            Confirm to continue generation.
+          </p>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!selectedPolicyIds || selectedPolicyIds.size === 0 || actionPending}
+            title={
+              selectedPolicyIds?.size === 0
+                ? "Select at least one policy above"
+                : undefined
+            }
+            className="rounded-md border border-emerald-600 bg-emerald-500/15 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Confirm &amp; continue generation
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

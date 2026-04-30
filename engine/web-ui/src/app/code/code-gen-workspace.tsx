@@ -493,6 +493,9 @@ export default function CodeGenWorkspace({
                 : undefined
           }
           onResumeRequested={() => void handleGenerate()}
+          selectedPolicyIds={selectedPolicyIds}
+          onTogglePolicy={togglePolicy}
+          policyConfirmReady={!!job.preview && !isRunning && !job.isResuming}
         />
       </div>
 
