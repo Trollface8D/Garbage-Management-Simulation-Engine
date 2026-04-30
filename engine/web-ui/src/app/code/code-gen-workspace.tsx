@@ -6,11 +6,11 @@ import {
   fetchCodeGenResult,
   type CodeGenEntity,
   type CodeGenPolicyOutline,
-  type CodeGenPreviewResult,
   type SuggestedMetric,
   type UserEntityItem,
 } from "@/lib/code-gen-api-client";
 import { useCodeGenJob } from "@/lib/use-code-gen-job";
+import CodeGenStageLogPanel from "@/app/code/code-gen-stage-log-panel";
 import {
   loadCausalArtifactsForItem,
   loadCausalSourceItems,
@@ -104,8 +104,6 @@ export default function CodeGenWorkspace({
   const [previewOpen, setPreviewOpen] = useState<boolean>(false);
   const [previewText, setPreviewText] = useState<string>("");
   const [previewLoading, setPreviewLoading] = useState<boolean>(false);
-  const [confirmedPreview, setConfirmedPreview] = useState<CodeGenPreviewResult | null>(null);
-  const [policiesCollapsed, setPoliciesCollapsed] = useState<boolean>(false);
   const lastResultJobIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -175,15 +173,13 @@ export default function CodeGenWorkspace({
     };
   }, [causalSourceRefs]);
 
-  // When preview arrives, auto-select all policies. Entity selection is driven
-  // by the page-level entity list (pageEntities), not the preview result.
-  // Mirror into confirmedPreview so the policy list survives the start() call
-  // inside handleGenerate (which resets job.preview to null).
+  // When preview arrives, auto-select all derived policies. The user can
+  // de-select inside the stage log (state1b_policy_outline expansion) before
+  // hitting Resume; the refined selection is shipped to the resume endpoint.
   useEffect(() => {
     const preview = job.preview;
     if (!preview) return;
     setSelectedPolicyIds(new Set(preview.policies.map((p: CodeGenPolicyOutline) => p.rule_id)));
-    setConfirmedPreview(preview);
   }, [job.preview]);
 
   // When job completes, fetch the artifact manifest from the result.
@@ -310,21 +306,17 @@ export default function CodeGenWorkspace({
       return;
     }
     try {
-      const causalData = await aggregateCausalText(causalChoices);
-      // Auto-collapse the policy list once the user confirms — keeps it
-      // accessible (header + show toggle) without dominating the run view.
-      setPoliciesCollapsed(true);
-      const refinedJobId = await job.start({
-        causalData,
-        mapNodeJson,
+      // Reuse the existing job so its preview checkpoints (state1, state1b)
+      // are honored — the worker resumes from the next unfinished stage.
+      // Refined entity/policy/metric selections override the saved manifest
+      // server-side via the resume body so later stages see the user's
+      // confirmed inputs without spawning a fresh job.
+      await job.generate(job.jobId, {
         selectedEntities: pageEntities.map((e) => ({ id: e.id })),
         selectedPolicies: Array.from(selectedPolicyIds).map((rule_id) => ({ rule_id })),
         selectedMetrics,
-        model,
-        previewOnly: true,
         userEntityList: pageEntities,
       });
-      await job.generate(refinedJobId);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Generate failed.");
     }
@@ -338,12 +330,10 @@ export default function CodeGenWorkspace({
     }
   };
 
-  const stageHistory = job.status?.stageHistory ?? [];
   const completedStages = job.status?.completedStages ?? [];
   const remainingStages = job.status?.remainingStages ?? null;
   const currentStage = job.status?.currentStage ?? null;
   const stageMessage = job.status?.stageMessage ?? "";
-  const jobStatusLabel = job.status?.status ?? "—";
 
   const causalCount = causalChoices.length;
 
@@ -418,8 +408,6 @@ export default function CodeGenWorkspace({
             setActionError("");
             onArtifactFilesChange([]);
             lastResultJobIdRef.current = null;
-            setConfirmedPreview(null);
-            setPoliciesCollapsed(false);
             job.reset();
           }}
           disabled={isRunning}
@@ -468,156 +456,44 @@ export default function CodeGenWorkspace({
         );
       })()}
 
-      {actionError ? (
-        <p className="mt-3 whitespace-pre-line rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-          {actionError}
-        </p>
-      ) : null}
-      {job.error ? (
-        <p className="mt-3 rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-          {job.error}
-        </p>
-      ) : null}
-
-      {confirmedPreview ? (
-        <div className="mt-6">
-          <div className="rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
-            <button
-              type="button"
-              onClick={() => setPoliciesCollapsed((prev) => !prev)}
-              className="mb-2 flex w-full items-center justify-between gap-2 text-left"
-              aria-expanded={!policiesCollapsed}
-            >
-              <p className="text-sm font-semibold text-neutral-200">
-                Policies ({confirmedPreview.policies.length})
-                <span className="ml-2 text-[10px] font-normal text-neutral-500">
-                  targeting {pageEntities.length} {pageEntities.length === 1 ? "entity" : "entities"}
-                </span>
-                {!job.preview ? (
-                  <span className="ml-2 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-200">
-                    confirmed
-                  </span>
-                ) : null}
-              </p>
-              <span className="text-xs text-neutral-400">
-                {policiesCollapsed ? "▸ show" : "▾ hide"}
-              </span>
-            </button>
-            {policiesCollapsed ? null : (
-            <ul className="max-h-96 overflow-y-auto">
-              {confirmedPreview.policies.map((policy) => (
-                <li key={policy.rule_id}>
-                  <label className="flex cursor-pointer flex-col gap-1 border-b border-neutral-800/70 px-2 py-2 text-sm last:border-b-0 hover:bg-neutral-900/40">
-                    <div className="flex items-start gap-2">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5 h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
-                        checked={selectedPolicyIds.has(policy.rule_id)}
-                        onChange={() => togglePolicy(policy.rule_id)}
-                        disabled={isRunning}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-baseline gap-2">
-                          <span className="font-semibold text-neutral-100">{policy.label}</span>
-                          <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-200">
-                            {policy.trigger}
-                          </span>
-                          <span className="font-mono text-[10px] text-neutral-500">
-                            {policy.rule_id}
-                          </span>
-                        </div>
-                        <p className="mt-1 font-mono text-[11px] text-neutral-400">
-                          target: {policy.target_entity_id}.{policy.target_method}
-                          {policy.inputs && policy.inputs.length > 0
-                            ? `(${policy.inputs.join(", ")})`
-                            : "()"}
-                        </p>
-                        {policy.description ? (
-                          <p className="mt-1 text-xs text-neutral-300">
-                            {policy.description}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </label>
-                </li>
-              ))}
-            </ul>
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      {job.preview && !job.isResuming && !job.isPolling && jobStatus !== "running" ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-700/50 bg-emerald-500/5 p-3">
-          <p className="text-sm text-emerald-100">
-            Preview ready — {job.preview.policies.length} policies derived
-            from {job.preview.entities.length} entities. Review the policy
-            list above and confirm to start the full generation, or reset to
-            re-preview.
+      {(() => {
+        // Dedup error display: actionError (UI-side validation / catch) wins
+        // over job.error (hook-side); show a single red box instead of two.
+        const errMsg = actionError || job.error || "";
+        if (!errMsg) return null;
+        return (
+          <p className="mt-3 whitespace-pre-line rounded-md border border-red-800/70 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+            {errMsg}
           </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setActionError("");
-                lastResultJobIdRef.current = null;
-                setConfirmedPreview(null);
-                setPoliciesCollapsed(false);
-                job.reset();
-              }}
-              className="rounded-md border border-neutral-700 bg-neutral-800/40 px-3 py-2 text-xs font-semibold text-neutral-200 transition hover:bg-neutral-700/40"
-            >
-              Reset & re-preview
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleGenerate()}
-              disabled={pageEntities.length === 0}
-              title={
-                pageEntities.length === 0
-                  ? "Add at least one entity in the entity section above"
-                  : undefined
-              }
-              className="rounded-md border border-emerald-600 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Confirm &amp; start generation
-            </button>
-          </div>
-        </div>
-      ) : null}
+        );
+      })()}
 
-      <div className="mt-6 rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <p className="text-sm font-semibold text-neutral-200">Stage log</p>
-          <p className="text-xs text-neutral-500">
-            status: <span className="text-neutral-300">{jobStatusLabel}</span>
-            {currentStage ? <> · stage: <span className="text-neutral-300">{currentStage}</span></> : null}
-            {remainingStages !== null ? <> · remaining: {String(remainingStages)}</> : null}
-          </p>
-        </div>
-        {stageMessage ? (
-          <p className="mb-2 text-xs text-neutral-400">{stageMessage}</p>
-        ) : null}
-        {stageHistory.length === 0 ? (
-          <p className="text-xs text-neutral-500">No stages run yet.</p>
-        ) : (
-          <ul className="max-h-48 overflow-y-auto font-mono text-xs">
-            {stageHistory.map((entry, idx) => (
-              <li
-                key={`${entry.stage}-${String(idx)}`}
-                className={
-                  completedStages.includes(entry.stage)
-                    ? "py-0.5 text-emerald-300"
-                    : "py-0.5 text-neutral-300"
-                }
-              >
-                <span className="mr-2 text-neutral-500">[{entry.stage}]</span>
-                {entry.message}
-              </li>
-            ))}
-          </ul>
-        )}
+      <div className="mt-6">
+        <CodeGenStageLogPanel
+          jobId={job.jobId}
+          jobStatus={jobStatus || (job.preview ? "partial" : "—")}
+          currentStage={currentStage}
+          stageMessage={stageMessage}
+          completedStages={completedStages}
+          canResume={job.status?.canResume}
+          remainingStages={remainingStages}
+          nextStage={job.status?.nextStage ?? null}
+          resumeDisabledReason={job.status?.resumeDisabledReason ?? null}
+          cancelRequested={job.status?.cancelRequested}
+          isActive={isRunning}
+          onPreviewRequested={() => void handlePreview()}
+          previewDisabled={
+            (missingRequirements && missingRequirements.length > 0) || pageEntities.length === 0
+          }
+          previewDisabledReason={
+            missingRequirements && missingRequirements.length > 0
+              ? formatMissingMessage("preview", missingRequirements)
+              : pageEntities.length === 0
+                ? "Add at least one entity above before previewing."
+                : undefined
+          }
+          onResumeRequested={() => void handleGenerate()}
+        />
       </div>
 
       {(() => {

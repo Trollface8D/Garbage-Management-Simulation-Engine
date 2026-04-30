@@ -277,11 +277,18 @@ def cancel_code_gen_job(job_id: str):
 
 
 @router.post("/code_gen/jobs/{job_id}/resume")
-def resume_code_gen_job(job_id: str):
+def resume_code_gen_job(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
     """Re-run the worker from the next unfinished stage.
 
     Cold-start safe: rehydrates inputs from ``inputs.json`` if the in-memory
     job record was lost (backend restart).
+
+    Optional body fields override matching keys in ``inputs.json`` before the
+    worker spawns — used by the Confirm flow to apply the user's
+    entity/policy/metric refinements without creating a new job:
+
+      ``selectedEntities``, ``selectedPolicies``, ``selectedMetrics``,
+      ``userEntityList``
     """
     with JOBS_LOCK:
         job = JOBS.get(job_id)
@@ -313,6 +320,28 @@ def resume_code_gen_job(job_id: str):
     job.cancel_requested = False
     job.error = None
     job.updated_at = utc_now_iso()
+
+    # Apply optional selection overrides on top of the saved manifest. We
+    # rewrite inputs.json so a backend restart mid-run picks up the refined
+    # selection rather than the original (pre-confirm) snapshot.
+    refined_keys = ("selectedEntities", "selectedPolicies", "selectedMetrics", "userEntityList")
+    overrides_present = any(key in payload for key in refined_keys)
+    if overrides_present:
+        for key in refined_keys:
+            if key in payload:
+                value = payload.get(key)
+                manifest[key] = list(value or [])
+        checkpoints.save_inputs(
+            job_id,
+            causal_data=str(manifest.get("causalData") or ""),
+            map_node_json=manifest.get("mapNodeJson"),
+            selected_entities=list(manifest.get("selectedEntities") or []),
+            selected_policies=list(manifest.get("selectedPolicies") or []),
+            selected_metrics=list(manifest.get("selectedMetrics") or []),
+            user_entity_list=list(manifest.get("userEntityList") or []),
+            model_name=str(manifest.get("modelName") or DEFAULT_MODEL_NAME),
+            use_env_model_overrides=bool(manifest.get("useEnvModelOverrides", True)),
+        )
 
     inputs = {
         "causalData": manifest.get("causalData") or "",
@@ -465,10 +494,24 @@ def preview_entities(job_id: str):
         )
     except Exception as exc:
         logger.exception("[code_gen] preview_entities failed jobId=%s", job_id)
+        with JOBS_LOCK:
+            job.status = "failed"
+            job.error = str(exc)
+            job.current_stage = None
+            job.updated_at = utc_now_iso()
         return JSONResponse(
             {"error": f"preview_entities failed: {exc}"},
             status_code=500,
         )
+
+    # Preview finished synchronously — drop the job out of "running"/"queued"
+    # so the subsequent /resume call (Confirm & start generation) doesn't 409
+    # with "Job already running or queued.". "partial" matches the disk-only
+    # restored-from-checkpoint path used elsewhere.
+    with JOBS_LOCK:
+        job.status = "partial"
+        job.current_stage = None
+        job.updated_at = utc_now_iso()
 
     return {
         "jobId": job_id,
@@ -490,3 +533,110 @@ def get_code_gen_artifact(job_id: str, path: str):
             status_code=403,
         )
     return FileResponse(resolved, filename=resolved.name)
+
+
+@router.get("/code_gen/jobs/{job_id}/checkpoints")
+def list_code_gen_checkpoints(job_id: str):
+    stages = checkpoints.list_stages(job_id)
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        in_memory_completed = list(job.completed_stages) if job else None
+        status = job.status if job else None
+
+    if in_memory_completed is not None:
+        completed = in_memory_completed
+    else:
+        completed = [s["stage"] for s in stages]
+        if status is None and any(s["stage"] == "finalize_bundle" for s in stages):
+            status = "completed"
+        elif status is None and completed:
+            status = "partial"
+
+    return {
+        "jobId": job_id,
+        "status": status,
+        "stageOrder": list(checkpoints.STAGE_ORDER),
+        "completedStages": completed,
+        "checkpoints": stages,
+    }
+
+
+def _summarize_code_gen_stage(stage: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Compact summary + bounded preview for the stage-log dropdown."""
+    summary: dict[str, Any] = {}
+    preview: Any = None
+    try:
+        if stage == "state1_entity_list":
+            entities = payload.get("entities") or []
+            summary["entityCount"] = len(entities)
+            preview = {"entities": entities[:8]}
+        elif stage == "state1b_policy_outline":
+            policies = payload.get("policies") or []
+            summary["policyCount"] = len(policies)
+            preview = {"policies": policies[:12]}
+        elif stage == "state1c_entity_dependencies":
+            deps = payload.get("dependencies") or []
+            summary["edgeCount"] = len(deps)
+            preview = {"dependencies": deps[:12]}
+        elif stage == "state2_code_entity_object":
+            files = payload.get("files") or []
+            summary["fileCount"] = len(files)
+            preview = {"files": [{"path": f.get("path"), "kind": f.get("kind")} for f in files[:12]]}
+        elif stage == "state2v_validate_protocol":
+            errs = payload.get("errors") or []
+            summary["errorCount"] = len(errs)
+            preview = {"errors": errs[:12]}
+        elif stage == "state3_code_environment":
+            files = payload.get("files") or []
+            summary["fileCount"] = len(files)
+            preview = {"files": [{"path": f.get("path"), "kind": f.get("kind")} for f in files[:12]]}
+        elif stage == "state4_code_policy":
+            files = payload.get("files") or []
+            summary["fileCount"] = len(files)
+            preview = {"files": [{"path": f.get("path"), "kind": f.get("kind")} for f in files[:12]]}
+        elif stage == "state4v_validate_policy":
+            errs = payload.get("errors") or []
+            summary["errorCount"] = len(errs)
+            preview = {"errors": errs[:12]}
+        elif stage == "finalize_bundle":
+            files = payload.get("files") or []
+            summary["fileCount"] = len(files)
+            preview = {"files": [{"path": f.get("path"), "kind": f.get("kind")} for f in files[:24]]}
+        else:
+            preview = payload
+    except Exception:  # noqa: BLE001 — summary is best-effort.
+        preview = None
+    return {"summary": summary, "preview": preview}
+
+
+def _code_gen_stage_token_usage(job: JobRecord | None, stage: str) -> dict[str, Any] | None:
+    if job is None:
+        return None
+    last: dict[str, Any] | None = None
+    prefixed = f"code_gen/{stage}"
+    for entry in job.stage_history:
+        entry_stage = str(entry.get("stage") or "")
+        if entry_stage == stage or entry_stage == prefixed:
+            usage = entry.get("tokenUsage")
+            if isinstance(usage, dict):
+                last = usage
+    return last
+
+
+@router.get("/code_gen/jobs/{job_id}/checkpoints/{stage}")
+def get_code_gen_checkpoint(job_id: str, stage: str):
+    if stage not in checkpoints.STAGE_ORDER:
+        return JSONResponse({"error": f"Unknown stage '{stage}'."}, status_code=400)
+    payload = checkpoints.load_stage(job_id, stage)
+    if payload is None:
+        return JSONResponse({"error": f"No checkpoint for stage '{stage}'."}, status_code=404)
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+    summarized = _summarize_code_gen_stage(stage, payload)
+    return {
+        "jobId": job_id,
+        "stage": stage,
+        "summary": summarized["summary"],
+        "preview": summarized["preview"],
+        "tokenUsage": _code_gen_stage_token_usage(job, stage),
+    }

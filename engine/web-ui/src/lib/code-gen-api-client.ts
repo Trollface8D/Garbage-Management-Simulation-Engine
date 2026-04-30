@@ -165,14 +165,68 @@ export async function fetchCodeGenStatus(jobId: string): Promise<CodeGenJobStatu
   return jsonOrThrow<CodeGenJobStatus>(response);
 }
 
-export async function resumeCodeGenJob(jobId: string): Promise<void> {
+export type CodeGenResumeOverrides = {
+  selectedEntities?: Array<{ id: string }>;
+  selectedPolicies?: Array<{ rule_id: string }>;
+  selectedMetrics?: SuggestedMetric[];
+  userEntityList?: UserEntityItem[];
+};
+
+export async function resumeCodeGenJob(
+  jobId: string,
+  overrides?: CodeGenResumeOverrides,
+): Promise<void> {
+  const hasOverrides = !!overrides && Object.keys(overrides).length > 0;
   const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/resume`, {
     method: "POST",
+    headers: hasOverrides ? { "content-type": "application/json" } : undefined,
+    body: hasOverrides ? JSON.stringify(overrides) : undefined,
     cache: "no-store",
   });
   if (!response.ok) {
     throw new Error(await parseError(response));
   }
+}
+
+export type CodeGenStageEntry = {
+  stage: string;
+  savedAt: number;
+  bytes: number;
+  iterations?: CodeGenIterationEntry[];
+};
+
+export type CodeGenCheckpointsListing = {
+  jobId: string;
+  status: string | null;
+  stageOrder: string[];
+  completedStages: string[];
+  checkpoints: CodeGenStageEntry[];
+};
+
+export type CodeGenCheckpointDetail = {
+  jobId: string;
+  stage: string;
+  summary: Record<string, unknown>;
+  preview: unknown;
+  tokenUsage: Record<string, number> | null;
+};
+
+export async function fetchCodeGenCheckpoints(jobId: string): Promise<CodeGenCheckpointsListing> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/checkpoints`, {
+    cache: "no-store",
+  });
+  return jsonOrThrow<CodeGenCheckpointsListing>(response);
+}
+
+export async function fetchCodeGenCheckpointDetail(
+  jobId: string,
+  stage: string,
+): Promise<CodeGenCheckpointDetail> {
+  const response = await fetch(
+    `${BASE}/jobs/${encodeURIComponent(jobId)}/checkpoints/${encodeURIComponent(stage)}`,
+    { cache: "no-store" },
+  );
+  return jsonOrThrow<CodeGenCheckpointDetail>(response);
 }
 
 export async function cancelCodeGenJob(jobId: string): Promise<void> {

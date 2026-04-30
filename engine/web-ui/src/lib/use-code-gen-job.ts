@@ -10,6 +10,7 @@ import {
   type CodeGenCreateRequest,
   type CodeGenJobStatus,
   type CodeGenPreviewResult,
+  type CodeGenResumeOverrides,
 } from "@/lib/code-gen-api-client";
 
 const POLL_INTERVAL_MS = 1500;
@@ -26,7 +27,7 @@ export type UseCodeGenJobState = {
   isPolling: boolean;
   start: (req: CodeGenCreateRequest) => Promise<string>;
   runPreview: (jobId?: string) => Promise<CodeGenPreviewResult>;
-  generate: (jobId?: string) => Promise<void>;
+  generate: (jobId?: string, overrides?: CodeGenResumeOverrides) => Promise<void>;
   cancel: (jobId?: string) => Promise<void>;
   reset: () => void;
 };
@@ -143,7 +144,7 @@ export function useCodeGenJob() {
   );
 
   const generate = useCallback(
-    async (overrideJobId?: string) => {
+    async (overrideJobId?: string, overrides?: CodeGenResumeOverrides) => {
       const id = overrideJobId ?? jobId;
       if (!id) {
         throw new Error("No active job. Call start() first.");
@@ -151,7 +152,7 @@ export function useCodeGenJob() {
       setError(null);
       setIsResuming(true);
       try {
-        await resumeCodeGenJob(id);
+        await resumeCodeGenJob(id, overrides);
         startPolling(id);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Resume failed.";
