@@ -111,6 +111,7 @@ export default function CodeGenWorkspace({
   const [mapStatus, setMapStatus] = useState<string>("no map selected");
   const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(new Set());
   const [selectedPolicyIds, setSelectedPolicyIds] = useState<Set<string>>(new Set());
+  const [manualPolicies, setManualPolicies] = useState<CodeGenPolicyOutline[]>([]);
   const [actionError, setActionError] = useState<string>("");
   const [previewOpen, setPreviewOpen] = useState<boolean>(false);
   const [previewText, setPreviewText] = useState<string>("");
@@ -130,6 +131,10 @@ export default function CodeGenWorkspace({
       setMapStatus(persisted.mapStatus);
       setSelectedEntityIds(new Set(persisted.selectedEntityIds));
       setSelectedPolicyIds(new Set(persisted.selectedPolicyIds));
+      // Support older persisted shape where manualPolicies were strings.
+      const mp = persisted.manualPolicies || [] as unknown as Array<string | CodeGenPolicyOutline>;
+      const normalized = mp.map((m) => typeof m === "string" ? { rule_id: `manual_${String(m).slice(0,8)}`, label: m, trigger: "manual", target_entity_id: "", target_method: "", inputs: [], description: m } as CodeGenPolicyOutline : (m as CodeGenPolicyOutline));
+      setManualPolicies(normalized);
       setPreviewText(persisted.previewText);
       setWasRestoredFromPersistence(true);
     }
@@ -146,6 +151,7 @@ export default function CodeGenWorkspace({
       mapStatus,
       selectedEntityIds: Array.from(selectedEntityIds),
       selectedPolicyIds: Array.from(selectedPolicyIds),
+      manualPolicies,
       artifactFiles,
       previewText,
     };
@@ -159,6 +165,7 @@ export default function CodeGenWorkspace({
     mapStatus,
     selectedEntityIds,
     selectedPolicyIds,
+    manualPolicies,
     artifactFiles,
     previewText,
   ]);
@@ -253,7 +260,10 @@ export default function CodeGenWorkspace({
   useEffect(() => {
     const preview = job.preview;
     if (!preview) return;
-    setSelectedPolicyIds(new Set(preview.policies.map((p: CodeGenPolicyOutline) => p.rule_id)));
+    setSelectedPolicyIds((prev) => {
+      if (prev.size > 0) return prev;
+      return new Set(preview.policies.map((p: CodeGenPolicyOutline) => p.rule_id));
+    });
   }, [job.preview]);
 
   // When job completes, fetch the artifact manifest from the result.
@@ -279,15 +289,6 @@ export default function CodeGenWorkspace({
 
   const toggleEntity = (id: string) => {
     setSelectedEntityIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const togglePolicy = (id: string) => {
-    setSelectedPolicyIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -365,14 +366,17 @@ export default function CodeGenWorkspace({
     }
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (
+    selectedPolicyIdsOverride?: string[],
+    manualPoliciesOverride?: CodeGenPolicyOutline[],
+  ) => {
     setActionError("");
     if (missingRequirements && missingRequirements.length > 0) {
       setActionError(formatMissingMessage("generate", missingRequirements));
       return;
     }
-    if (!job.jobId) {
-      setActionError("No active job. Run preview first.");
+    if (pageEntities.length === 0) {
+      setActionError("Add at least one entity in the entity section above before generating.");
       return;
     }
     if (pageEntities.length === 0) {
@@ -380,17 +384,48 @@ export default function CodeGenWorkspace({
       return;
     }
     try {
-      // Reuse the existing job so its preview checkpoints (state1, state1b)
-      // are honored — the worker resumes from the next unfinished stage.
-      // Refined entity/policy/metric selections override the saved manifest
-      // server-side via the resume body so later stages see the user's
-      // confirmed inputs without spawning a fresh job.
-      await job.generate(job.jobId, {
-        selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
-        selectedPolicies: Array.from(selectedPolicyIds).map((rule_id) => ({ rule_id })),
-        selectedMetrics,
-        userEntityList: pageEntities,
-      });
+      const nextSelectedPolicyIds = selectedPolicyIdsOverride ?? Array.from(selectedPolicyIds);
+      const nextManualPolicies = manualPoliciesOverride ?? manualPolicies;
+      setSelectedPolicyIds(new Set(nextSelectedPolicyIds));
+      setManualPolicies([...nextManualPolicies]);
+
+      // Build payload entries: selected rule_id objects + manual policy objects
+      const selectedPolicyPayload = [
+        ...nextSelectedPolicyIds.map((rule_id) => ({ rule_id })),
+        ...nextManualPolicies,
+      ];
+
+      // If no active job, create one (previewOnly) then resume with overrides.
+      if (!job.jobId) {
+        if (causalChoices.length === 0) {
+          setActionError("No causal sources resolved from the selected components.");
+          return;
+        }
+        const causalData = await aggregateCausalText(causalChoices);
+        const newJobId = await job.start({
+          causalData,
+          mapNodeJson,
+          selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
+          selectedPolicies: selectedPolicyPayload,
+          selectedMetrics,
+          userEntityList: pageEntities,
+          previewOnly: true,
+        });
+        await job.generate(newJobId, {
+          selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
+          selectedPolicies: selectedPolicyPayload,
+          selectedMetrics,
+          userEntityList: pageEntities,
+        });
+      } else {
+        // Reuse the existing job and resume with overrides
+        await job.generate(job.jobId, {
+          selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
+          selectedPolicies: selectedPolicyPayload,
+          selectedMetrics,
+          userEntityList: pageEntities,
+        });
+      }
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Generate failed.");
     }
@@ -431,6 +466,7 @@ export default function CodeGenWorkspace({
     onArtifactFilesChange([]);
     lastResultJobIdRef.current = null;
     setSelectedPolicyIds(new Set());
+    setManualPolicies([]);
     setPreviewText("");
     setWasRestoredFromPersistence(false);
     clearAllPersistence(componentId);
@@ -592,15 +628,15 @@ export default function CodeGenWorkspace({
           currentStage={currentStage}
           stageMessage={stageMessage}
           completedStages={completedStages}
-          canResume={job.status?.canResume}
           remainingStages={remainingStages}
           nextStage={job.status?.nextStage ?? null}
-          resumeDisabledReason={job.status?.resumeDisabledReason ?? null}
           cancelRequested={job.status?.cancelRequested}
           isActive={isRunning}
-          onResumeRequested={() => void handleGenerate()}
-          selectedPolicyIds={selectedPolicyIds}
-          onTogglePolicy={togglePolicy}
+          initialSelectedPolicyIds={selectedPolicyIds}
+          initialManualPolicies={manualPolicies}
+          onProceedRequested={(selectedPolicies, manualPoliciesDraft) =>
+            void handleGenerate(selectedPolicies, manualPoliciesDraft)
+          }
           policyConfirmReady={!!job.preview && !isRunning && !job.isResuming}
         />
       </div>

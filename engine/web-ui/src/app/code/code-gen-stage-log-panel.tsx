@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import {
   cancelCodeGenJob,
   fetchCodeGenCheckpointDetail,
@@ -108,16 +108,14 @@ export type CodeGenStageLogProps = {
   currentStage: string | null | undefined;
   stageMessage: string | undefined;
   completedStages?: string[];
-  canResume?: boolean;
   remainingStages?: number | null;
   nextStage?: string | null;
-  resumeDisabledReason?: string | null;
   cancelRequested?: boolean;
   isActive: boolean;
-  onResumeRequested?: () => void;
   onStatusUpdate?: (message: string) => void;
-  selectedPolicyIds?: Set<string>;
-  onTogglePolicy?: (id: string) => void;
+  initialSelectedPolicyIds?: Set<string>;
+  initialManualPolicies?: CodeGenPolicyOutline[];
+  onProceedRequested?: (selectedPolicies: string[], manualPolicies: CodeGenPolicyOutline[]) => void;
   policyConfirmReady?: boolean;
 };
 
@@ -128,16 +126,14 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
     currentStage,
     stageMessage,
     completedStages,
-    canResume,
     remainingStages,
     nextStage,
-    resumeDisabledReason,
     cancelRequested,
     isActive,
-    onResumeRequested,
     onStatusUpdate,
-    selectedPolicyIds,
-    onTogglePolicy,
+    initialSelectedPolicyIds,
+    initialManualPolicies,
+    onProceedRequested,
     policyConfirmReady,
   } = props;
 
@@ -147,6 +143,12 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
   const [expandedStage, setExpandedStage] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState<string>("");
   const [actionPending, setActionPending] = useState<boolean>(false);
+  const [draftSelectedPolicyIds, setDraftSelectedPolicyIds] = useState<Set<string>>(
+    () => new Set(initialSelectedPolicyIds || []),
+  );
+  const [draftManualPolicies, setDraftManualPolicies] = useState<CodeGenPolicyOutline[]>(() => [
+    ...(initialManualPolicies || []),
+  ]);
   const [stageDetails, setStageDetails] = useState<
     Record<string, CodeGenCheckpointDetail>
   >({});
@@ -161,6 +163,11 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
   }, [completedStages, remoteCompleted]);
 
   const shortCurrentStage = shortStageName(currentStage);
+
+  useEffect(() => {
+    setDraftSelectedPolicyIds(new Set(initialSelectedPolicyIds || []));
+    setDraftManualPolicies([...(initialManualPolicies || [])]);
+  }, [jobId, initialSelectedPolicyIds, initialManualPolicies]);
 
   useEffect(() => {
     if (!jobId) {
@@ -274,35 +281,24 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
     [jobId, onStatusUpdate],
   );
 
-  const handleResume = useCallback(() => {
-    if (!jobId) return;
-    setActionStatus("Resume requested…");
-    onResumeRequested?.();
-  }, [jobId, onResumeRequested]);
-
   const hasHistory = completedSet.size > 0;
   const noRemainingStages = typeof remainingStages === "number" && remainingStages <= 0;
   const isFailed = jobStatus === "failed";
-  const resumeEnabled =
-    Boolean(jobId) &&
-    !actionPending &&
-    !isActive &&
-    (isFailed || (!!canResume && !noRemainingStages));
-  const resumeLabel = isFailed ? "Restart" : hasHistory ? "Resume" : "Confirm & start";
-  const resumeTitle = !jobId
-    ? "No prior job to resume."
+  const selectedCount = draftSelectedPolicyIds.size;
+  const manualCount = draftManualPolicies.length;
+  const canProceed = Boolean(jobId) && !actionPending && !isActive;
+  const proceedLabel = isFailed ? "Restart & proceed" : hasHistory ? "Resume & proceed" : "Confirm & proceed";
+  const proceedTitle = !jobId
+    ? "No prior job to continue."
     : isActive
       ? "Job already running."
-      : isFailed
-        ? nextStage
-          ? `Restart from the stage that failed (${nextStage}).`
-          : "Restart from the last successful checkpoint."
-        : resumeDisabledReason ||
-          (noRemainingStages
-            ? "No stages left to run."
-            : nextStage
-              ? `Resume from next stage: ${nextStage}.`
-              : "Resume from last completed stage.");
+      : !canProceed
+        ? "Select at least one policy above or add a manual policy."
+        : nextStage
+          ? `Proceed from next stage: ${nextStage}.`
+          : noRemainingStages
+            ? "No stages remain; use Restart if you need to regenerate."
+            : "Proceed with the selected policies.";
 
   // Auto-expand on first activity / history.
   useEffect(() => {
@@ -382,7 +378,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                       <span className="block text-sm font-semibold text-neutral-100">
                         {entry.label}
                       </span>
-                      <span className="block break-words text-[11px] text-neutral-400">
+                      <span className="block wrap-break-word text-[11px] text-neutral-400">
                         {progressMsg || entry.description}
                       </span>
                     </span>
@@ -393,14 +389,14 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
 
                   {isExpanded ? (
                     <div className="space-y-2 border-t border-neutral-800 px-3 py-2 text-[12px] text-neutral-300">
-                      <p className="break-words text-neutral-400">
+                      <p className="wrap-break-word text-neutral-400">
                         Stage key: <span className="text-neutral-200">{entry.key}</span>
                       </p>
                       <p className="text-neutral-400">
                         Status: <span className="text-neutral-200">{status}</span>
                       </p>
                       {progressMsg ? (
-                        <p className="break-words text-neutral-300">{progressMsg}</p>
+                        <p className="wrap-break-word text-neutral-300">{progressMsg}</p>
                       ) : null}
 
                       {status === "done" ? (
@@ -409,9 +405,25 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                             detail={stageDetails[entry.key]}
                             loading={detailLoading === entry.key}
                             error={detailLoading === entry.key ? "" : detailError}
-                            selectedPolicyIds={selectedPolicyIds}
-                            onTogglePolicy={onTogglePolicy}
-                            onConfirm={onResumeRequested}
+                            selectedPolicyIds={draftSelectedPolicyIds}
+                            onTogglePolicy={(id) => {
+                              setDraftSelectedPolicyIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(id)) next.delete(id);
+                                else next.add(id);
+                                return next;
+                              });
+                            }}
+                            manualPolicies={draftManualPolicies}
+                            onAddManualPolicy={(policy) => {
+                              setDraftManualPolicies((prev) =>
+                                prev.some((p) => p.rule_id === policy.rule_id) ? prev : [...prev, policy],
+                              );
+                            }}
+                            onRemoveManualPolicy={(rule_id) => {
+                              setDraftManualPolicies((prev) => prev.filter((item) => item.rule_id !== rule_id));
+                            }}
+                            onConfirm={() => onProceedRequested?.([...draftSelectedPolicyIds], draftManualPolicies)}
                             confirmReady={policyConfirmReady}
                             isRunning={isActive}
                             actionPending={actionPending}
@@ -437,16 +449,6 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                             Rollback to here
                           </button>
                         ) : null}
-                        {status === "running" ? (
-                          <button
-                            type="button"
-                            onClick={handleCancel}
-                            disabled={actionPending}
-                            className="inline-flex items-center rounded-md border border-red-700 bg-red-500/10 px-2 py-1 text-[11px] font-semibold text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Terminate this stage
-                          </button>
-                        ) : null}
                       </div>
                     </div>
                   ) : null}
@@ -456,7 +458,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
           </ol>
 
           {actionStatus ? (
-            <p className="break-words text-[11px] text-neutral-400">{actionStatus}</p>
+            <p className="wrap-break-word text-[11px] text-neutral-400">{actionStatus}</p>
           ) : null}
         </div>
       ) : null}
@@ -478,14 +480,14 @@ function StageDetailBlock({
   }
   if (error) {
     return (
-      <p className="break-words text-[11px] text-red-300">Failed to load: {error}</p>
+      <p className="wrap-break-word text-[11px] text-red-300">Failed to load: {error}</p>
     );
   }
   if (!detail) return null;
 
   const summary = detail.summary || {};
   const summaryEntries = Object.entries(summary);
-  const token = detail.tokenUsage || undefined;
+  const token = detail?.tokenUsage || undefined;
   const previewJson = (() => {
     try {
       return JSON.stringify(detail.preview ?? null, null, 2);
@@ -526,7 +528,7 @@ function StageDetailBlock({
         <summary className="cursor-pointer px-2 py-1 text-[11px] text-neutral-300 hover:text-neutral-100">
           Output preview
         </summary>
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words px-2 py-1 text-[10px] text-neutral-300">
+        <pre className="max-h-60 overflow-auto whitespace-pre-wrap wrap-break-word px-2 py-1 text-[10px] text-neutral-300">
           {trimmedPreview}
         </pre>
       </details>
@@ -540,6 +542,9 @@ function PolicyConfirmBlock({
   error,
   selectedPolicyIds,
   onTogglePolicy,
+  manualPolicies,
+  onAddManualPolicy,
+  onRemoveManualPolicy,
   onConfirm,
   confirmReady,
   isRunning,
@@ -550,25 +555,63 @@ function PolicyConfirmBlock({
   error: string;
   selectedPolicyIds?: Set<string>;
   onTogglePolicy?: (id: string) => void;
+  manualPolicies?: CodeGenPolicyOutline[];
+  onAddManualPolicy?: (policy: CodeGenPolicyOutline) => void;
+  onRemoveManualPolicy?: (rule_id: string) => void;
   onConfirm?: () => void;
   confirmReady?: boolean;
   isRunning: boolean;
   actionPending: boolean;
 }) {
+  const [labelInput, setLabelInput] = useState("");
+  const [descInput, setDescInput] = useState("");
+
+  const handleAddManualPolicy = () => {
+    const label = labelInput.trim();
+    const description = descInput.trim();
+    if (!label && !description) return;
+    const policy: CodeGenPolicyOutline = {
+      rule_id: `manual_${Date.now()}`,
+      label: label || (description.length > 80 ? `${description.slice(0, 77)}…` : description || "manual policy"),
+      trigger: "manual",
+      target_entity_id: "",
+      target_method: "",
+      inputs: [],
+      description: description,
+    };
+    onAddManualPolicy?.(policy);
+    setLabelInput("");
+    setDescInput("");
+  };
+
+  const handleDescKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) return;
+    event.preventDefault();
+    handleAddManualPolicy();
+  };
+
   if (loading) {
     return <p className="text-[11px] text-neutral-500">Loading checkpoint…</p>;
   }
   if (error) {
     return (
-      <p className="break-words text-[11px] text-red-300">Failed to load: {error}</p>
+      <p className="wrap-break-word text-[11px] text-red-300">Failed to load: {error}</p>
     );
   }
-  if (!detail) return null;
 
-  const token = detail.tokenUsage || undefined;
-  const policies: CodeGenPolicyOutline[] = (() => {
+  // Allow user-driven confirm regardless of preview readiness
+  const ready = true;
+  const token = detail?.tokenUsage || undefined;
+  const selectedCount = selectedPolicyIds?.size ?? 0;
+  const manualCount = manualPolicies?.length ?? 0;
+  const hasSelection = selectedCount > 0 || manualCount > 0;
+  const canProceed = ready && !actionPending && !isRunning;
+  const proceedLabel = "Confirm & proceed";
+  const proceedTitle = !canProceed ? "Select at least one policy above or add a manual policy." : undefined;
+
+  const previewPolicies: CodeGenPolicyOutline[] = (() => {
     try {
-      const raw = detail.preview as { policies?: unknown } | null;
+      const raw = detail?.preview as { policies?: unknown } | null | undefined;
       if (Array.isArray(raw)) return raw as CodeGenPolicyOutline[];
       if (raw && Array.isArray(raw.policies)) return raw.policies as CodeGenPolicyOutline[];
       return [];
@@ -576,6 +619,12 @@ function PolicyConfirmBlock({
       return [];
     }
   })();
+
+  // Merge preview policies with manual policies, manual policies appended
+  const combinedPolicies: CodeGenPolicyOutline[] = [
+    ...previewPolicies,
+    ...(manualPolicies || []),
+  ];
 
   return (
     <div className="space-y-2 rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
@@ -588,58 +637,99 @@ function PolicyConfirmBlock({
         <div className="text-[10px] text-neutral-500">No token usage recorded for this stage.</div>
       )}
 
-      {policies.length > 0 ? (
-        <div>
-          <p className="mb-1 text-[11px] font-semibold text-neutral-300">
-            Policies ({policies.length}) — select to include
-          </p>
-          <ul className="max-h-72 overflow-y-auto">
-            {policies.map((policy) => (
-              <li key={policy.rule_id}>
-                <label className="flex flex-col gap-1 border-b border-neutral-800/70 px-1 py-2 text-sm last:border-b-0">
-                  <span className="flex items-center gap-2 text-neutral-100">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      checked={selectedPolicyIds?.has(policy.rule_id) ?? true}
-                      onChange={() => onTogglePolicy?.(policy.rule_id)}
-                      disabled={isRunning || actionPending}
-                    />
-                    <span className="font-semibold">{policy.label}</span>
-                  </span>
-                  <span className="ml-6 text-xs text-neutral-400">
-                    {policy.target_entity_id}.{policy.target_method} on {policy.trigger}
-                  </span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <p className="text-[11px] text-neutral-500">No policies in checkpoint.</p>
-      )}
+      {!detail ? (
+        <p className="text-[11px] text-neutral-500">
+          Policy checkpoint details are not loaded yet. Manual policy entry remains available.
+        </p>
+      ) : null}
 
-      {confirmReady ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-700/50 bg-emerald-500/5 p-3">
-          <p className="text-xs text-emerald-100">
-            Review {policies.length} {policies.length === 1 ? "policy" : "policies"} above.
-            Confirm to continue generation.
-          </p>
+      <div>
+        <p className="mb-1 text-[11px] font-semibold text-neutral-300">
+          Policies ({combinedPolicies.length}) — select to include
+        </p>
+        <ul className="max-h-72 overflow-y-auto">
+          {combinedPolicies.map((policy) => (
+            <li key={policy.rule_id}>
+              <label className="flex flex-col gap-1 border-b border-neutral-800/70 px-1 py-2 text-sm last:border-b-0">
+                <span className="flex items-center gap-2 text-neutral-100">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    checked={selectedPolicyIds?.has(policy.rule_id) ?? false}
+                    onChange={() => onTogglePolicy?.(policy.rule_id)}
+                    disabled={actionPending}
+                  />
+                  <span className="font-semibold">{policy.label}</span>
+                </span>
+                <span className="ml-6 text-xs text-neutral-400">
+                  {policy.target_entity_id}{policy.target_method ? `.${policy.target_method}` : ""}{policy.trigger ? ` on ${policy.trigger}` : ""}
+                </span>
+                {policy.description ? (
+                  <span className="ml-6 mt-1 text-xs text-neutral-400">{policy.description}</span>
+                ) : null}
+                {manualPolicies?.some((m) => m.rule_id === policy.rule_id) ? (
+                  <div className="ml-6 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => onRemoveManualPolicy?.(policy.rule_id)}
+                      disabled={actionPending}
+                      className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] font-semibold text-neutral-300 transition hover:border-red-500 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Remove manual
+                    </button>
+                  </div>
+                ) : null}
+              </label>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-950/50 p-3">
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Add manual policy</p>
+          <div className="space-y-2">
+            <input
+              value={labelInput}
+              onChange={(e) => setLabelInput(e.target.value)}
+              placeholder="Policy title (short)"
+              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-sky-500"
+              disabled={actionPending}
+            />
+            <textarea
+              value={descInput}
+              onChange={(event) => setDescInput(event.target.value)}
+              onKeyDown={handleDescKeyDown}
+              placeholder="Description (optional): Describe trigger and intent. Example: When stock is low, prioritize restocking before delivery."
+              rows={3}
+              className="min-h-20 w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none transition placeholder:text-neutral-500 focus:border-sky-500"
+              disabled={actionPending}
+            />
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleAddManualPolicy}
+                disabled={actionPending || (!labelInput.trim() && !descInput.trim())}
+                className="rounded-md border border-sky-700 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Add policy
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-700/50 bg-emerald-500/5 p-3">
+          <p className="text-xs text-emerald-100">Review {combinedPolicies.length} {combinedPolicies.length === 1 ? "policy" : "policies"} above. You can also add manual policies before continuing.</p>
           <button
             type="button"
             onClick={onConfirm}
-            disabled={!selectedPolicyIds || selectedPolicyIds.size === 0 || actionPending}
-            title={
-              selectedPolicyIds?.size === 0
-                ? "Select at least one policy above"
-                : undefined
-            }
+            title={proceedTitle}
             className="rounded-md border border-emerald-600 bg-emerald-500/15 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Confirm &amp; continue generation
+            {proceedLabel}
           </button>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }
