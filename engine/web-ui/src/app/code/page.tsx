@@ -1257,6 +1257,8 @@ export default function CodePage() {
                         manualMetricName={manualMetricName}
                         manualMetricError={manualMetricError}
                         selectedEntityCount={selectedEntities.length}
+                        selectedModel={selectedModel}
+                        onModelChange={setSelectedModel}
                         onSuggestMetrics={handleSuggestMetrics}
                         onCancelMetricsSuggest={handleCancelMetricsSuggest}
                         onToggleMetric={handleToggleMetric}
@@ -1286,6 +1288,7 @@ export default function CodePage() {
                                 : null
                         }
                         model={selectedModel}
+                        onModelChange={setSelectedModel}
                         selectedMetrics={selectedMetrics.map((m) => ({
                             name: m.name,
                             label: m.label,

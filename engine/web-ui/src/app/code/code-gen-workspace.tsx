@@ -22,6 +22,7 @@ import {
   type PersistedWorkspaceState,
 } from "@/lib/use-codegen-persistence";
 import type { MapGraphPayload } from "@/lib/map-types";
+import ModelPicker from "@/app/components/model-picker";
 
 type CausalChoice = {
   id: string;
@@ -43,6 +44,7 @@ type Props = {
   selectedMapId?: string | null;
   selectedMapLabel?: string | null;
   model: string;
+  onModelChange?: (model: string) => void;
   selectedMetrics: SuggestedMetric[];
   /** Page-level entity list — source of truth for codegen. Passed as userEntityList to backend. */
   pageEntities: UserEntityItem[];
@@ -94,6 +96,7 @@ export default function CodeGenWorkspace({
   selectedMapId,
   selectedMapLabel,
   model,
+  onModelChange,
   selectedMetrics,
   pageEntities,
   missingRequirements,
@@ -429,12 +432,6 @@ export default function CodeGenWorkspace({
         <span className="text-neutral-600">·</span>
         <span>{mapStatus}</span>
         <span className="text-neutral-600">·</span>
-        <span>
-          model{" "}
-          <span className="font-mono text-neutral-100">
-            {model.trim() || "(env default)"}
-          </span>
-        </span>
         <button
           type="button"
           onClick={() => void handleOpenPreview()}
@@ -496,6 +493,9 @@ export default function CodeGenWorkspace({
         >
           Reset
         </button>
+        <div className="ml-auto flex items-center gap-2">
+        <ModelPicker value={model} onChange={(v) => onModelChange?.(v)} label="model" placeholder="default from .env" />
+        </div>
       </div>
 
       {(() => {
@@ -644,7 +644,7 @@ export default function CodeGenWorkspace({
               {previewLoading ? (
                 <p className="text-xs text-neutral-400">Building preview…</p>
               ) : (
-                <pre className="whitespace-pre-wrap break-words font-mono text-xs text-neutral-100">
+                <pre className="whitespace-pre-wrap wrap-break-word font-mono text-xs text-neutral-100">
                   {previewText}
                 </pre>
               )}

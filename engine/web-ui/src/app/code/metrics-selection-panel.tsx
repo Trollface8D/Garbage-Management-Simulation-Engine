@@ -1,6 +1,7 @@
 "use client";
 
 import { type SuggestedMetric } from "@/lib/code-gen-api-client";
+import ModelPicker from "@/app/components/model-picker";
 
 export type WorkspaceMetric = SuggestedMetric & {
     id: string;
@@ -17,6 +18,8 @@ type MetricsSelectionPanelProps = {
     manualMetricName: string;
     manualMetricError: string;
     selectedEntityCount: number;
+    selectedModel: string;
+    onModelChange: (model: string) => void;
 
     onSuggestMetrics: () => void;
     onCancelMetricsSuggest: () => void;
@@ -36,6 +39,8 @@ export default function MetricsSelectionPanel({
     manualMetricName,
     manualMetricError,
     selectedEntityCount,
+    selectedModel,
+    onModelChange,
     onSuggestMetrics,
     onCancelMetricsSuggest,
     onToggleMetric,
@@ -64,6 +69,7 @@ export default function MetricsSelectionPanel({
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                    <ModelPicker value={selectedModel} onChange={onModelChange} />
                     <button
                         type="button"
                         onClick={onSuggestMetrics}
