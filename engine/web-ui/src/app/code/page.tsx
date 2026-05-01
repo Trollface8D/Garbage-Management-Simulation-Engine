@@ -1266,6 +1266,7 @@ export default function CodePage() {
                     />
 
                     <CodeGenWorkspace
+                        componentId={componentId ?? ""}
                         causalSourceRefs={(selectedCausalIds.size > 0
                             ? causalItems.filter((item) => selectedCausalIds.has(item.id))
                             : []

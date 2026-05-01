@@ -15,6 +15,12 @@ import {
   loadCausalArtifactsForItem,
   loadCausalSourceItems,
 } from "@/lib/pm-storage";
+import {
+  saveWorkspaceState,
+  loadWorkspaceState,
+  clearAllPersistence,
+  type PersistedWorkspaceState,
+} from "@/lib/use-codegen-persistence";
 import type { MapGraphPayload } from "@/lib/map-types";
 
 type CausalChoice = {
@@ -32,6 +38,7 @@ export type ArtifactFile = {
 export type CausalSourceRef = { projectId: string; componentId: string };
 
 type Props = {
+  componentId: string;
   causalSourceRefs: CausalSourceRef[];
   selectedMapId?: string | null;
   selectedMapLabel?: string | null;
@@ -82,6 +89,7 @@ async function aggregateCausalText(items: CausalChoice[]): Promise<string> {
 }
 
 export default function CodeGenWorkspace({
+  componentId,
   causalSourceRefs,
   selectedMapId,
   selectedMapLabel,
@@ -94,7 +102,7 @@ export default function CodeGenWorkspace({
   onRunningChange,
   onJobIdChange,
 }: Props) {
-  const job = useCodeGenJob();
+  const job = useCodeGenJob(componentId);
   const [causalChoices, setCausalChoices] = useState<CausalChoice[]>([]);
   const [mapGraph, setMapGraph] = useState<MapGraphPayload | null>(null);
   const [mapStatus, setMapStatus] = useState<string>("no map selected");
@@ -104,9 +112,63 @@ export default function CodeGenWorkspace({
   const [previewOpen, setPreviewOpen] = useState<boolean>(false);
   const [previewText, setPreviewText] = useState<string>("");
   const [previewLoading, setPreviewLoading] = useState<boolean>(false);
+  const [wasRestoredFromPersistence, setWasRestoredFromPersistence] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const lastResultJobIdRef = useRef<string | null>(null);
 
   const pageEntityIdsSignature = pageEntities.map((entity) => entity.id).join("\u0000");
+
+  // Restore persisted workspace state on mount
+  useEffect(() => {
+    const persisted = loadWorkspaceState(componentId);
+    if (persisted) {
+      setCausalChoices(persisted.causalChoices);
+      setMapGraph(persisted.mapGraph);
+      setMapStatus(persisted.mapStatus);
+      setSelectedEntityIds(new Set(persisted.selectedEntityIds));
+      setSelectedPolicyIds(new Set(persisted.selectedPolicyIds));
+      setPreviewText(persisted.previewText);
+      setWasRestoredFromPersistence(true);
+    }
+    setIsInitialized(true);
+  }, [componentId]);
+
+  // Persist workspace state whenever it changes (skip initial setup phase)
+  useEffect(() => {
+    if (!isInitialized || wasRestoredFromPersistence) return;
+    const state: PersistedWorkspaceState = {
+      version: 1,
+      causalChoices,
+      mapGraph,
+      mapStatus,
+      selectedEntityIds: Array.from(selectedEntityIds),
+      selectedPolicyIds: Array.from(selectedPolicyIds),
+      artifactFiles,
+      previewText,
+    };
+    saveWorkspaceState(componentId, state);
+  }, [
+    componentId,
+    isInitialized,
+    wasRestoredFromPersistence,
+    causalChoices,
+    mapGraph,
+    mapStatus,
+    selectedEntityIds,
+    selectedPolicyIds,
+    artifactFiles,
+    previewText,
+  ]);
+
+  // Clear restoration flag and enable persistence after initial setup
+  useEffect(() => {
+    if (wasRestoredFromPersistence && isInitialized) {
+      const timer = window.setTimeout(() => {
+        setWasRestoredFromPersistence(false);
+      }, 500);
+      return () => window.clearTimeout(timer);
+    }
+  }, [wasRestoredFromPersistence, isInitialized]);
 
   useEffect(() => {
     setSelectedEntityIds(new Set(pageEntities.map((entity) => entity.id)));
@@ -347,9 +409,16 @@ export default function CodeGenWorkspace({
     <section className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-4 md:p-6">
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-xl font-bold text-neutral-100 md:text-2xl">Generate simulation code</h2>
-        <p className="text-xs text-neutral-400">
-          {job.jobId ? `Job: ${job.jobId}` : "No active job"}
-        </p>
+        <div className="flex items-center gap-2">
+          {wasRestoredFromPersistence && (
+            <p className="text-xs rounded-md bg-emerald-500/20 border border-emerald-600/50 px-2 py-1 text-emerald-200">
+              ✓ Restored from previous session
+            </p>
+          )}
+          <p className="text-xs text-neutral-400">
+            {job.jobId ? `Job: ${job.jobId}` : "No active job"}
+          </p>
+        </div>
       </header>
 
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2 text-sm text-neutral-300">
@@ -414,6 +483,12 @@ export default function CodeGenWorkspace({
             setActionError("");
             onArtifactFilesChange([]);
             lastResultJobIdRef.current = null;
+            setCausalChoices([]);
+            setSelectedEntityIds(new Set());
+            setSelectedPolicyIds(new Set());
+            setPreviewText("");
+            setWasRestoredFromPersistence(false);
+            clearAllPersistence(componentId);
             job.reset();
           }}
           disabled={isRunning}

@@ -12,6 +12,12 @@ import {
   type CodeGenPreviewResult,
   type CodeGenResumeOverrides,
 } from "@/lib/code-gen-api-client";
+import {
+  saveJobState,
+  loadJobState,
+  clearAllPersistence,
+  type PersistedCodeGenState,
+} from "@/lib/use-codegen-persistence";
 
 const POLL_INTERVAL_MS = 1500;
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "partial"]);
@@ -32,7 +38,7 @@ export type UseCodeGenJobState = {
   reset: () => void;
 };
 
-export function useCodeGenJob() {
+export function useCodeGenJob(componentId?: string) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [preview, setPreview] = useState<CodeGenPreviewResult | null>(null);
   const [status, setStatus] = useState<CodeGenJobStatus | null>(null);
@@ -40,6 +46,7 @@ export function useCodeGenJob() {
   const [isStarting, setIsStarting] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
+  const [isRestoringFromPersistence, setIsRestoringFromPersistence] = useState(true);
   const pollTimerRef = useRef<number | null>(null);
 
   const stopPolling = useCallback(() => {
@@ -48,6 +55,78 @@ export function useCodeGenJob() {
       pollTimerRef.current = null;
     }
   }, []);
+
+  // Restore persisted job state on mount (if componentId provided)
+  useEffect(() => {
+    if (!componentId) {
+      setIsRestoringFromPersistence(false);
+      return;
+    }
+    const persisted = loadJobState(componentId);
+    if (persisted) {
+      setJobId(persisted.jobId);
+      setPreview(persisted.preview);
+      setStatus(persisted.status);
+      setError(persisted.error);
+
+      // Auto-resume polling if job was active during reload
+      if (
+        persisted.jobId &&
+        persisted.status &&
+        !["completed", "failed", "cancelled"].includes(persisted.status.status)
+      ) {
+        // Delay polling start slightly to allow state stabilization
+        const timer = window.setTimeout(() => {
+          void (async () => {
+            try {
+              const next = await fetchCodeGenStatus(persisted.jobId!);
+              setStatus(next);
+              if (!["completed", "failed", "cancelled"].includes(next.status)) {
+                // Resume polling
+                pollTimerRef.current = window.setInterval(() => {
+                  void (async () => {
+                    try {
+                      const next = await fetchCodeGenStatus(persisted.jobId!);
+                      setStatus(next);
+                      if (["completed", "failed", "cancelled"].includes(next.status)) {
+                        if (pollTimerRef.current !== null) {
+                          window.clearInterval(pollTimerRef.current);
+                          pollTimerRef.current = null;
+                        }
+                      }
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Status poll failed.");
+                      if (pollTimerRef.current !== null) {
+                        window.clearInterval(pollTimerRef.current);
+                        pollTimerRef.current = null;
+                      }
+                    }
+                  })();
+                }, POLL_INTERVAL_MS);
+              }
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed to resume polling.");
+            }
+          })();
+        }, 100);
+        return () => window.clearTimeout(timer);
+      }
+    }
+    setIsRestoringFromPersistence(false);
+  }, [componentId]);
+
+  // Persist job state whenever it changes (if componentId provided)
+  useEffect(() => {
+    if (!componentId || isRestoringFromPersistence) return;
+    const state: PersistedCodeGenState = {
+      version: 1,
+      jobId,
+      preview,
+      status,
+      error,
+    };
+    saveJobState(componentId, state);
+  }, [componentId, jobId, preview, status, error, isRestoringFromPersistence]);
 
   const startPolling = useCallback(
     (id: string) => {
@@ -184,7 +263,10 @@ export function useCodeGenJob() {
     setPreview(null);
     setStatus(null);
     setError(null);
-  }, [stopPolling]);
+    if (componentId) {
+      clearAllPersistence(componentId);
+    }
+  }, [stopPolling, componentId]);
 
   return {
     jobId,
