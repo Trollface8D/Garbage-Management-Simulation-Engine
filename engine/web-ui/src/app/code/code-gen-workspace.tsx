@@ -208,6 +208,9 @@ export default function CodeGenWorkspace({
     jobStatus === "running" ||
     jobStatus === "queued";
 
+  // Derived from hook: only true during immediate user actions, not during polling
+  const isActivelyProcessing = job.isActivelyProcessing;
+
   useEffect(() => {
     onRunningChange?.(isRunning);
   }, [isRunning, onRunningChange]);
@@ -401,16 +404,28 @@ export default function CodeGenWorkspace({
     }
   };
 
-  const handleEditInput = () => {
-    const details = [
-      `Artifacts: ${artifactFiles.length}`,
-    ].join("\n");
-
-    const confirmed = window.confirm(
-      `Edit Input will discard the current generated progress.\n\n${details}\n\nContinue?`,
-    );
-
-    if (!confirmed) return;
+  const handleEditInput = async () => {
+    // If actively processing, show confirmation and cancel the job first
+    if (isRunning) {
+      const shouldCancel = window.confirm(
+        "This will cancel the active job. Discard progress and reset inputs?\n\nContinue?",
+      );
+      if (!shouldCancel) return;
+      try {
+        await job.cancel();
+        // Wait briefly for cancel to propagate through polling
+        await new Promise((r) => setTimeout(r, 200));
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Failed to cancel job.");
+        return;
+      }
+    } else if (artifactFiles.length > 0) {
+      // If not running but have artifacts, show confirmation
+      const shouldDiscard = window.confirm(
+        `Edit Input will discard ${artifactFiles.length} artifact(s).\n\nContinue?`,
+      );
+      if (!shouldDiscard) return;
+    }
 
     setActionError("");
     onArtifactFilesChange([]);
@@ -428,6 +443,8 @@ export default function CodeGenWorkspace({
   const stageMessage = job.status?.stageMessage ?? "";
 
   const causalCount = causalChoices.length;
+  const hasSavedState = Boolean(job.jobId || job.status || job.preview);
+  const shouldShowResumeLabel = hasSavedState && artifactFiles.length > 0;
 
   return (
     <section className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-4 md:p-6">
@@ -437,6 +454,11 @@ export default function CodeGenWorkspace({
           {wasRestoredFromPersistence && (
             <p className="text-xs rounded-md bg-emerald-500/20 border border-emerald-600/50 px-2 py-1 text-emerald-200">
               ✓ Restored from previous session
+            </p>
+          )}
+          {job.status?.status === "cancelled" && (
+            <p className="text-xs rounded-md bg-amber-500/20 border border-amber-600/50 px-2 py-1 text-amber-200">
+              ⚠ Job cancelled — click Edit Input to reset
             </p>
           )}
           <p className="text-xs text-neutral-400">
@@ -469,11 +491,13 @@ export default function CodeGenWorkspace({
         <button
           type="button"
           onClick={() => void handlePreview()}
-          disabled={isRunning || !!job.preview}
+          disabled={isActivelyProcessing || !!job.preview}
           title={
             job.preview
               ? "Preview already loaded — confirm or edit input below."
-              : undefined
+              : isActivelyProcessing
+                ? "Preview is running…"
+                : undefined
           }
           className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -483,13 +507,15 @@ export default function CodeGenWorkspace({
               ? "Starting…"
               : job.preview
                 ? "Preview loaded ↓"
-                : "Generate"}
+                : shouldShowResumeLabel
+                  ? "Resume"
+                  : "Generate"}
         </button>
 
         <button
           type="button"
           onClick={() => void handleCancel()}
-          disabled={!job.jobId}
+          disabled={!isActivelyProcessing}
           className="rounded-md border border-red-800 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Cancel
@@ -498,7 +524,7 @@ export default function CodeGenWorkspace({
         <button
           type="button"
           onClick={() => void handleEditInput()}
-          disabled={isRunning}
+          disabled={false}
           className="rounded-md border border-neutral-700 bg-neutral-800/40 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:bg-neutral-700/40 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Edit Input

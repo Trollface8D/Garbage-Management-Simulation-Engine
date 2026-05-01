@@ -31,6 +31,7 @@ export type UseCodeGenJobState = {
   isPreviewing: boolean;
   isResuming: boolean;
   isPolling: boolean;
+  isActivelyProcessing: boolean;
   start: (req: CodeGenCreateRequest) => Promise<string>;
   runPreview: (jobId?: string) => Promise<CodeGenPreviewResult>;
   generate: (jobId?: string, overrides?: CodeGenResumeOverrides) => Promise<void>;
@@ -48,6 +49,7 @@ export function useCodeGenJob(componentId?: string) {
   const [isResuming, setIsResuming] = useState(false);
   const [isRestoringFromPersistence, setIsRestoringFromPersistence] = useState(true);
   const pollTimerRef = useRef<number | null>(null);
+  const pollStabilizedRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current !== null) {
@@ -131,17 +133,32 @@ export function useCodeGenJob(componentId?: string) {
   const startPolling = useCallback(
     (id: string) => {
       stopPolling();
+      pollStabilizedRef.current = false;
+      // Wait 500ms before stabilizing poll flag (so isActivelyProcessing reflects initial fetch)
+      const stabilizeTimer = window.setTimeout(() => {
+        pollStabilizedRef.current = true;
+      }, 500);
       pollTimerRef.current = window.setInterval(() => {
         void (async () => {
           try {
             const next = await fetchCodeGenStatus(id);
             setStatus(next);
+            // Auto-clear jobId and preview when job is cancelled server-side
+            if (next.status === "cancelled") {
+              setJobId(null);
+              setPreview(null);
+              stopPolling();
+              window.clearTimeout(stabilizeTimer);
+              return;
+            }
             if (TERMINAL_STATUSES.has(next.status)) {
               stopPolling();
+              window.clearTimeout(stabilizeTimer);
             }
           } catch (err) {
             setError(err instanceof Error ? err.message : "Status poll failed.");
             stopPolling();
+            window.clearTimeout(stabilizeTimer);
           }
         })();
       }, POLL_INTERVAL_MS);
@@ -268,6 +285,13 @@ export function useCodeGenJob(componentId?: string) {
     }
   }, [stopPolling, componentId]);
 
+  // isActivelyProcessing: true only during immediate user actions (not during polling)
+  const isActivelyProcessing =
+    isStarting ||
+    isPreviewing ||
+    isResuming ||
+    (pollTimerRef.current !== null && !pollStabilizedRef.current);
+
   return {
     jobId,
     preview,
@@ -277,6 +301,7 @@ export function useCodeGenJob(componentId?: string) {
     isPreviewing,
     isResuming,
     isPolling: pollTimerRef.current !== null,
+    isActivelyProcessing,
     start,
     runPreview,
     generate,
