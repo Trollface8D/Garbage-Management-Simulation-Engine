@@ -52,7 +52,7 @@ export default function FloatingWorkspaceToolbar({
           <input
             ref={jsonInputRef}
             type="file"
-            accept="application/json,.json"
+            accept="application/json,.json,.zip,application/zip,application/x-zip-compressed"
             className="hidden"
             onChange={onJsonFileChange}
           />
@@ -84,10 +84,10 @@ export default function FloatingWorkspaceToolbar({
               type="button"
               onClick={() => jsonInputRef.current?.click()}
               disabled={isImporting || inputsLocked}
-              title="Import causal/map components from a JSON file"
+              title="Import causal/map components from JSON or map artifact ZIP files"
               className="rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isImporting ? "Importing JSON…" : "Import JSON (Causal/Map)"}
+              {isImporting ? "Importing…" : "Import JSON/ZIP (Causal/Map)"}
             </button>
           </div>
 

@@ -4,10 +4,9 @@ import { type ChangeEvent } from "react";
 import {
     type ExtractionPayloadRecord,
 } from "@/lib/pm-storage";
-import {
-    type SimulationComponent,
-    type SimulationProject,
-} from "@/lib/simulation-components";
+import { type MapGraphPayload } from "@/lib/map-types";
+
+export type JsonImportCategory = "Causal" | "Map";
 
 export type JsonImportItem = {
     id?: string;
@@ -31,6 +30,21 @@ export type JsonImportItem = {
     relationship?: string;
     tail?: string;
     detail?: string;
+    graph?: MapGraphPayload;
+    vertices?: unknown;
+    edges?: unknown;
+    metadata?: Record<string, unknown>;
+    snapshot?: {
+        graph?: MapGraphPayload;
+        selectedModel?: string;
+        overviewAdditionalInfo?: string;
+        binAdditionalInfo?: string;
+        overviewFileNames?: string[];
+        binFileNames?: string[];
+        changeLog?: string[];
+        editStatus?: string;
+    };
+    artifactType?: string;
 };
 
 export type JsonImportProject = {
@@ -139,6 +153,75 @@ const normalizeExtractedRelation = (
     }
 
     return { head, relationship, tail, detail };
+};
+
+const normalizeMapGraphPayload = (value: unknown): MapGraphPayload | null => {
+    if (!isObject(value)) {
+        return null;
+    }
+
+    const vertices = Array.isArray(value.vertices) ? value.vertices : null;
+    const edges = Array.isArray(value.edges) ? value.edges : null;
+    if (!vertices || !edges) {
+        return null;
+    }
+
+    return {
+        vertices,
+        edges,
+        metadata: isObject(value.metadata) ? (value.metadata as Record<string, unknown>) : undefined,
+    };
+};
+
+export const extractMapGraphPayload = (value: unknown): MapGraphPayload | null => {
+    const graphPayload = normalizeMapGraphPayload(value);
+    if (graphPayload) {
+        return graphPayload;
+    }
+
+    if (!isObject(value)) {
+        return null;
+    }
+
+    if (isObject(value.snapshot)) {
+        const snapshotGraph = normalizeMapGraphPayload(value.snapshot.graph);
+        if (snapshotGraph) {
+            return snapshotGraph;
+        }
+    }
+
+    const mapFromLooseFields = normalizeMapGraphPayload({
+        vertices: value.vertices,
+        edges: value.edges,
+        metadata: value.metadata,
+    });
+
+    return mapFromLooseFields;
+};
+
+export const inferImportItemCategory = (item: JsonImportItem): JsonImportCategory | null => {
+    const explicitCategory = readText(item.category).toLowerCase();
+    if (explicitCategory === "causal") {
+        return "Causal";
+    }
+    if (explicitCategory === "map") {
+        return "Map";
+    }
+
+    const hasMapGraph = Boolean(extractMapGraphPayload(item));
+    const hasRawExtraction =
+        normalizeExtractionPayload((item as { rawExtraction?: unknown }).rawExtraction).length > 0 ||
+        normalizeExtractionPayload((item as { raw_extraction?: unknown }).raw_extraction).length > 0;
+
+    if (hasMapGraph && !hasRawExtraction) {
+        return "Map";
+    }
+
+    if (hasRawExtraction && !hasMapGraph) {
+        return "Causal";
+    }
+
+    return null;
 };
 
 const normalizeExtractionClass = (
@@ -292,6 +375,44 @@ export const normalizeImportPayload = (
 
     if (isObject(value)) {
         const record = value as Record<string, unknown>;
+        const mapGraph = extractMapGraphPayload(record);
+
+        if (mapGraph) {
+            const cleanFileName = sourceFileName.trim() || "imported-map.json";
+            const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
+
+            return {
+                projects: Array.isArray(record.projects) ? (record.projects as JsonImportProject[]) : undefined,
+                mapItems: [
+                    {
+                        id: `map-file-${sanitizeFilenameSegment(baseName.toLowerCase())}`,
+                        title: cleanFileName,
+                        lastEdited: "imported",
+                        graph: mapGraph,
+                        snapshot: isObject(record.snapshot)
+                            ? {
+                                graph: mapGraph,
+                                selectedModel: readText(record.snapshot.selectedModel),
+                                overviewAdditionalInfo: readText(record.snapshot.overviewAdditionalInfo),
+                                binAdditionalInfo: readText(record.snapshot.binAdditionalInfo),
+                                overviewFileNames: Array.isArray(record.snapshot.overviewFileNames)
+                                    ? record.snapshot.overviewFileNames.filter((entry): entry is string => typeof entry === "string")
+                                    : undefined,
+                                binFileNames: Array.isArray(record.snapshot.binFileNames)
+                                    ? record.snapshot.binFileNames.filter((entry): entry is string => typeof entry === "string")
+                                    : undefined,
+                                changeLog: Array.isArray(record.snapshot.changeLog)
+                                    ? record.snapshot.changeLog.filter((entry): entry is string => typeof entry === "string")
+                                    : undefined,
+                                editStatus: readText(record.snapshot.editStatus),
+                            }
+                            : undefined,
+                        artifactType: readText(record.artifactType),
+                    },
+                ],
+            };
+        }
+
         const rawExtraction = normalizeExtractionPayload(record.raw_extraction);
 
         if (rawExtraction.length > 0) {

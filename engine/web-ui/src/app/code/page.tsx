@@ -10,6 +10,8 @@ import FloatingWorkspaceToolbar from "@/app/code/floating-workspace-toolbar";
 import EntityExtractionPanel, { type GeneratedEntity } from "@/app/code/entity-extraction-panel";
 import MetricsSelectionPanel, { type WorkspaceMetric } from "@/app/code/metrics-selection-panel";
 import JsonImportHandler, {
+    extractMapGraphPayload,
+    inferImportItemCategory,
     normalizeImportPayload,
     normalizeExtractionPayload,
     type JsonImportPayload,
@@ -45,14 +47,28 @@ import {
 import BackToHome from "../components/back-to-home";
 import { makeSlug, makeUniqueId, buildChunkTextsFromRawExtraction, extractRawExtractionFromItem } from "@/app/code/utils-entity-metric";
 import { useEntityExtraction } from "@/app/code/use-entity-extraction";
+import JSZip from "jszip";
 import { useMetricsManagement } from "@/app/code/use-metrics-management";
 import { useSourceSelection } from "@/app/code/use-source-selection";
 import { useArchiveManager, type ImportedWorkspaceSnapshot } from "@/app/code/use-archive-manager";
 import { useWorkspacePersistence } from "@/app/code/use-workspace-persistence";
+import { type MapGraphPayload } from "@/lib/map-types";
 
 
 type CausalComponentRef = { projectId: string; componentId: string };
 type UsedItem = { id: string; title: string; project: string; lastEdited: string };
+type ImportedMapWorkspaceSnapshot = {
+    graph: MapGraphPayload;
+    jobId: string;
+    selectedModel: string;
+    overviewAdditionalInfo: string;
+    binAdditionalInfo: string;
+    overviewFileNames: string[];
+    binFileNames: string[];
+    changeLog: string[];
+    editStatus: string;
+    selection: null;
+};
 
 async function aggregateEntitiesFromCausalComponents(
     refs: CausalComponentRef[],
@@ -792,17 +808,193 @@ export default function CodePage() {
         });
     };
 
+    const persistImportedMapArtifacts = async (
+        entry: JsonImportItem,
+        component: SimulationComponent,
+    ): Promise<void> => {
+        if (typeof window === "undefined") {
+            return;
+        }
+
+        const graph = extractMapGraphPayload(entry);
+        if (!graph) {
+            return;
+        }
+
+        const snapshotFromEntry = entry.snapshot;
+        const snapshot: ImportedMapWorkspaceSnapshot = {
+            graph,
+            jobId: "",
+            selectedModel: snapshotFromEntry?.selectedModel?.trim() || "",
+            overviewAdditionalInfo: snapshotFromEntry?.overviewAdditionalInfo || "",
+            binAdditionalInfo: snapshotFromEntry?.binAdditionalInfo || "",
+            overviewFileNames: snapshotFromEntry?.overviewFileNames ?? [],
+            binFileNames: snapshotFromEntry?.binFileNames ?? [],
+            changeLog: snapshotFromEntry?.changeLog ?? [],
+            editStatus: snapshotFromEntry?.editStatus || "Imported map extraction artifacts.",
+            selection: null,
+        };
+
+        window.localStorage.setItem(`map-workspace:${component.id}`, JSON.stringify(snapshot));
+    };
+
+    const resolveImportedMapSnapshot = (payload: unknown): ImportedMapWorkspaceSnapshot | null => {
+        if (!payload || typeof payload !== "object") {
+            return null;
+        }
+
+        const asRecord = payload as Record<string, unknown>;
+        if (asRecord.snapshot && typeof asRecord.snapshot === "object") {
+            const snapshotPayload = asRecord.snapshot as Record<string, unknown>;
+            const graph = extractMapGraphPayload(snapshotPayload.graph || snapshotPayload);
+            if (!graph) {
+                return null;
+            }
+
+            return {
+                graph,
+                jobId: typeof snapshotPayload.jobId === "string" ? snapshotPayload.jobId : "",
+                selectedModel: typeof snapshotPayload.selectedModel === "string" ? snapshotPayload.selectedModel : "",
+                overviewAdditionalInfo: typeof snapshotPayload.overviewAdditionalInfo === "string" ? snapshotPayload.overviewAdditionalInfo : "",
+                binAdditionalInfo: typeof snapshotPayload.binAdditionalInfo === "string" ? snapshotPayload.binAdditionalInfo : "",
+                overviewFileNames: Array.isArray(snapshotPayload.overviewFileNames) ? snapshotPayload.overviewFileNames.filter((f): f is string => typeof f === "string") : [],
+                binFileNames: Array.isArray(snapshotPayload.binFileNames) ? snapshotPayload.binFileNames.filter((f): f is string => typeof f === "string") : [],
+                changeLog: Array.isArray(snapshotPayload.changeLog) ? snapshotPayload.changeLog.filter((f): f is string => typeof f === "string") : [],
+                editStatus: typeof snapshotPayload.editStatus === "string" ? snapshotPayload.editStatus : "Imported map extraction artifacts.",
+                selection: null,
+            } as ImportedMapWorkspaceSnapshot;
+        }
+
+        const directSnapshot = payload as Partial<ImportedMapWorkspaceSnapshot>;
+        if (directSnapshot.graph && Array.isArray(directSnapshot.graph.vertices) && Array.isArray(directSnapshot.graph.edges)) {
+            return {
+                graph: directSnapshot.graph,
+                jobId: "",
+                selectedModel: "",
+                overviewAdditionalInfo: "",
+                binAdditionalInfo: "",
+                overviewFileNames: [],
+                binFileNames: [],
+                changeLog: [],
+                editStatus: "Imported map extraction artifacts.",
+                selection: null,
+            };
+        }
+
+        return null;
+    };
+
+    const extractMapArtifactBundleFromZip = async (file: File): Promise<JsonImportPayload | null> => {
+        try {
+            const lowerName = file.name.toLowerCase();
+            const isZipFile = lowerName.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+            if (!isZipFile) {
+                return null;
+            }
+
+            const zip = await JSZip.loadAsync(await file.arrayBuffer());
+            const bundleFile = zip.file("bundle.json");
+            if (!bundleFile) {
+                return null;
+            }
+
+            const bundleText = await bundleFile.async("string");
+            const parsed = JSON.parse(bundleText) as unknown;
+
+            const maybeBundle = parsed as Partial<{
+                artifactType?: string;
+                artifactVersion?: number;
+                componentId?: string;
+                title?: string;
+                projectName?: string;
+                snapshot?: unknown;
+            }>;
+
+            if (maybeBundle.artifactType !== "map_extract_workspace") {
+                return null;
+            }
+
+            const snapshot = resolveImportedMapSnapshot(maybeBundle);
+            if (!snapshot) {
+                return null;
+            }
+
+            const cleanFileName = file.name.replace(/\.zip$/i, "").trim() || "imported-map-artifact";
+            const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
+
+            return {
+                mapItems: [
+                    {
+                        id: `map-zip-${sanitizeFileNameForId(baseName.toLowerCase())}`,
+                        title: cleanFileName,
+                        lastEdited: "imported",
+                        graph: snapshot.graph,
+                        snapshot: {
+                            graph: snapshot.graph,
+                            selectedModel: snapshot.selectedModel,
+                            overviewAdditionalInfo: snapshot.overviewAdditionalInfo,
+                            binAdditionalInfo: snapshot.binAdditionalInfo,
+                            overviewFileNames: snapshot.overviewFileNames,
+                            binFileNames: snapshot.binFileNames,
+                            changeLog: snapshot.changeLog,
+                            editStatus: snapshot.editStatus,
+                        },
+                        artifactType: "map_extract_workspace",
+                    },
+                ],
+            } as JsonImportPayload;
+        } catch {
+            return null;
+        }
+    };
+
+    const sanitizeFileNameForId = (name: string): string => {
+        return name.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "") || "imported";
+    };
+
     const readImportItems = (payload: JsonImportPayload, category: "Causal" | "Map"): JsonImportItem[] => {
-        const itemsFromDedicatedList =
-            category === "Causal"
-                ? [...(payload.causal ?? []), ...(payload.causalItems ?? [])]
-                : [...(payload.map ?? []), ...(payload.mapItems ?? [])];
+        const taggedItems: Array<{ item: JsonImportItem; fallbackCategory: "Causal" | "Map" }> = [];
 
-        const itemsFromComponents = (payload.components ?? []).filter(
-            (entry) => entry.category?.toLowerCase() === category.toLowerCase(),
-        );
+        if (category === "Causal") {
+            taggedItems.push(
+                ...(payload.causal ?? []).map((item) => ({ item, fallbackCategory: "Causal" as const })),
+                ...(payload.causalItems ?? []).map((item) => ({ item, fallbackCategory: "Causal" as const })),
+            );
+        } else {
+            taggedItems.push(
+                ...(payload.map ?? []).map((item) => ({ item, fallbackCategory: "Map" as const })),
+                ...(payload.mapItems ?? []).map((item) => ({ item, fallbackCategory: "Map" as const })),
+            );
+        }
 
-        return [...itemsFromDedicatedList, ...itemsFromComponents];
+        const itemsFromComponents = (payload.components ?? [])
+            .map((item) => {
+                const explicitCategory = (item.category || "").trim().toLowerCase();
+                if (explicitCategory === "causal") {
+                    return { item, fallbackCategory: "Causal" as const };
+                }
+                if (explicitCategory === "map") {
+                    return { item, fallbackCategory: "Map" as const };
+                }
+
+                const inferred = inferImportItemCategory(item);
+                if (inferred) {
+                    return { item, fallbackCategory: inferred };
+                }
+
+                return null;
+            })
+            .filter((entry): entry is { item: JsonImportItem; fallbackCategory: "Causal" | "Map" } => entry !== null);
+
+        taggedItems.push(...itemsFromComponents);
+
+        return taggedItems
+            .filter(({ item, fallbackCategory }) => {
+                const inferred = inferImportItemCategory(item);
+                const resolvedCategory = inferred || fallbackCategory;
+                return resolvedCategory === category;
+            })
+            .map(({ item }) => item);
     };
 
     const resolveProjectIdFromItem = async (
@@ -883,6 +1075,8 @@ export default function CodePage() {
 
             if (category === "Causal") {
                 await persistImportedCausalArtifacts(entry, component, projectId);
+            } else {
+                await persistImportedMapArtifacts(entry, component);
             }
 
             created.push(component);
@@ -904,8 +1098,23 @@ export default function CodePage() {
         setIsImporting(true);
 
         try {
-            const raw = await file.text();
-            const payload = normalizeImportPayload(JSON.parse(raw) as unknown, file.name);
+            let payload: JsonImportPayload;
+
+            const lowerName = file.name.toLowerCase();
+            const isZipFile = lowerName.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+
+            if (isZipFile) {
+                const zipPayload = await extractMapArtifactBundleFromZip(file);
+                if (!zipPayload || !zipPayload.mapItems || zipPayload.mapItems.length === 0) {
+                    throw new Error(
+                        "Invalid ZIP artifact format. Expected a map extraction workspace bundle with bundle.json.",
+                    );
+                }
+                payload = zipPayload;
+            } else {
+                const raw = await file.text();
+                payload = normalizeImportPayload(JSON.parse(raw) as unknown, file.name);
+            }
 
             const causalPayload = readImportItems(payload, "Causal");
             const mapPayload = readImportItems(payload, "Map");
