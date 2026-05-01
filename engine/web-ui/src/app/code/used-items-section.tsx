@@ -36,7 +36,9 @@ export default function UsedItemsSection({
 
   return (
     <div>
-      <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">{title}</h2>
+      <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">{title} <span className="text-red-400" aria-label="required">
+                        *
+                    </span></h2>
       {items.length === 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <button

@@ -1196,7 +1196,7 @@ export default function CodePage() {
 
                 <section className="space-y-8">
                     <UsedItemsSection
-                        title="Causal used *"
+                        title="Causal used"
                         category="Causal"
                         items={causalItems}
                         onDelete={handleDeleteComponent}
