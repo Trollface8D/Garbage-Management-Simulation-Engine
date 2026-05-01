@@ -401,6 +401,27 @@ export default function CodeGenWorkspace({
     }
   };
 
+  const handleEditInput = () => {
+    const details = [
+      `Artifacts: ${artifactFiles.length}`,
+    ].join("\n");
+
+    const confirmed = window.confirm(
+      `Edit Input will discard the current generated progress.\n\n${details}\n\nContinue?`,
+    );
+
+    if (!confirmed) return;
+
+    setActionError("");
+    onArtifactFilesChange([]);
+    lastResultJobIdRef.current = null;
+    setSelectedPolicyIds(new Set());
+    setPreviewText("");
+    setWasRestoredFromPersistence(false);
+    clearAllPersistence(componentId);
+    job.reset();
+  };
+
   const completedStages = job.status?.completedStages ?? [];
   const remainingStages = job.status?.remainingStages ?? null;
   const currentStage = job.status?.currentStage ?? null;
@@ -443,7 +464,7 @@ export default function CodeGenWorkspace({
 
       {/* One entrypoint: "Generate" runs the State 1 / 1b preview first; the
           confirm step is rendered below as a green button next to the
-          entity / policy preview lists. Cancel + Reset stay handy. */}
+          entity / policy preview lists. Cancel + Edit Input stay handy. */}
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -451,7 +472,7 @@ export default function CodeGenWorkspace({
           disabled={isRunning || !!job.preview}
           title={
             job.preview
-              ? "Preview already loaded — confirm or reset below."
+              ? "Preview already loaded — confirm or edit input below."
               : undefined
           }
           className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -476,22 +497,11 @@ export default function CodeGenWorkspace({
 
         <button
           type="button"
-          onClick={() => {
-            setActionError("");
-            onArtifactFilesChange([]);
-            lastResultJobIdRef.current = null;
-            setCausalChoices([]);
-            setSelectedEntityIds(new Set());
-            setSelectedPolicyIds(new Set());
-            setPreviewText("");
-            setWasRestoredFromPersistence(false);
-            clearAllPersistence(componentId);
-            job.reset();
-          }}
+          onClick={() => void handleEditInput()}
           disabled={isRunning}
           className="rounded-md border border-neutral-700 bg-neutral-800/40 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:bg-neutral-700/40 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Reset
+          Edit Input
         </button>
         <div className="ml-auto flex items-center gap-2">
         <ModelPicker value={model} onChange={(v) => onModelChange?.(v)} label="model" placeholder="default from .env" />
@@ -562,17 +572,6 @@ export default function CodeGenWorkspace({
           resumeDisabledReason={job.status?.resumeDisabledReason ?? null}
           cancelRequested={job.status?.cancelRequested}
           isActive={isRunning}
-          onPreviewRequested={() => void handlePreview()}
-          previewDisabled={
-            (missingRequirements && missingRequirements.length > 0) || pageEntities.length === 0
-          }
-          previewDisabledReason={
-            missingRequirements && missingRequirements.length > 0
-              ? formatMissingMessage("preview", missingRequirements)
-              : pageEntities.length === 0
-                ? "Add at least one entity above before previewing."
-                : undefined
-          }
           onResumeRequested={() => void handleGenerate()}
           selectedPolicyIds={selectedPolicyIds}
           onTogglePolicy={togglePolicy}

@@ -115,9 +115,6 @@ export type CodeGenStageLogProps = {
   cancelRequested?: boolean;
   isActive: boolean;
   onResumeRequested?: () => void;
-  onPreviewRequested?: () => void;
-  previewDisabled?: boolean;
-  previewDisabledReason?: string;
   onStatusUpdate?: (message: string) => void;
   selectedPolicyIds?: Set<string>;
   onTogglePolicy?: (id: string) => void;
@@ -138,16 +135,13 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
     cancelRequested,
     isActive,
     onResumeRequested,
-    onPreviewRequested,
-    previewDisabled,
-    previewDisabledReason,
     onStatusUpdate,
     selectedPolicyIds,
     onTogglePolicy,
     policyConfirmReady,
   } = props;
 
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [userToggled, setUserToggled] = useState(false);
   const [remoteCompleted, setRemoteCompleted] = useState<string[]>([]);
   const [expandedStage, setExpandedStage] = useState<string | null>(null);
@@ -314,7 +308,6 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
   useEffect(() => {
     if (userToggled) return;
     if (isActive || hasHistory) setCollapsed(false);
-    else setCollapsed(true);
   }, [isActive, hasHistory, userToggled]);
 
   const isEmptySlate = !jobId && !isActive;
@@ -334,44 +327,6 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          {isEmptySlate ? (
-            <button
-              type="button"
-              onClick={() => onPreviewRequested?.()}
-              disabled={actionPending || Boolean(previewDisabled)}
-              title={
-                previewDisabled
-                  ? previewDisabledReason || "Preview is not available yet."
-                  : "Run the State 1/1b preview to derive the entity list and policy outline."
-              }
-              className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Preview
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleResume}
-              disabled={!resumeEnabled}
-              title={resumeTitle}
-              className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {resumeLabel}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={handleCancel}
-            disabled={actionPending || !isActive}
-            title={
-              isActive
-                ? "Terminate: worker stops within ~0.5s, abandons any in-flight Gemini call."
-                : "Job is not running."
-            }
-            className="inline-flex items-center gap-2 rounded-md border border-red-700 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Terminate
-          </button>
           <button
             type="button"
             onClick={() => {
