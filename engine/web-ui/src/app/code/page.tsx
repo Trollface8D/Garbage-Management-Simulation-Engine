@@ -616,6 +616,9 @@ export default function CodePage() {
         if (selectedCausalIds.size === 0) {
             missing.push("Select at least one causal source above.");
         }
+        if (!selectedMapId) {
+            missing.push("Select a Map artifact as the target for code generation.");
+        }
         if (!isExtracted) {
             missing.push('Run "Extract from causal" to populate the entity list.');
         } else if (selectedEntities.length === 0) {
@@ -628,9 +631,11 @@ export default function CodePage() {
         } else if (selectedMetrics.length === 0) {
             missing.push("Select at least one metric in the metric list.");
         }
+        console.info("[code-gen] missing requirements", missing);
         return missing;
     }, [
         selectedCausalIds,
+        selectedMapId,
         isExtracted,
         selectedEntities,
         metricsExtracted,
@@ -1008,7 +1013,7 @@ export default function CodePage() {
                     <CodeGenWorkspace
                         causalSourceRefs={(selectedCausalIds.size > 0
                             ? causalItems.filter((item) => selectedCausalIds.has(item.id))
-                            : causalItems
+                            : []
                         ).flatMap((item) => {
                             const component =
                                 components.find((c) => c.id === item.id) ??
