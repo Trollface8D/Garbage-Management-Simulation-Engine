@@ -5,6 +5,19 @@ import {
 } from "@/lib/code-gen-api-client";
 import { type ArtifactFile } from "@/app/code/code-gen-workspace";
 
+export type ImportedWorkspaceSnapshot = {
+    selectedCausalIds: Set<string>;
+    selectedMapId: string | null;
+    entities: unknown[];
+    isExtracted: boolean;
+    selectedModel: string;
+    collapsedParentIds: Set<string>;
+    metrics: unknown[];
+    metricsExtracted: boolean;
+    artifactFiles: ArtifactFile[];
+    jobId: string | null;
+};
+
 type WorkspaceSnapshot = {
     schemaVersion: number;
     exportedAt: string;
@@ -108,17 +121,7 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
     const restoreFromMetadata = useCallback(
         (parsed: Record<string, unknown>): {
             success: boolean;
-            data?: {
-                selectedCausalIds: Set<string>;
-                selectedMapId: string | null;
-                entities: unknown[];
-                isExtracted: boolean;
-                selectedModel: string;
-                collapsedParentIds: Set<string>;
-                metrics: unknown[];
-                metricsExtracted: boolean;
-                artifactFiles: ArtifactFile[];
-            };
+            data?: ImportedWorkspaceSnapshot;
         } => {
             try {
                 const data = {
@@ -131,6 +134,7 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
                     metrics: [] as unknown[],
                     metricsExtracted: false,
                     artifactFiles: [] as ArtifactFile[],
+                    jobId: null as string | null,
                 };
 
                 if (Array.isArray(parsed.selectedCausalIds)) {
@@ -175,6 +179,10 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
                     data.artifactFiles = parsed.artifactFiles as ArtifactFile[];
                 }
 
+                if (typeof parsed.jobId === "string") {
+                    data.jobId = parsed.jobId.trim() || null;
+                }
+
                 return { success: true, data };
             } catch {
                 return { success: false };
@@ -195,7 +203,13 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
             setArchiveMessage("");
 
             try {
-                const { metadata, artifactNames } = await importWorkspaceArchive(file);
+                const {
+                    metadata,
+                    artifactNames,
+                    restoredJobId,
+                    restoredArtifactCount,
+                    restoredCheckpointCount,
+                } = await importWorkspaceArchive(file);
                 const result = restoreFromMetadata(metadata);
 
                 if (!result.success) {
@@ -205,10 +219,22 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
 
                 const artifactNote =
                     artifactNames.length > 0
-                        ? ` Bundle includes ${String(artifactNames.length)} generated code file${artifactNames.length === 1 ? "" : "s"} — extract the ZIP under artifacts/ to access them.`
+                        ? ` Restored ${String(restoredArtifactCount ?? artifactNames.length)} generated code file${(restoredArtifactCount ?? artifactNames.length) === 1 ? "" : "s"} into engine storage.`
                         : "";
 
-                setArchiveMessage(`Workspace restored from ${file.name}.${artifactNote}`);
+                const checkpointCount = restoredCheckpointCount ?? 0;
+                const checkpointNote =
+                    checkpointCount > 0
+                        ? ` Restored ${String(checkpointCount)} stage checkpoint file${checkpointCount === 1 ? "" : "s"}.`
+                        : "";
+
+                const rebindNote = restoredJobId
+                    ? ` Rebound workspace to restored job ${restoredJobId}.`
+                    : "";
+
+                setArchiveMessage(
+                    `Workspace restored from ${file.name}.${artifactNote}${checkpointNote}${rebindNote}`,
+                );
                 return { success: true, data: result.data };
             } catch (err) {
                 setArchiveError(err instanceof Error ? err.message : "Import failed.");

@@ -390,7 +390,13 @@ export async function exportWorkspaceArchive(
 
 export async function importWorkspaceArchive(
   file: File,
-): Promise<{ metadata: Record<string, unknown>; artifactNames: string[] }> {
+): Promise<{
+  metadata: Record<string, unknown>;
+  artifactNames: string[];
+  restoredJobId?: string | null;
+  restoredArtifactCount?: number;
+  restoredCheckpointCount?: number;
+}> {
   const form = new FormData();
   form.set("file", file);
   const response = await fetch(`${BASE}/workspace_import`, {
@@ -398,9 +404,13 @@ export async function importWorkspaceArchive(
     body: form,
     cache: "no-store",
   });
-  return jsonOrThrow<{ metadata: Record<string, unknown>; artifactNames: string[] }>(
-    response,
-  );
+  return jsonOrThrow<{
+    metadata: Record<string, unknown>;
+    artifactNames: string[];
+    restoredJobId?: string | null;
+    restoredArtifactCount?: number;
+    restoredCheckpointCount?: number;
+  }>(response);
 }
 
 export async function groupEntitiesWithGemini(

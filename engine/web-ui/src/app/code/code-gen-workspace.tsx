@@ -106,6 +106,12 @@ export default function CodeGenWorkspace({
   const [previewLoading, setPreviewLoading] = useState<boolean>(false);
   const lastResultJobIdRef = useRef<string | null>(null);
 
+  const pageEntityIdsSignature = pageEntities.map((entity) => entity.id).join("\u0000");
+
+  useEffect(() => {
+    setSelectedEntityIds(new Set(pageEntities.map((entity) => entity.id)));
+  }, [pageEntityIdsSignature]);
+
   useEffect(() => {
     if (!selectedMapId) {
       setMapGraph(null);
@@ -312,7 +318,7 @@ export default function CodeGenWorkspace({
       // server-side via the resume body so later stages see the user's
       // confirmed inputs without spawning a fresh job.
       await job.generate(job.jobId, {
-        selectedEntities: pageEntities.map((e) => ({ id: e.id })),
+        selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
         selectedPolicies: Array.from(selectedPolicyIds).map((rule_id) => ({ rule_id })),
         selectedMetrics,
         userEntityList: pageEntities,

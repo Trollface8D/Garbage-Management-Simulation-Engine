@@ -47,7 +47,7 @@ import { makeSlug, makeUniqueId, buildChunkTextsFromRawExtraction, extractRawExt
 import { useEntityExtraction } from "@/app/code/use-entity-extraction";
 import { useMetricsManagement } from "@/app/code/use-metrics-management";
 import { useSourceSelection } from "@/app/code/use-source-selection";
-import { useArchiveManager } from "@/app/code/use-archive-manager";
+import { useArchiveManager, type ImportedWorkspaceSnapshot } from "@/app/code/use-archive-manager";
 import { useWorkspacePersistence } from "@/app/code/use-workspace-persistence";
 
 
@@ -196,7 +196,14 @@ export default function CodePage() {
 
     const { hydrated, loadPersistedSnapshot, persistSnapshot } = persistenceHook;
 
-    const { archiveBusy, archiveMessage, archiveError, buildWorkspaceSnapshot, handleExportArchive: hookHandleExportArchive, handleImportArchiveFile: hookHandleImportArchiveFile } = archiveHook;
+    const {
+        archiveBusy,
+        archiveMessage,
+        archiveError,
+        buildWorkspaceSnapshot,
+        handleExportArchive: hookHandleExportArchive,
+        handleImportArchiveFile: hookHandleImportArchiveFile,
+    } = archiveHook;
 
     const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
@@ -339,6 +346,12 @@ export default function CodePage() {
             if (typeof saved.metricsExtracted === "boolean") {
                 metricsHook.setMetricsExtracted(saved.metricsExtracted);
             }
+            if (Array.isArray(saved.artifactFiles)) {
+                setArtifactFiles(saved.artifactFiles as ArtifactFile[]);
+            }
+            if (typeof saved.jobId === "string") {
+                setCurrentJobId(saved.jobId || null);
+            }
         } catch {
             // Ignore corrupted snapshot.
         }
@@ -359,6 +372,8 @@ export default function CodePage() {
             collapsedParentIds: Array.from(collapsedParentIds),
             metrics,
             metricsExtracted,
+            artifactFiles,
+            jobId: currentJobId,
         };
         persistSnapshot(snapshot);
     }, [
@@ -372,6 +387,8 @@ export default function CodePage() {
         collapsedParentIds,
         metrics,
         metricsExtracted,
+        artifactFiles,
+        currentJobId,
         persistSnapshot,
     ]);
 
@@ -454,13 +471,42 @@ export default function CodePage() {
         jobId: currentJobId,
     });
 
+    const applyImportedWorkspaceSnapshot = (snapshot: ImportedWorkspaceSnapshot) => {
+        setSelectedCausalIds(new Set(snapshot.selectedCausalIds));
+        setSelectedMapId(snapshot.selectedMapId);
+        setEntities(snapshot.entities as GeneratedEntity[]);
+        setIsExtracted(snapshot.isExtracted);
+        setSelectedModel(snapshot.selectedModel);
+        setCollapsedParentIds(new Set(snapshot.collapsedParentIds));
+        setMetrics(snapshot.metrics as WorkspaceMetric[]);
+        setMetricsExtracted(snapshot.metricsExtracted);
+        setArtifactFiles(snapshot.artifactFiles);
+        setCurrentJobId(snapshot.jobId);
+
+        setManualEntityName("");
+        setManualEntityError("");
+        setManualMetricName("");
+        setManualMetricError("");
+        setExtractError("");
+        setGroupError("");
+        setMetricsError("");
+        setImportError("");
+    };
+
     const handleExportArchive = () => {
         if (archiveBusy !== "idle") return;
         void hookHandleExportArchive(buildWorkspaceSnapshotData());
     };
 
-    const handleImportArchiveFile = (event: ChangeEvent<HTMLInputElement>) => {
-        void hookHandleImportArchiveFile(event);
+    const handleImportArchiveFile = async (event: ChangeEvent<HTMLInputElement>) => {
+        const result = await hookHandleImportArchiveFile(event);
+        if (result.success && result.data) {
+            applyImportedWorkspaceSnapshot(result.data);
+            await refreshPmData();
+            setImportMessage(
+                `Imported workspace snapshot${result.data.jobId ? ` and bound job ${result.data.jobId}` : ""}.`,
+            );
+        }
     };
 
     const handleExtractFromCausal = () => {
