@@ -698,7 +698,7 @@ function PolicyConfirmBlock({
     );
   }
 
-  const ready = confirmReady ?? true;
+  const ready = isGated ? true : (confirmReady ?? true);
   const token = detail?.tokenUsage || undefined;
   const selectedCount = selectedPolicyIds?.size ?? 0;
   const manualCount = manualPolicies?.length ?? 0;

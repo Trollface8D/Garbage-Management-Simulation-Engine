@@ -111,8 +111,9 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
             if job.status in {"failed", "cancelled"} or job.cancel_requested:
                 logger.info("[job_store] ignored stage for %s (cancel=%s) jobId=%s stage=%s", job.status, job.cancel_requested, job.job_id, stage)
                 return
-            if job.status in {"queued", "awaiting_confirmation"}:
+            if job.status == "queued":
                 job.status = "running"
+            # Do NOT override awaiting_confirmation — gate must stay visible until /confirm is called.
             job.current_stage = stage or job.current_stage
             job.stage_message = message
             stage_entry: dict[str, Any] = {"stage": stage, "message": message}
