@@ -259,6 +259,8 @@ export default function SimulationViewer({ jobId, selectedMetrics }: Props) {
   const [error, setError] = useState<string>("");
   const [ticks, setTicks] = useState<number>(100);
   const [tickSeconds, setTickSeconds] = useState<number>(300);
+  const [timescaleUnit, setTimescaleUnit] = useState<"sec" | "min" | "hour" | "day">("min");
+  const [timescaleValue, setTimescaleValue] = useState<number>(5);
   const offsetRef = useRef<number>(0);
   const pollTimerRef = useRef<number | null>(null);
 
@@ -419,13 +421,33 @@ export default function SimulationViewer({ jobId, selectedMetrics }: Props) {
           <input
             type="number"
             min={1}
-            max={86400}
-            value={tickSeconds}
-            onChange={(e) => setTickSeconds(Math.max(1, Number(e.target.value) || 1))}
+            max={9999}
+            value={timescaleValue}
+            onChange={(e) => {
+              const v = Math.max(1, Number(e.target.value) || 1);
+              setTimescaleValue(v);
+              const multipliers = { sec: 1, min: 60, hour: 3600, day: 86400 };
+              setTickSeconds(v * multipliers[timescaleUnit]);
+            }}
             disabled={isRunning}
-            className="w-24 rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-20 rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
           />
-          <span>sec</span>
+          <select
+            value={timescaleUnit}
+            onChange={(e) => {
+              const unit = e.target.value as "sec" | "min" | "hour" | "day";
+              setTimescaleUnit(unit);
+              const multipliers = { sec: 1, min: 60, hour: 3600, day: 86400 };
+              setTickSeconds(timescaleValue * multipliers[unit]);
+            }}
+            disabled={isRunning}
+            className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <option value="sec">sec</option>
+            <option value="min">min</option>
+            <option value="hour">hour</option>
+            <option value="day">day</option>
+          </select>
         </label>
 
         <button
