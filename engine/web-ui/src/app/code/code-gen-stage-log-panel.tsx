@@ -180,20 +180,33 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
   >({});
   const [detailLoading, setDetailLoading] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string>("");
+  // Authoritative completed list set after a rollback; overrides the stale prop
+  // until the job resumes (at which point live polling takes over again).
+  const [completedOverride, setCompletedOverride] = useState<string[] | null>(null);
 
   const completedSet = useMemo(() => {
     const merged = new Set<string>();
-    (completedStages || []).forEach((stage) => merged.add(stage));
-    remoteCompleted.forEach((stage) => merged.add(stage));
+    if (completedOverride !== null) {
+      completedOverride.forEach((stage) => merged.add(stage));
+    } else {
+      (completedStages || []).forEach((stage) => merged.add(stage));
+      remoteCompleted.forEach((stage) => merged.add(stage));
+    }
     return merged;
-  }, [completedStages, remoteCompleted]);
+  }, [completedStages, remoteCompleted, completedOverride]);
 
   const shortCurrentStage = shortStageName(currentStage);
 
   useEffect(() => {
     setDraftSelectedPolicyIds(new Set(initialSelectedPolicyIds || []));
     setDraftManualPolicies([...(initialManualPolicies || [])]);
+    setCompletedOverride(null);
   }, [jobId, initialSelectedPolicyIds, initialManualPolicies]);
+
+  // Once the job resumes and becomes active, live polling takes over — drop override.
+  useEffect(() => {
+    if (isActive) setCompletedOverride(null);
+  }, [isActive]);
 
   useEffect(() => {
     if (!jobId) {
@@ -283,29 +296,31 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
     async (stage: string) => {
       if (!jobId) return;
       setActionPending(true);
-      setActionStatus(`Rolling back to ${stage}…`);
+      setActionStatus(`Rolling back after ${stage}…`);
       try {
-        await rollbackCodeGenJob(jobId, stage, "from");
-        // Drop cached details for rolled-back stages so panel re-fetches on re-run.
+        // "after" mode: keep target stage checkpoint (shows "done"), delete only stages after it.
+        await rollbackCodeGenJob(jobId, stage, "after");
+        // Drop cached details only for stages AFTER target; target artifact is preserved.
         setStageDetails((prev) => {
           const next = { ...prev };
-          // Remove all stages from `stage` onward.
           let found = false;
           for (const key of Object.keys(next)) {
-            if (key === stage) found = true;
             if (found) delete next[key];
+            if (key === stage) found = true;
           }
           return next;
         });
-        // Refresh remote completed list immediately.
+        // Fetch authoritative completed list and override stale prop.
         try {
           const data = await fetchCodeGenStatus(jobId);
-          setRemoteCompleted(data.completedStages || []);
+          const fresh = data.completedStages || [];
+          setRemoteCompleted(fresh);
+          setCompletedOverride(fresh);
         } catch {
           /* best-effort */
         }
-        setActionStatus(`Rolled back. Click "Resume & proceed" to re-run from '${stage}'.`);
-        onStatusUpdate?.(`Rollback done for '${stage}'.`);
+        setActionStatus(`Rolled back. '${stage}' artifact preserved. Click "Resume & proceed" to continue.`);
+        onStatusUpdate?.(`Rollback done after '${stage}'.`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         setActionStatus(`Rollback failed: ${message}`);
@@ -539,7 +554,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                             onClick={() => handleRollback(entry.key)}
                             disabled={actionPending}
                             className="inline-flex items-center rounded-md border border-amber-700 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                            title="Delete this stage's checkpoint and everything after it. Resume to re-run."
+                            title="Keep this stage's artifact; delete all stages after it. Resume to re-run from next stage."
                           >
                             Rollback to here
                           </button>
