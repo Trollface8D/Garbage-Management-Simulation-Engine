@@ -345,6 +345,24 @@ def rollback_code_gen_job(job_id: str, payload: dict[str, Any] = Body(default_fa
     return {"jobId": job_id, "removed": removed, "mode": mode, "resumable": True}
 
 
+@router.patch("/code_gen/jobs/{job_id}/policies")
+def update_job_policies(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
+    """Overwrite selectedPolicies in the saved inputs manifest.
+
+    Body: ``{"selectedPolicies": [...]}``
+    Call before resume to change which policies are used in the next run.
+    """
+    selected_policies = list(payload.get("selectedPolicies") or [])
+    try:
+        checkpoints.update_selected_policies(job_id, selected_policies)
+    except FileNotFoundError:
+        return JSONResponse(
+            {"error": f"No inputs manifest for job '{job_id}'."},
+            status_code=404,
+        )
+    return {"jobId": job_id, "selectedPolicies": selected_policies}
+
+
 @router.post("/code_gen/jobs/{job_id}/resume")
 def resume_code_gen_job(job_id: str):
     """Re-spawn the worker for an existing job from where it left off.

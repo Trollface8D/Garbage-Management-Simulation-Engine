@@ -138,6 +138,7 @@ export type CodeGenStageLogProps = {
   initialManualPolicies?: CodeGenPolicyOutline[];
   onProceedRequested?: (selectedPolicies: string[], manualPolicies: CodeGenPolicyOutline[]) => void;
   onResumeRequested?: () => void;
+  onResumeWithPolicies?: (selectedPolicies: string[], manualPolicies: CodeGenPolicyOutline[]) => void;
   onConfirmStage?: (stage: string) => void;
   policyConfirmReady?: boolean;
 };
@@ -159,6 +160,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
     initialManualPolicies,
     onProceedRequested,
     onResumeRequested,
+    onResumeWithPolicies,
     onConfirmStage,
     policyConfirmReady,
   } = props;
@@ -521,7 +523,9 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                               awaitingConfirmationStage
                                 ? () => onConfirmStage?.(awaitingConfirmationStage)
                                 : hasHistory
-                                  ? () => onResumeRequested?.()
+                                  ? () => (onResumeWithPolicies
+                                    ? onResumeWithPolicies([...draftSelectedPolicyIds], draftManualPolicies)
+                                    : onResumeRequested?.())
                                   : () => onProceedRequested?.([...draftSelectedPolicyIds], draftManualPolicies)
                             }
                             proceedLabelOverride={

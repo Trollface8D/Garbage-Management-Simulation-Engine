@@ -457,6 +457,22 @@ def load_inputs(job_id: str) -> dict[str, Any] | None:
     return manifest
 
 
+def update_selected_policies(job_id: str, selected_policies: list[dict[str, Any]]) -> None:
+    """Overwrite only the selectedPolicies field in the existing inputs manifest."""
+    base = job_dir(job_id)
+    manifest_path = base / "inputs.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"No inputs manifest for job '{job_id}'")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["selectedPolicies"] = selected_policies
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info(
+        "[code_gen][checkpoint] policies updated jobId=%s count=%s",
+        job_id,
+        len(selected_policies),
+    )
+
+
 def encode_bytes(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   artifactUrl,
   fetchCodeGenResult,
+  updateCodeGenJobPolicies,
   type CodeGenEntity,
   type CodeGenPolicyOutline,
   type SuggestedMetric,
@@ -434,6 +435,29 @@ export default function CodeGenWorkspace({
     }
   };
 
+  const handleResumeWithPolicies = async (
+    selectedPoliciesOverride: string[],
+    manualPoliciesOverride: CodeGenPolicyOutline[],
+  ) => {
+    setActionError("");
+    if (!job.jobId) {
+      setActionError("No active job to resume.");
+      return;
+    }
+    try {
+      const policyPayload = [
+        ...selectedPoliciesOverride.map((rule_id) => ({ rule_id })),
+        ...manualPoliciesOverride,
+      ];
+      await updateCodeGenJobPolicies(job.jobId, policyPayload);
+      onPolicyIdsChange(new Set(selectedPoliciesOverride));
+      onManualPoliciesChange([...manualPoliciesOverride]);
+      await job.resume();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Resume with policies failed.");
+    }
+  };
+
   const handleEditInput = async () => {
     // If actively processing, show confirmation and cancel the job first
     if (workflow.isRunning) {
@@ -621,6 +645,7 @@ export default function CodeGenWorkspace({
             void handleGenerate(selectedPolicies, manualPoliciesDraft)
           }
           onResumeRequested={() => void job.resume()}
+          onResumeWithPolicies={(sp, mp) => void handleResumeWithPolicies(sp, mp)}
           onConfirmStage={(stage) => void job.confirm(stage)}
           policyConfirmReady={workflow.policyConfirmReady}
         />

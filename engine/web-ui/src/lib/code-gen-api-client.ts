@@ -270,6 +270,21 @@ export async function rollbackCodeGenJob(
   }
 }
 
+export async function updateCodeGenJobPolicies(
+  jobId: string,
+  selectedPolicies: Array<{ rule_id: string } | CodeGenPolicyOutline>,
+): Promise<void> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/policies`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ selectedPolicies }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+}
+
 export async function fetchCodeGenResult(jobId: string): Promise<unknown> {
   const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/result`, { cache: "no-store" });
   return jsonOrThrow<unknown>(response);
