@@ -50,7 +50,6 @@ function buildCodeGenWorkflowState({
   isResuming,
   isPolling,
   isActivelyProcessing,
-  shouldShowResumeLabel,
   completedStages,
 }: {
   jobStatus: string | null;
@@ -59,10 +58,8 @@ function buildCodeGenWorkflowState({
   isResuming: boolean;
   isPolling: boolean;
   isActivelyProcessing: boolean;
-  shouldShowResumeLabel: boolean;
   completedStages: number;
 }): CodeGenWorkflowState {
-  const isPausedLike = jobStatus === "paused" || jobStatus === "partial";
   const isRunning =
     isStarting ||
     isPreviewing ||
@@ -82,14 +79,8 @@ function buildCodeGenWorkflowState({
       ? "Generating…"
       : isStarting
         ? "Starting…"
-        : isPausedLike && shouldShowResumeLabel
-          ? "Resume"
-          : "Generate",
-    primaryActionTitle: isPausedLike && shouldShowResumeLabel
-      ? undefined
-      : isActivelyProcessing
-        ? "Generation is running…"
-        : undefined,
+        : "Generate",
+    primaryActionTitle: isActivelyProcessing ? "Generation is running…" : undefined,
     primaryActionDisabled: isActivelyProcessing,
     showProgressBar: isRunning || (typeof jobStatus === "string" && completedStages > 0),
     policyConfirmReady: false,
@@ -276,7 +267,6 @@ export default function CodeGenWorkspace({
         isResuming: job.isResuming,
         isPolling: job.isPolling,
         isActivelyProcessing: job.isActivelyProcessing,
-        shouldShowResumeLabel: Boolean(job.status?.canResume),
         completedStages: job.status?.completedStages?.length ?? 0,
       }),
     [
@@ -402,32 +392,20 @@ export default function CodeGenWorkspace({
         ...nextManualPolicies,
       ];
 
-      // If no active job, create one and start running immediately.
-      if (!job.jobId) {
-        if (causalChoices.length === 0) {
-          setActionError("No causal sources resolved from the selected components.");
-          return;
-        }
-        const causalData = await aggregateCausalText(causalChoices);
-        await job.start({
-          causalData,
-          mapNodeJson,
-          selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
-          selectedPolicies: selectedPolicyPayload,
-          selectedMetrics,
-          userEntityList: pageEntities,
-          previewOnly: false,
-        });
+      if (causalChoices.length === 0) {
+        setActionError("No causal sources resolved from the selected components.");
         return;
-      } else {
-        // Reuse the existing job and resume with overrides
-        await job.generate(job.jobId, {
-          selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
-          selectedPolicies: selectedPolicyPayload,
-          selectedMetrics,
-          userEntityList: pageEntities,
-        });
       }
+      const causalData = await aggregateCausalText(causalChoices);
+      await job.start({
+        causalData,
+        mapNodeJson,
+        selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
+        selectedPolicies: selectedPolicyPayload,
+        selectedMetrics,
+        userEntityList: pageEntities,
+        previewOnly: false,
+      });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Generate failed.");
     }
@@ -435,9 +413,9 @@ export default function CodeGenWorkspace({
 
   const handleCancel = async () => {
     try {
-      await job.pause();
+      await job.cancel();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Pause failed.");
+      setActionError(err instanceof Error ? err.message : "Cancel failed.");
     }
   };
 
@@ -488,7 +466,6 @@ export default function CodeGenWorkspace({
 
   const causalCount = causalChoices.length;
   const statusValue = job.status?.status;
-  const isPaused = statusValue === "paused";
 
   return (
     <section className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-4 md:p-6">
@@ -498,11 +475,6 @@ export default function CodeGenWorkspace({
           {wasRestoredFromPersistence && (
             <p className="text-xs rounded-md bg-emerald-500/20 border border-emerald-600/50 px-2 py-1 text-emerald-200">
               ✓ Restored from previous session
-            </p>
-          )}
-          {isPaused && (
-            <p className="text-xs rounded-md bg-sky-500/20 border border-sky-600/50 px-2 py-1 text-sky-200">
-              ⏸ Paused — click Resume to continue
             </p>
           )}
           {job.status?.status === "cancelled" && (
@@ -546,7 +518,7 @@ export default function CodeGenWorkspace({
           disabled={!workflow.canCancel}
           className="rounded-md border border-red-800 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Pause
+          Cancel
         </button>
 
         <button

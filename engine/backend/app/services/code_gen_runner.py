@@ -105,6 +105,10 @@ def _gemini_cancel_check(ctx: StageContext):
     return lambda: is_cancel_requested(ctx.job_id)
 
 
+def _gemini_progress_callback(ctx: StageContext):
+    return lambda: touch_activity(ctx.job)
+
+
 def _generate_json(
     ctx: StageContext,
     stage: str,
@@ -121,6 +125,7 @@ def _generate_json(
             usage_collector=ctx.usage,
             on_retry=_gemini_retry_callback(ctx, stage),
             cancel_check=_gemini_cancel_check(ctx),
+            on_progress=_gemini_progress_callback(ctx),
         )
     except GeminiCancelledError as exc:
         raise JobCancelledError(str(exc)) from exc
@@ -143,6 +148,7 @@ def _generate_text(
             usage_collector=ctx.usage,
             on_retry=_gemini_retry_callback(ctx, stage),
             cancel_check=_gemini_cancel_check(ctx),
+            on_progress=_gemini_progress_callback(ctx),
             cached_content=cached_content,
         )
     except GeminiCancelledError as exc:
@@ -513,6 +519,7 @@ def _stage_state3_code_environment(ctx: StageContext) -> dict[str, Any]:
     code = ""
     errors: list[str] = []
     for attempt in range(2):
+        ctx.raise_if_cancelled()
         prompt = prompts.build_state3_environment_prompt(
             causal_data=causal_data,
             entities_blob=entities_blob,
@@ -520,6 +527,7 @@ def _stage_state3_code_environment(ctx: StageContext) -> dict[str, Any]:
             retry_error=retry_error,
         )
         code = _generate_text(ctx, "state3_code_environment", prompt)
+        ctx.raise_if_cancelled()
         errors = prompts.validate_environment_protocol(code)
         if not errors:
             break
@@ -588,6 +596,7 @@ def _stage_state4_code_policy(ctx: StageContext) -> dict[str, Any]:
         code = ""
         errors: list[str] = []
         for attempt in range(2):
+            ctx.raise_if_cancelled()
             prompt = prompts.build_state4_policy_prompt(
                 causal_data=causal_data,
                 rule=rule,
@@ -597,6 +606,7 @@ def _stage_state4_code_policy(ctx: StageContext) -> dict[str, Any]:
                 retry_error=retry_error,
             )
             code = _generate_text(ctx, "state4_code_policy", prompt)
+            ctx.raise_if_cancelled()
             errors = prompts.validate_policy_protocol(code)
             if not errors:
                 break

@@ -1,8 +1,7 @@
-"""HTTP surface for the code-generation pipeline (Phase 1 scaffolding).
+"""HTTP surface for the code-generation pipeline.
 
-Mirrors ``map_extract`` route shapes so the frontend status / cancel / resume
-hooks can be reused. Stage implementations are stubs at this phase — see
-``services/code_gen_runner.py``.
+Mirrors ``map_extract`` route shapes so the frontend status / cancel hooks
+can be reused. Stage implementations live in ``services/code_gen_runner.py``.
 """
 
 from __future__ import annotations
@@ -27,9 +26,8 @@ from ..services.job_store import (
     JOBS,
     JOBS_LOCK,
     emit_job_event,
-    request_pause,
+    request_cancel,
     serialize_job,
-    try_transition,
     utc_now_iso,
 )
 
@@ -86,12 +84,14 @@ def _start_timeout_watchdog(job: JobRecord) -> None:
         while True:
             time.sleep(poll_interval)
             with JOBS_LOCK:
-                if job.status in {"completed", "failed", "cancelled", "paused"}:
+                if job.status in {"completed", "failed", "cancelled"}:
                     return
                 idle = time.monotonic() - job.last_activity_ts
             if idle >= CODE_GEN_JOB_TIMEOUT_SECONDS:
                 err = f"code_gen idle for {int(idle)}s — terminated."
                 logger.error("[code_gen] watchdog terminated jobId=%s", job.job_id)
+                with JOBS_LOCK:
+                    job.cancel_requested = False
                 emit_job_event(job, "error", {"error": err})
                 emit_job_event(job, "close", None)
                 return
@@ -273,124 +273,8 @@ def get_code_gen_result(job_id: str):
 
 @router.post("/code_gen/jobs/{job_id}/cancel")
 def cancel_code_gen_job(job_id: str):
-    # "Cancel" now maps to a resumable pause.
-    accepted = request_pause(job_id)
-    return {"jobId": job_id, "pauseRequested": accepted}
-
-
-@router.post("/code_gen/jobs/{job_id}/pause")
-def pause_code_gen_job(job_id: str):
-    """Signal the worker to stop after the current stage and set status to 'paused'.
-
-    Uses ``request_pause`` which sets ``pause_requested=True`` alongside
-    ``cancel_requested=True`` so the worker's ``JobCancelledError`` handler
-    calls ``mark_paused`` (via ``mark_cancelled``) instead of hard-cancelling.
-    The job can be resumed via ``POST /code_gen/jobs/{id}/resume``.
-    """
-    accepted = request_pause(job_id)
-    return {"jobId": job_id, "pauseRequested": accepted}
-
-
-@router.post("/code_gen/jobs/{job_id}/resume")
-def resume_code_gen_job(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
-    """Re-run the worker from the next unfinished stage.
-
-    Cold-start safe: rehydrates inputs from ``inputs.json`` if the in-memory
-    job record was lost (backend restart).
-
-    Optional body fields override matching keys in ``inputs.json`` before the
-    worker spawns — used by the Confirm flow to apply the user's
-    entity/policy/metric refinements without creating a new job:
-
-      ``selectedEntities``, ``selectedPolicies``, ``selectedMetrics``,
-      ``userEntityList``
-    """
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-
-    if not is_auth_available():
-        return JSONResponse({"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."}, status_code=500)
-    api_key = resolve_api_key()
-
-    manifest = checkpoints.load_inputs(job_id)
-    if manifest is None:
-        return JSONResponse(
-            {"error": f"No inputs manifest found for job '{job_id}'."},
-            status_code=404,
-        )
-
-    if job is None:
-        now = utc_now_iso()
-        job = JobRecord(job_id=job_id, status="queued", created_at=now, updated_at=now)
-        with JOBS_LOCK:
-            JOBS[job_id] = job
-
-    # Allow resume from partial (preview completed) or paused state.
-    # Use atomic transition to avoid race with concurrent status updates.
-    allowed_from_status = {"partial", "paused"}
-    if job.status == "running" or job.status == "queued":
-        return JSONResponse(
-            {"error": "Job already running or queued. Cancel it first before resuming."},
-            status_code=409,
-        )
-    if job.status not in allowed_from_status:
-        return JSONResponse(
-            {"error": f"Cannot resume from status '{job.status}'. Resume is only allowed from paused or partial state."},
-            status_code=400,
-        )
-
-    job.cancel_requested = False
-    job.error = None
-    job.updated_at = utc_now_iso()
-
-    # Transition status to queued atomically
-    with JOBS_LOCK:
-        if not try_transition(job_id, allowed_from_status, "queued"):
-            current_job = JOBS.get(job_id)
-            current_status = current_job.status if current_job else "unknown"
-            return JSONResponse(
-                {"error": f"Status changed before resume could acquire lock. Current status: {current_status}. Please retry."},
-                status_code=409,
-            )
-
-    # Apply optional selection overrides on top of the saved manifest. We
-    # rewrite inputs.json so a backend restart mid-run picks up the refined
-    # selection rather than the original (pre-confirm) snapshot.
-    refined_keys = ("selectedEntities", "selectedPolicies", "selectedMetrics", "userEntityList")
-    overrides_present = any(key in payload for key in refined_keys)
-    if overrides_present:
-        for key in refined_keys:
-            if key in payload:
-                value = payload.get(key)
-                manifest[key] = list(value or [])
-        checkpoints.save_inputs(
-            job_id,
-            causal_data=str(manifest.get("causalData") or ""),
-            map_node_json=manifest.get("mapNodeJson"),
-            selected_entities=list(manifest.get("selectedEntities") or []),
-            selected_policies=list(manifest.get("selectedPolicies") or []),
-            selected_metrics=list(manifest.get("selectedMetrics") or []),
-            user_entity_list=list(manifest.get("userEntityList") or []),
-            model_name=str(manifest.get("modelName") or DEFAULT_MODEL_NAME),
-            use_env_model_overrides=bool(manifest.get("useEnvModelOverrides", True)),
-        )
-
-    inputs = {
-        "causalData": manifest.get("causalData") or "",
-        "mapNodeJson": manifest.get("mapNodeJson"),
-        "selectedEntities": manifest.get("selectedEntities") or [],
-        "selectedPolicies": manifest.get("selectedPolicies") or [],
-        "selectedMetrics": manifest.get("selectedMetrics") or [],
-        "userEntityList": manifest.get("userEntityList") or [],
-    }
-    _spawn_worker(
-        job,
-        api_key=api_key,
-        model_name=str(manifest.get("modelName") or DEFAULT_MODEL_NAME),
-        use_env_model_overrides=bool(manifest.get("useEnvModelOverrides", True)),
-        inputs=inputs,
-    )
-    return {"jobId": job_id, "status": "queued"}
+    accepted = request_cancel(job_id)
+    return {"jobId": job_id, "cancelRequested": accepted}
 
 
 @router.post("/code_gen/jobs/{job_id}/rollback")
@@ -451,13 +335,7 @@ def delete_code_gen_iteration(job_id: str, stage: str, iter_id: str):
 
 @router.post("/code_gen/jobs/{job_id}/preview_entities")
 def preview_entities(job_id: str):
-    """Run Stage 1 + Stage 1b synchronously and return their outputs.
-
-    The result is also persisted to disk as ``state1_entity_list.json`` /
-    ``state1b_policy_outline.json`` so the full pipeline run can skip them.
-    Caller is expected to confirm the preview before kicking off the full job
-    (see ``POST /code_gen/jobs/{id}/resume``).
-    """
+    """Run Stage 1 + Stage 1b synchronously and return their outputs."""
     if not is_auth_available():
         return JSONResponse({"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."}, status_code=500)
     api_key = resolve_api_key()
@@ -483,11 +361,6 @@ def preview_entities(job_id: str):
             status_code=409,
         )
 
-    # Clear any sticky cancel flag left over from the
-    # create-then-cancel-then-preview client flow. By this point the
-    # auto-spawned worker has already bailed (or never started a stage);
-    # leaving cancel_requested=True would make the inline preview's
-    # Gemini call fail with "cancel requested" before running anything.
     with JOBS_LOCK:
         job.cancel_requested = False
         if job.status in {"cancelled", "failed"}:
@@ -543,10 +416,6 @@ def preview_entities(job_id: str):
             status_code=500,
         )
 
-    # Preview finished synchronously — drop the job out of "running"/"queued"
-    # so the subsequent /resume call (Confirm & start generation) doesn't 409
-    # with "Job already running or queued.". "partial" matches the disk-only
-    # restored-from-checkpoint path used elsewhere.
     with JOBS_LOCK:
         job.status = "partial"
         job.current_stage = None
@@ -562,7 +431,7 @@ def preview_entities(job_id: str):
 
 @router.get("/code_gen/jobs/{job_id}/artifacts/{path:path}")
 def get_code_gen_artifact(job_id: str, path: str):
-    """Serve a generated artifact, with traversal protection (fix F10)."""
+    """Serve a generated artifact, with traversal protection."""
     resolved = checkpoints.resolve_artifact_path(job_id, path)
     if resolved is None or not resolved.exists() or not resolved.is_file():
         return JSONResponse({"error": "Artifact not found."}, status_code=404)

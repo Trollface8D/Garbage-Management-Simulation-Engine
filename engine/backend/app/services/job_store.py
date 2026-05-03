@@ -37,36 +37,9 @@ def mark_cancelled(job_id: str) -> None:
         job = JOBS.get(job_id)
         if job is None or job.status in {"completed", "failed"}:
             return
-        if job.pause_requested:
-            job.status = "paused"
-            job.cancel_requested = False
-            job.pause_requested = False
-            job.updated_at = utc_now_iso()
-            logger.info("[job_store] paused (via cancel) jobId=%s", job_id)
-            return
         job.status = "cancelled"
         job.updated_at = utc_now_iso()
     logger.info("[job_store] cancelled jobId=%s", job_id)
-
-
-def request_pause(job_id: str) -> bool:
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-        if job is None:
-            return False
-        if job.status in {"completed", "failed", "cancelled"}:
-            return False
-        job.cancel_requested = True
-        job.pause_requested = True
-        job.updated_at = utc_now_iso()
-    logger.info("[job_store] pause requested jobId=%s", job_id)
-    return True
-
-
-def is_pause_requested(job_id: str) -> bool:
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-        return bool(job and job.pause_requested)
 
 
 def try_transition(job_id: str, from_statuses: set[str], to_status: str) -> bool:
@@ -114,8 +87,8 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
         token_usage = payload.get("tokenUsage")
         cost_estimate = payload.get("costEstimate")
         with JOBS_LOCK:
-            if job.status in {"failed", "cancelled", "paused"}:
-                logger.info("[job_store] ignored stage for %s jobId=%s stage=%s", job.status, job.job_id, stage)
+            if job.status in {"failed", "cancelled"} or job.cancel_requested:
+                logger.info("[job_store] ignored stage for %s (cancel=%s) jobId=%s stage=%s", job.status, job.cancel_requested, job.job_id, stage)
                 return
             if job.status == "queued":
                 job.status = "running"
@@ -135,14 +108,13 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
     if event == "error" and isinstance(payload, dict):
         with JOBS_LOCK:
             job.error = str(payload.get("error") or "Unknown pipeline execution error.")
-            # Treat pipeline errors as resumable pauses.
-            job.status = "paused"
+            job.status = "failed"
             job.updated_at = utc_now_iso()
         logger.error("[job_store] error jobId=%s error=%s", job.job_id, job.error)
 
     if event == "result":
         with JOBS_LOCK:
-            if job.status in {"failed", "cancelled", "paused"}:
+            if job.status in {"failed", "cancelled"}:
                 logger.warning("[job_store] ignored result for %s jobId=%s", job.status, job.job_id)
                 return
             job.result = payload if isinstance(payload, dict) else None
@@ -152,7 +124,7 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
 
     if event == "done":
         with JOBS_LOCK:
-            if job.status not in {"completed", "failed", "cancelled", "paused"}:
+            if job.status not in {"completed", "failed", "cancelled"}:
                 job.status = "completed"
             job.updated_at = utc_now_iso()
         logger.info("[job_store] done jobId=%s status=%s", job.job_id, job.status)
@@ -174,6 +146,5 @@ def serialize_job(job: JobRecord) -> dict[str, Any]:
         "error": job.error,
         "runDir": job.run_dir,
         "cancelRequested": job.cancel_requested,
-        "pauseRequested": job.pause_requested,
         "completedStages": list(job.completed_stages),
     }

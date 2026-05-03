@@ -5,13 +5,10 @@ import {
   cancelCodeGenJob,
   createCodeGenJob,
   fetchCodeGenStatus,
-  pauseCodeGenJob,
   previewEntities,
-  resumeCodeGenJob,
   type CodeGenCreateRequest,
   type CodeGenJobStatus,
   type CodeGenPreviewResult,
-  type CodeGenResumeOverrides,
 } from "@/lib/code-gen-api-client";
 import {
   saveJobState,
@@ -21,7 +18,7 @@ import {
 } from "@/lib/use-codegen-persistence";
 
 const POLL_INTERVAL_MS = 1500;
-const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "partial", "paused"]);
+const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "partial"]);
 
 function createPreviewingStatus(jobId: string): CodeGenJobStatus {
   return {
@@ -53,9 +50,7 @@ export type UseCodeGenJobState = {
   isActivelyProcessing: boolean;
   start: (req: CodeGenCreateRequest) => Promise<string>;
   runPreview: (jobId?: string) => Promise<CodeGenPreviewResult>;
-  generate: (jobId?: string, overrides?: CodeGenResumeOverrides) => Promise<void>;
   cancel: (jobId?: string) => Promise<void>;
-  pause: (jobId?: string) => Promise<void>;
   reset: () => void;
 };
 
@@ -66,7 +61,7 @@ export function useCodeGenJob(componentId?: string) {
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
-  const [isResuming, setIsResuming] = useState(false);
+  const [isResuming] = useState(false);
   const [isRestoringFromPersistence, setIsRestoringFromPersistence] = useState(true);
   const pollTimerRef = useRef<number | null>(null);
   const pollStabilizedRef = useRef(false);
@@ -263,52 +258,26 @@ export function useCodeGenJob(componentId?: string) {
     [jobId],
   );
 
-  const generate = useCallback(
-    async (overrideJobId?: string, overrides?: CodeGenResumeOverrides) => {
-      const id = overrideJobId ?? jobId;
-      if (!id) {
-        throw new Error("No active job. Call start() first.");
-      }
-      setError(null);
-      setIsResuming(true);
-      try {
-        await resumeCodeGenJob(id, overrides);
-        startPolling(id);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Resume failed.";
-        setError(message);
-        throw err;
-      } finally {
-        setIsResuming(false);
-      }
-    },
-    [jobId, startPolling],
-  );
-
   const cancel = useCallback(
     async (overrideJobId?: string) => {
       const id = overrideJobId ?? jobId;
       if (!id) return;
       try {
         await cancelCodeGenJob(id);
+        stopPolling();
+        // Immediately refresh status so UI reflects the cancellation
+        try {
+          const next = await fetchCodeGenStatus(id);
+          setStatus(next);
+          if (next.status === "cancelled") {
+            setJobId(null);
+            setPreview(null);
+          }
+        } catch {
+          /* best-effort — polling will catch up */
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Cancel failed.");
-      }
-    },
-    [jobId],
-  );
-
-  const pause = useCallback(
-    async (overrideJobId?: string) => {
-      const id = overrideJobId ?? jobId;
-      if (!id) return;
-      try {
-        await pauseCodeGenJob(id);
-        const next = await fetchCodeGenStatus(id);
-        setStatus(next);
-        stopPolling();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Pause failed.");
       }
     },
     [jobId, stopPolling],
@@ -344,9 +313,7 @@ export function useCodeGenJob(componentId?: string) {
     isActivelyProcessing,
     start,
     runPreview,
-    generate,
     cancel,
-    pause,
     reset,
   };
 }

@@ -180,28 +180,6 @@ export async function fetchCodeGenStatus(jobId: string): Promise<CodeGenJobStatu
   return jsonOrThrow<CodeGenJobStatus>(response);
 }
 
-export type CodeGenResumeOverrides = {
-  selectedEntities?: Array<{ id: string }>;
-  selectedPolicies?: Array<{ rule_id: string } | CodeGenPolicyOutline | string>;
-  selectedMetrics?: SuggestedMetric[];
-  userEntityList?: UserEntityItem[];
-};
-
-export async function resumeCodeGenJob(
-  jobId: string,
-  overrides?: CodeGenResumeOverrides,
-): Promise<void> {
-  const hasOverrides = !!overrides && Object.keys(overrides).length > 0;
-  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/resume`, {
-    method: "POST",
-    headers: hasOverrides ? { "content-type": "application/json" } : undefined,
-    body: hasOverrides ? JSON.stringify(overrides) : undefined,
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(await parseError(response));
-  }
-}
 
 export type CodeGenStageEntry = {
   stage: string;
@@ -254,15 +232,6 @@ export async function cancelCodeGenJob(jobId: string): Promise<void> {
   }
 }
 
-export async function pauseCodeGenJob(jobId: string): Promise<void> {
-  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/pause`, {
-    method: "POST",
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(await parseError(response));
-  }
-}
 
 export async function rollbackCodeGenJob(
   jobId: string,

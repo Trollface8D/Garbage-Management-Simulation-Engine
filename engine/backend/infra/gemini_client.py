@@ -105,6 +105,7 @@ class GeminiGateway:
         usage_collector: dict[str, int] | None = None,
         on_retry: Callable[[dict[str, Any]], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
+        on_progress: Callable[[], None] | None = None,
         cached_content: str | None = None,
     ) -> str:
         content_parts: list[Part] = [Part.from_text(text=prompt)]
@@ -165,6 +166,8 @@ class GeminiGateway:
                 time.sleep(chunk)
                 remaining -= chunk
 
+        call_timeout = _safe_int_env("GEMINI_CALL_TIMEOUT_SECONDS", 300, minimum=30, maximum=1200)
+
         def _call_with_cancel() -> Any:
             """Invoke generate_content on a daemon thread so that a cancel
             during the in-flight HTTP request can abandon the wait instantly.
@@ -175,6 +178,9 @@ class GeminiGateway:
             the HTTP call returns (daemon=True means it won't block process
             shutdown). We pay the tokens for the in-flight request, but the
             worker stops immediately and no further retries or stages run.
+            A hard wall-clock deadline (GEMINI_CALL_TIMEOUT_SECONDS, default
+            300 s) additionally breaks out of a wedged HTTP call regardless
+            of cancel state.
             """
             box: dict[str, Any] = {}
 
@@ -194,14 +200,28 @@ class GeminiGateway:
                 daemon=True,
             )
             thread.start()
+            deadline = time.monotonic() + call_timeout
             while thread.is_alive():
                 thread.join(timeout=0.5)
+                if on_progress is not None:
+                    try:
+                        on_progress()
+                    except Exception:  # pragma: no cover - defensive
+                        pass
                 if _should_cancel():
                     logger.info(
                         "[gemini] cancel detected during in-flight request — abandoning thread"
                     )
                     raise GeminiCancelledError(
                         "generate_content cancelled during in-flight request"
+                    )
+                if time.monotonic() >= deadline:
+                    logger.error(
+                        "[gemini] call exceeded deadline of %ss — abandoning thread",
+                        call_timeout,
+                    )
+                    raise GeminiCancelledError(
+                        f"generate_content exceeded deadline of {call_timeout}s"
                     )
             if "error" in box:
                 raise box["error"]
