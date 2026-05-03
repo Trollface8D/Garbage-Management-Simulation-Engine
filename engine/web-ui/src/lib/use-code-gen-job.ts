@@ -199,13 +199,8 @@ export function useCodeGenJob(componentId?: string) {
         setJobId(result.jobId);
         setStatus(null);
         setPreview(null);
-        // Back-compat: when previewOnly is omitted/false the server auto-
-        // spawns a worker that runs the full pipeline; cancel it immediately
-        // so the caller can preview first. When previewOnly is true the
-        // worker is never spawned — no cancel needed, and the sticky cancel
-        // flag would just trip the inline preview anyway.
         if (!req.previewOnly) {
-          await cancelCodeGenJob(result.jobId);
+          startPolling(result.jobId);
         }
         return result.jobId;
       } catch (err) {
@@ -216,7 +211,7 @@ export function useCodeGenJob(componentId?: string) {
         setIsStarting(false);
       }
     },
-    [],
+    [startPolling],
   );
 
   const runPreview = useCallback(

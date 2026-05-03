@@ -127,7 +127,21 @@ export type CodeGenCreateRequest = {
 
 async function parseError(response: Response): Promise<string> {
   try {
-    const payload = (await response.json()) as { error?: string; detail?: string };
+    const payload = (await response.json()) as {
+      error?: string;
+      detail?: string;
+      activeJobs?: string[];
+      activeJob?: string;
+    };
+    if (Array.isArray(payload.activeJobs) && payload.activeJobs.length > 0) {
+      const ids = payload.activeJobs.join(", ");
+      const base = payload.error || payload.detail || "Job already running.";
+      return `${base} Active job(s): ${ids}`;
+    }
+    if (typeof payload.activeJob === "string" && payload.activeJob.trim()) {
+      const base = payload.error || payload.detail || "Job already running.";
+      return `${base} Active job: ${payload.activeJob}`;
+    }
     return (
       payload.error || payload.detail || `Request failed (${String(response.status)})`
     );

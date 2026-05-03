@@ -50,7 +50,6 @@ function buildCodeGenWorkflowState({
   isResuming,
   isPolling,
   isActivelyProcessing,
-  hasPreview,
   shouldShowResumeLabel,
   completedStages,
 }: {
@@ -60,10 +59,10 @@ function buildCodeGenWorkflowState({
   isResuming: boolean;
   isPolling: boolean;
   isActivelyProcessing: boolean;
-  hasPreview: boolean;
   shouldShowResumeLabel: boolean;
   completedStages: number;
 }): CodeGenWorkflowState {
+  const isPausedLike = jobStatus === "paused" || jobStatus === "partial";
   const isRunning =
     isStarting ||
     isPreviewing ||
@@ -71,10 +70,7 @@ function buildCodeGenWorkflowState({
     isPolling ||
     jobStatus === "running" ||
     jobStatus === "queued";
-  const statusLabel =
-    jobStatus === "partial" && hasPreview && !isRunning
-      ? "awaiting confirmation"
-      : jobStatus || (hasPreview ? "awaiting confirmation" : "—");
+  const statusLabel = jobStatus || "—";
 
   return {
     status: jobStatus,
@@ -83,24 +79,20 @@ function buildCodeGenWorkflowState({
     isActivelyProcessing,
     canCancel: isRunning,
     primaryActionLabel: isPreviewing
-      ? "Previewing entities…"
+      ? "Generating…"
       : isStarting
         ? "Starting…"
-        : shouldShowResumeLabel
+        : isPausedLike && shouldShowResumeLabel
           ? "Resume"
-          : hasPreview
-            ? "Preview loaded ↓"
-            : "Generate",
-    primaryActionTitle: shouldShowResumeLabel
+          : "Generate",
+    primaryActionTitle: isPausedLike && shouldShowResumeLabel
       ? undefined
-      : hasPreview
-        ? "Preview already loaded — confirm or edit input below."
-        : isActivelyProcessing
-          ? "Preview is running…"
-          : undefined,
-    primaryActionDisabled: isActivelyProcessing || (hasPreview && !shouldShowResumeLabel),
+      : isActivelyProcessing
+        ? "Generation is running…"
+        : undefined,
+    primaryActionDisabled: isActivelyProcessing,
     showProgressBar: isRunning || (typeof jobStatus === "string" && completedStages > 0),
-    policyConfirmReady: hasPreview && !isRunning && !isResuming,
+    policyConfirmReady: false,
   };
 }
 
@@ -193,9 +185,7 @@ export default function CodeGenWorkspace({
   const [mapStatus, setMapStatus] = useState<string>("no map selected");
   const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(new Set());
   const [actionError, setActionError] = useState<string>("");
-  const [previewOpen, setPreviewOpen] = useState<boolean>(false);
   const [previewText, setPreviewText] = useState<string>("");
-  const [previewLoading, setPreviewLoading] = useState<boolean>(false);
   const [wasRestoredFromPersistence, setWasRestoredFromPersistence] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const lastResultJobIdRef = useRef<string | null>(null);
@@ -286,8 +276,7 @@ export default function CodeGenWorkspace({
         isResuming: job.isResuming,
         isPolling: job.isPolling,
         isActivelyProcessing: job.isActivelyProcessing,
-        hasPreview: Boolean(job.preview),
-        shouldShowResumeLabel: job.status?.status === "paused",
+        shouldShowResumeLabel: Boolean(job.status?.canResume),
         completedStages: job.status?.completedStages?.length ?? 0,
       }),
     [
@@ -381,71 +370,8 @@ export default function CodeGenWorkspace({
     ? (mapGraph as unknown as Record<string, unknown>)
     : null;
 
-  const handleOpenPreview = async () => {
-    setPreviewOpen(true);
-    if (causalChoices.length === 0) {
-      setPreviewText("No causal source documents resolved from the selected components.");
-      return;
-    }
-    setPreviewLoading(true);
-    try {
-      const text = await aggregateCausalText(causalChoices);
-      setPreviewText(text || "(empty — selected sources have no extractable text)");
-    } catch (err) {
-      setPreviewText(err instanceof Error ? err.message : "Failed to build preview.");
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-
-  const handleCopyPreview = async () => {
-    try {
-      await navigator.clipboard.writeText(previewText);
-    } catch {
-      // Best-effort; clipboard may be unavailable.
-    }
-  };
-
   const formatMissingMessage = (action: string, items: readonly string[]) =>
     `Cannot ${action} yet. Required steps:\n• ${items.join("\n• ")}`;
-
-  const handlePreview = async () => {
-    setActionError("");
-    if (missingRequirements && missingRequirements.length > 0) {
-      setActionError(formatMissingMessage("preview", missingRequirements));
-      return;
-    }
-    if (causalChoices.length === 0) {
-      setActionError("No causal sources resolved from the selected components above.");
-      return;
-    }
-
-    const causalData = await aggregateCausalText(causalChoices);
-    if (!causalData) {
-      setActionError("Selected causal sources have no extractable text.");
-      return;
-    }
-    if (selectedMetrics.length === 0) {
-      setActionError(
-        "Select at least one metric in the metric section before previewing.",
-      );
-      return;
-    }
-
-    try {
-      const newJobId = await job.start({
-        causalData,
-        mapNodeJson,
-        selectedMetrics,
-        model,
-        previewOnly: true,
-        userEntityList: pageEntities,
-      });
-      await job.runPreview(newJobId);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Preview failed.");
-    }
-  };
 
   const handleGenerate = async (
     selectedPolicyIdsOverride?: string[],
@@ -476,39 +402,23 @@ export default function CodeGenWorkspace({
         ...nextManualPolicies,
       ];
 
-      // If no active job, create one (previewOnly) then resume with overrides.
+      // If no active job, create one and start running immediately.
       if (!job.jobId) {
         if (causalChoices.length === 0) {
           setActionError("No causal sources resolved from the selected components.");
           return;
         }
         const causalData = await aggregateCausalText(causalChoices);
-        const newJobId = await job.start({
+        await job.start({
           causalData,
           mapNodeJson,
           selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
           selectedPolicies: selectedPolicyPayload,
           selectedMetrics,
           userEntityList: pageEntities,
-          previewOnly: true,
+          previewOnly: false,
         });
-        // Ensure preview (state1 + state1b) finishes before resuming the
-        // full pipeline. Running preview synchronously avoids a race where
-        // resume is requested while the preview worker is still finishing,
-        // which previously led to HTTP 409 from the server.
-        try {
-          await job.runPreview(newJobId);
-        } catch (err) {
-          setActionError(err instanceof Error ? err.message : "Preview failed during generate.");
-          return;
-        }
-
-        await job.generate(newJobId, {
-          selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
-          selectedPolicies: selectedPolicyPayload,
-          selectedMetrics,
-          userEntityList: pageEntities,
-        });
+        return;
       } else {
         // Reuse the existing job and resume with overrides
         await job.generate(job.jobId, {
@@ -571,8 +481,8 @@ export default function CodeGenWorkspace({
   const stageMessage = job.status?.stageMessage ?? "";
 
   const causalCount = causalChoices.length;
-  const isPaused = job.status?.status === "paused";
-  const shouldShowResumeLabel = isPaused;
+  const statusValue = job.status?.status;
+  const isPaused = statusValue === "paused";
 
   return (
     <section className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-4 md:p-6">
@@ -607,14 +517,7 @@ export default function CodeGenWorkspace({
         </span>
         <span className="text-neutral-600">·</span>
         <span>{mapStatus}</span>
-        <span className="text-neutral-600">·</span>
-        <button
-          type="button"
-          onClick={() => void handleOpenPreview()}
-          className="ml-auto rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-200 transition hover:border-sky-500 hover:text-sky-200"
-        >
-          Preview prompt input
-        </button>
+        <span className="ml-auto" />
       </div>
 
       {/* One entrypoint: "Generate" runs the State 1 / 1b preview first; the
@@ -623,7 +526,7 @@ export default function CodeGenWorkspace({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={isPaused ? () => void handleGenerate() : () => void handlePreview()}
+          onClick={() => void handleGenerate()}
           disabled={workflow.primaryActionDisabled}
           title={workflow.primaryActionTitle}
           className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -637,7 +540,7 @@ export default function CodeGenWorkspace({
           disabled={!workflow.canCancel}
           className="rounded-md border border-red-800 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Cancel
+          Pause
         </button>
 
         <button
@@ -751,51 +654,6 @@ export default function CodeGenWorkspace({
         );
       })()}
 
-      {previewOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setPreviewOpen(false)}
-        >
-          <div
-            className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
-              <p className="text-sm font-semibold text-neutral-100">
-                Resolved causal prompt input
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleCopyPreview()}
-                  disabled={previewLoading || !previewText}
-                  className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-200 transition hover:border-sky-500 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Copy
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPreviewOpen(false)}
-                  className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-200 transition hover:border-red-500 hover:text-red-200"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4">
-              {previewLoading ? (
-                <p className="text-xs text-neutral-400">Building preview…</p>
-              ) : (
-                <pre className="whitespace-pre-wrap wrap-break-word font-mono text-xs text-neutral-100">
-                  {previewText}
-                </pre>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

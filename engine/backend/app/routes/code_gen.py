@@ -27,7 +27,6 @@ from ..services.job_store import (
     JOBS,
     JOBS_LOCK,
     emit_job_event,
-    request_cancel,
     request_pause,
     serialize_job,
     try_transition,
@@ -87,7 +86,7 @@ def _start_timeout_watchdog(job: JobRecord) -> None:
         while True:
             time.sleep(poll_interval)
             with JOBS_LOCK:
-                if job.status in {"completed", "failed", "cancelled"}:
+                if job.status in {"completed", "failed", "cancelled", "paused"}:
                     return
                 idle = time.monotonic() - job.last_activity_ts
             if idle >= CODE_GEN_JOB_TIMEOUT_SECONDS:
@@ -274,8 +273,9 @@ def get_code_gen_result(job_id: str):
 
 @router.post("/code_gen/jobs/{job_id}/cancel")
 def cancel_code_gen_job(job_id: str):
-    accepted = request_cancel(job_id)
-    return {"jobId": job_id, "cancelRequested": accepted}
+    # "Cancel" now maps to a resumable pause.
+    accepted = request_pause(job_id)
+    return {"jobId": job_id, "pauseRequested": accepted}
 
 
 @router.post("/code_gen/jobs/{job_id}/pause")
@@ -327,7 +327,7 @@ def resume_code_gen_job(job_id: str, payload: dict[str, Any] = Body(default_fact
 
     # Allow resume from partial (preview completed) or paused state.
     # Use atomic transition to avoid race with concurrent status updates.
-    allowed_from_status = {"partial", "paused", "failed", "cancelled"}
+    allowed_from_status = {"partial", "paused"}
     if job.status == "running" or job.status == "queued":
         return JSONResponse(
             {"error": "Job already running or queued. Cancel it first before resuming."},
@@ -335,7 +335,7 @@ def resume_code_gen_job(job_id: str, payload: dict[str, Any] = Body(default_fact
         )
     if job.status not in allowed_from_status:
         return JSONResponse(
-            {"error": f"Cannot resume from status '{job.status}'. Resume is only allowed from preview (partial) or a failed/cancelled state."},
+            {"error": f"Cannot resume from status '{job.status}'. Resume is only allowed from paused or partial state."},
             status_code=400,
         )
 

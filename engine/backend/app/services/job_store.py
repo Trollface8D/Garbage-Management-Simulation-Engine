@@ -114,7 +114,7 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
         token_usage = payload.get("tokenUsage")
         cost_estimate = payload.get("costEstimate")
         with JOBS_LOCK:
-            if job.status in {"failed", "cancelled"}:
+            if job.status in {"failed", "cancelled", "paused"}:
                 logger.info("[job_store] ignored stage for %s jobId=%s stage=%s", job.status, job.job_id, stage)
                 return
             if job.status == "queued":
@@ -135,13 +135,14 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
     if event == "error" and isinstance(payload, dict):
         with JOBS_LOCK:
             job.error = str(payload.get("error") or "Unknown pipeline execution error.")
-            job.status = "failed"
+            # Treat pipeline errors as resumable pauses.
+            job.status = "paused"
             job.updated_at = utc_now_iso()
         logger.error("[job_store] error jobId=%s error=%s", job.job_id, job.error)
 
     if event == "result":
         with JOBS_LOCK:
-            if job.status in {"failed", "cancelled"}:
+            if job.status in {"failed", "cancelled", "paused"}:
                 logger.warning("[job_store] ignored result for %s jobId=%s", job.status, job.job_id)
                 return
             job.result = payload if isinstance(payload, dict) else None
