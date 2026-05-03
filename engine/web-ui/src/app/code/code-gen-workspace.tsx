@@ -70,7 +70,7 @@ function buildCodeGenWorkflowState({
     jobStatus === "queued" ||
     jobStatus === "awaiting_confirmation";
   const statusLabel = jobStatus || "—";
-  const canResume = (jobStatus === "cancelled" || jobStatus === "failed") && !isRunning;
+  const canResume = (jobStatus === "cancelled" || jobStatus === "failed" || jobStatus === "partial") && !isRunning;
 
   return {
     status: jobStatus,
@@ -90,7 +90,7 @@ function buildCodeGenWorkflowState({
     primaryActionTitle: isRunning && !canResume ? "Generation is running…" : undefined,
     primaryActionDisabled: isActivelyProcessing || (isRunning && !canResume),
     showProgressBar: isRunning || (typeof jobStatus === "string" && completedStages > 0),
-    policyConfirmReady: false,
+    policyConfirmReady: !isActivelyProcessing,
   };
 }
 
@@ -544,7 +544,8 @@ export default function CodeGenWorkspace({
         <button
           type="button"
           onClick={() => {
-            const isResume = job.status?.status === "cancelled" || job.status?.status === "failed";
+            const st = job.status?.status;
+            const isResume = st === "cancelled" || st === "failed" || st === "partial";
             void (isResume ? handleResume() : handleGenerate());
           }}
           disabled={workflow.primaryActionDisabled}
