@@ -66,7 +66,7 @@ const STAGE_ENTRIES: StageEntry[] = [
   },
 ];
 
-const NO_ROLLBACK_STAGES = new Set(["state1_entity_list", "state1b_policy_outline"]);
+const NO_ROLLBACK_STAGES = new Set<string>();
 
 type StageStatus = "pending" | "running" | "done" | "cancelled" | "failed" | "awaiting_confirmation";
 
