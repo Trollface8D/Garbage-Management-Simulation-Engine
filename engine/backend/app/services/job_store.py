@@ -37,9 +37,53 @@ def mark_cancelled(job_id: str) -> None:
         job = JOBS.get(job_id)
         if job is None or job.status in {"completed", "failed"}:
             return
+        if job.pause_requested:
+            job.status = "paused"
+            job.cancel_requested = False
+            job.pause_requested = False
+            job.updated_at = utc_now_iso()
+            logger.info("[job_store] paused (via cancel) jobId=%s", job_id)
+            return
         job.status = "cancelled"
         job.updated_at = utc_now_iso()
     logger.info("[job_store] cancelled jobId=%s", job_id)
+
+
+def request_pause(job_id: str) -> bool:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is None:
+            return False
+        if job.status in {"completed", "failed", "cancelled"}:
+            return False
+        job.cancel_requested = True
+        job.pause_requested = True
+        job.updated_at = utc_now_iso()
+    logger.info("[job_store] pause requested jobId=%s", job_id)
+    return True
+
+
+def is_pause_requested(job_id: str) -> bool:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        return bool(job and job.pause_requested)
+
+
+def try_transition(job_id: str, from_statuses: set[str], to_status: str) -> bool:
+    """Atomically transition a job's status if it's currently in one of from_statuses.
+
+    Returns True if transition succeeded, False if current status is not in from_statuses.
+    Must be called while holding JOBS_LOCK or from within a locked context.
+    """
+    job = JOBS.get(job_id)
+    if job is None:
+        return False
+    if job.status not in from_statuses:
+        return False
+    job.status = to_status
+    job.updated_at = utc_now_iso()
+    logger.info("[job_store] transitioned jobId=%s %s -> %s", job_id, job.status, to_status)
+    return True
 
 
 def touch_activity(job: JobRecord) -> None:
@@ -107,7 +151,7 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
 
     if event == "done":
         with JOBS_LOCK:
-            if job.status not in {"completed", "failed", "cancelled"}:
+            if job.status not in {"completed", "failed", "cancelled", "paused"}:
                 job.status = "completed"
             job.updated_at = utc_now_iso()
         logger.info("[job_store] done jobId=%s status=%s", job.job_id, job.status)
@@ -129,5 +173,6 @@ def serialize_job(job: JobRecord) -> dict[str, Any]:
         "error": job.error,
         "runDir": job.run_dir,
         "cancelRequested": job.cancel_requested,
+        "pauseRequested": job.pause_requested,
         "completedStages": list(job.completed_stages),
     }

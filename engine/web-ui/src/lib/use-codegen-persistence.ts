@@ -3,7 +3,7 @@
  * Enables recovery of job state and user selections across page reloads.
  */
 
-import type { CodeGenJobStatus, CodeGenPreviewResult, CodeGenPolicyOutline } from "@/lib/code-gen-api-client";
+import type { CodeGenJobStatus, CodeGenPreviewResult } from "@/lib/code-gen-api-client";
 import type { ArtifactFile } from "@/app/code/code-gen-workspace";
 import type { MapGraphPayload } from "@/lib/map-types";
 
@@ -21,9 +21,7 @@ export interface PersistedWorkspaceState {
   mapGraph: MapGraphPayload | null;
   mapStatus: string;
   selectedEntityIds: string[];
-  selectedPolicyIds: string[];
-  // Back-compat: used to be string[]; now store CodeGenPolicyOutline[]
-  manualPolicies: CodeGenPolicyOutline[];
+  // selectedPolicyIds and manualPolicies are now managed at page level.
   artifactFiles: ArtifactFile[];
   previewText: string;
 }

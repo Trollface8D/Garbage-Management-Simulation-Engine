@@ -43,6 +43,7 @@ import {
     importWorkspaceArchive,
     suggestMetrics,
     type SuggestedMetric,
+    type CodeGenPolicyOutline,
 } from "@/lib/code-gen-api-client";
 import BackToHome from "../components/back-to-home";
 import { makeSlug, makeUniqueId, buildChunkTextsFromRawExtraction, extractRawExtractionFromItem } from "@/app/code/utils-entity-metric";
@@ -148,6 +149,8 @@ export default function CodePage() {
     const [importError, setImportError] = useState<string>("");
     const [isCodeGenRunning, setIsCodeGenRunning] = useState<boolean>(false);
     const [selectedModel, setSelectedModel] = useState<string>("");
+    const [selectedPolicyIds, setSelectedPolicyIds] = useState<Set<string>>(new Set());
+    const [manualPolicies, setManualPolicies] = useState<CodeGenPolicyOutline[]>([]);
     const [manualEntityName, setManualEntityName] = useState<string>("");
     const [manualEntityError, setManualEntityError] = useState<string>("");
     const [manualMetricName, setManualMetricName] = useState<string>("");
@@ -368,6 +371,16 @@ export default function CodePage() {
             if (typeof saved.jobId === "string") {
                 setCurrentJobId(saved.jobId || null);
             }
+            if (Array.isArray(saved.selectedPolicyIds)) {
+                setSelectedPolicyIds(
+                    new Set((saved.selectedPolicyIds as unknown[]).filter(
+                        (v): v is string => typeof v === "string" && v.length > 0,
+                    )),
+                );
+            }
+            if (Array.isArray(saved.manualPolicies)) {
+                setManualPolicies(saved.manualPolicies as CodeGenPolicyOutline[]);
+            }
         } catch {
             // Ignore corrupted snapshot.
         }
@@ -390,6 +403,8 @@ export default function CodePage() {
             metricsExtracted,
             artifactFiles,
             jobId: currentJobId,
+            selectedPolicyIds: Array.from(selectedPolicyIds),
+            manualPolicies,
         };
         persistSnapshot(snapshot);
     }, [
@@ -405,6 +420,8 @@ export default function CodePage() {
         metricsExtracted,
         artifactFiles,
         currentJobId,
+        selectedPolicyIds,
+        manualPolicies,
         persistSnapshot,
     ]);
 
@@ -485,6 +502,8 @@ export default function CodePage() {
         metricsExtracted,
         artifactFiles,
         jobId: currentJobId,
+        selectedPolicyIds: Array.from(selectedPolicyIds),
+        manualPolicies,
     });
 
     const applyImportedWorkspaceSnapshot = (snapshot: ImportedWorkspaceSnapshot) => {
@@ -498,6 +517,8 @@ export default function CodePage() {
         setMetricsExtracted(snapshot.metricsExtracted);
         setArtifactFiles(snapshot.artifactFiles);
         setCurrentJobId(snapshot.jobId);
+        if (snapshot.selectedPolicyIds) setSelectedPolicyIds(snapshot.selectedPolicyIds);
+        if (snapshot.manualPolicies) setManualPolicies(snapshot.manualPolicies);
 
         setManualEntityName("");
         setManualEntityError("");
@@ -1313,6 +1334,10 @@ export default function CodePage() {
                         onJobIdChange={setCurrentJobId}
                         artifactFiles={artifactFiles}
                         onArtifactFilesChange={setArtifactFiles}
+                        selectedPolicyIds={selectedPolicyIds}
+                        onPolicyIdsChange={setSelectedPolicyIds}
+                        manualPolicies={manualPolicies}
+                        onManualPoliciesChange={setManualPolicies}
                     />
 
                     <SimulationViewer

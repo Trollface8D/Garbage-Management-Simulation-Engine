@@ -28,7 +28,9 @@ from ..services.job_store import (
     JOBS_LOCK,
     emit_job_event,
     request_cancel,
+    request_pause,
     serialize_job,
+    try_transition,
     utc_now_iso,
 )
 
@@ -276,6 +278,19 @@ def cancel_code_gen_job(job_id: str):
     return {"jobId": job_id, "cancelRequested": accepted}
 
 
+@router.post("/code_gen/jobs/{job_id}/pause")
+def pause_code_gen_job(job_id: str):
+    """Signal the worker to stop after the current stage and set status to 'paused'.
+
+    Uses ``request_pause`` which sets ``pause_requested=True`` alongside
+    ``cancel_requested=True`` so the worker's ``JobCancelledError`` handler
+    calls ``mark_paused`` (via ``mark_cancelled``) instead of hard-cancelling.
+    The job can be resumed via ``POST /code_gen/jobs/{id}/resume``.
+    """
+    accepted = request_pause(job_id)
+    return {"jobId": job_id, "pauseRequested": accepted}
+
+
 @router.post("/code_gen/jobs/{job_id}/resume")
 def resume_code_gen_job(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
     """Re-run the worker from the next unfinished stage.
@@ -310,16 +325,33 @@ def resume_code_gen_job(job_id: str, payload: dict[str, Any] = Body(default_fact
         with JOBS_LOCK:
             JOBS[job_id] = job
 
-    if job.status in {"running", "queued"}:
+    # Allow resume from partial (preview completed) or paused state.
+    # Use atomic transition to avoid race with concurrent status updates.
+    allowed_from_status = {"partial", "paused", "failed", "cancelled"}
+    if job.status == "running" or job.status == "queued":
         return JSONResponse(
-            {"error": "Job already running or queued."},
+            {"error": "Job already running or queued. Cancel it first before resuming."},
             status_code=409,
         )
+    if job.status not in allowed_from_status:
+        return JSONResponse(
+            {"error": f"Cannot resume from status '{job.status}'. Resume is only allowed from preview (partial) or a failed/cancelled state."},
+            status_code=400,
+        )
 
-    job.status = "queued"
     job.cancel_requested = False
     job.error = None
     job.updated_at = utc_now_iso()
+
+    # Transition status to queued atomically
+    with JOBS_LOCK:
+        if not try_transition(job_id, allowed_from_status, "queued"):
+            current_job = JOBS.get(job_id)
+            current_status = current_job.status if current_job else "unknown"
+            return JSONResponse(
+                {"error": f"Status changed before resume could acquire lock. Current status: {current_status}. Please retry."},
+                status_code=409,
+            )
 
     # Apply optional selection overrides on top of the saved manifest. We
     # rewrite inputs.json so a backend restart mid-run picks up the refined
@@ -476,6 +508,10 @@ def preview_entities(job_id: str):
     use_env_model_overrides = bool(manifest.get("useEnvModelOverrides", True))
 
     try:
+        with JOBS_LOCK:
+            job.status = "running"
+            job.current_stage = "state1_entity_list"
+            job.updated_at = utc_now_iso()
         state1_payload = run_stage_inline(
             stage="state1_entity_list",
             job=job,
@@ -484,6 +520,9 @@ def preview_entities(job_id: str):
             use_env_model_overrides=use_env_model_overrides,
             inputs=inputs,
         )
+        with JOBS_LOCK:
+            job.current_stage = "state1b_policy_outline"
+            job.updated_at = utc_now_iso()
         state1b_payload = run_stage_inline(
             stage="state1b_policy_outline",
             job=job,
@@ -575,29 +614,32 @@ def _summarize_code_gen_stage(stage: str, payload: dict[str, Any]) -> dict[str, 
             summary["policyCount"] = len(policies)
             preview = {"policies": policies[:12]}
         elif stage == "state1c_entity_dependencies":
-            deps = payload.get("dependencies") or []
-            summary["edgeCount"] = len(deps)
-            preview = {"dependencies": deps[:12]}
+            edges = payload.get("edges") or []
+            summary["edgeCount"] = len(edges)
+            preview = {"edges": edges[:12], "order": payload.get("order") or []}
         elif stage == "state2_code_entity_object":
-            files = payload.get("files") or []
-            summary["fileCount"] = len(files)
-            preview = {"files": [{"path": f.get("path"), "kind": f.get("kind")} for f in files[:12]]}
+            iterations = payload.get("iterations") or []
+            summary["iterationCount"] = payload.get("iterationCount") or len(iterations)
+            preview = {"iterations": [{"iterId": it.get("iterId"), "filename": it.get("filename"), "validationErrors": (it.get("validation") or {}).get("errors") or []} for it in iterations[:12]]}
         elif stage == "state2v_validate_protocol":
-            errs = payload.get("errors") or []
-            summary["errorCount"] = len(errs)
-            preview = {"errors": errs[:12]}
+            failures = payload.get("failures") or []
+            summary["iterationCount"] = payload.get("iterations") or 0
+            summary["failureCount"] = len(failures)
+            preview = {"failures": failures[:12]}
         elif stage == "state3_code_environment":
-            files = payload.get("files") or []
-            summary["fileCount"] = len(files)
-            preview = {"files": [{"path": f.get("path"), "kind": f.get("kind")} for f in files[:12]]}
+            validation_errors = (payload.get("validation") or {}).get("errors") or []
+            summary["hasCode"] = bool(payload.get("code"))
+            summary["validationErrorCount"] = len(validation_errors)
+            preview = {"filename": payload.get("filename"), "mapAvailable": payload.get("mapAvailable"), "validationErrors": validation_errors[:12]}
         elif stage == "state4_code_policy":
-            files = payload.get("files") or []
-            summary["fileCount"] = len(files)
-            preview = {"files": [{"path": f.get("path"), "kind": f.get("kind")} for f in files[:12]]}
+            iterations = payload.get("iterations") or []
+            summary["iterationCount"] = payload.get("iterationCount") or len(iterations)
+            preview = {"iterations": [{"iterId": it.get("iterId"), "filename": it.get("filename")} for it in iterations[:12]]}
         elif stage == "state4v_validate_policy":
-            errs = payload.get("errors") or []
-            summary["errorCount"] = len(errs)
-            preview = {"errors": errs[:12]}
+            failures = payload.get("failures") or []
+            summary["iterationCount"] = payload.get("iterations") or 0
+            summary["failureCount"] = len(failures)
+            preview = {"failures": failures[:12]}
         elif stage == "finalize_bundle":
             files = payload.get("files") or []
             summary["fileCount"] = len(files)
