@@ -494,6 +494,13 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
             "validation": {"errors": validation_errors},
         }
         checkpoints.save_iteration(ctx.job_id, "state2_code_entity_object", entity_id, payload)
+        # Write .py file immediately so artifacts are available before finalize.
+        try:
+            entities_dir = checkpoints.artifact_root(ctx.job_id) / "entities"
+            entities_dir.mkdir(parents=True, exist_ok=True)
+            (entities_dir / filename).write_text(code or "", encoding="utf-8")
+        except Exception as _exc:
+            logger.warning("[code_gen][state2] failed to write early artifact %s: %s", filename, _exc)
         iteration_summaries.append(
             {"iterId": entity_id, "filename": filename, "validation": payload["validation"]}
         )
@@ -563,6 +570,15 @@ def _stage_state3_code_environment(ctx: StageContext) -> dict[str, Any]:
             "state3_code_environment",
             f"state3: validation failed (attempt {attempt + 1}/2): {retry_error}",
         )
+
+    # Write .py file immediately so the artifact is available before finalize.
+    if code.strip():
+        try:
+            env_path = checkpoints.artifact_root(ctx.job_id) / "environment.py"
+            env_path.parent.mkdir(parents=True, exist_ok=True)
+            env_path.write_text(code, encoding="utf-8")
+        except Exception as _exc:
+            logger.warning("[code_gen][state3] failed to write early artifact environment.py: %s", _exc)
 
     return {
         "stage": "state3_code_environment",
@@ -651,6 +667,13 @@ def _stage_state4_code_policy(ctx: StageContext) -> dict[str, Any]:
             "validation": {"errors": errors},
         }
         checkpoints.save_iteration(ctx.job_id, "state4_code_policy", rule_id, payload)
+        # Write .py file immediately so artifacts are available before finalize.
+        try:
+            policies_dir = checkpoints.artifact_root(ctx.job_id) / "policies"
+            policies_dir.mkdir(parents=True, exist_ok=True)
+            (policies_dir / filename).write_text(code or "", encoding="utf-8")
+        except Exception as _exc:
+            logger.warning("[code_gen][state4] failed to write early artifact %s: %s", filename, _exc)
         iteration_summaries.append({"iterId": rule_id, "filename": filename})
         touch_activity(ctx.job)
 
