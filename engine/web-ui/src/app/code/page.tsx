@@ -45,6 +45,7 @@ import {
     type SuggestedMetric,
     type CodeGenPolicyOutline,
 } from "@/lib/code-gen-api-client";
+import { renameComponent } from "@/lib/pm-storage";
 import BackToHome from "../components/back-to-home";
 import { makeSlug, makeUniqueId, buildChunkTextsFromRawExtraction, extractRawExtractionFromItem } from "@/app/code/utils-entity-metric";
 import { useEntityExtraction } from "@/app/code/use-entity-extraction";
@@ -682,6 +683,17 @@ export default function CodePage() {
         hookHandleToggleMapSelection(id, inputsLocked);
     };
 
+    const handleRenameComponent = (targetId: string, newTitle: string) => {
+        void (async () => {
+            try {
+                await renameComponent(targetId, newTitle);
+                await refreshPmData();
+            } catch {
+                setImportError("Unable to rename component.");
+            }
+        })();
+    };
+
     const handleDeleteComponent = (targetId: string) => {
         void (async () => {
             try {
@@ -1224,6 +1236,7 @@ export default function CodePage() {
                         onCreate={handleCreateFromEmptySection}
                         selectedIds={selectedCausalIds}
                         onToggleSelect={handleToggleCausalSelection}
+                        onRename={handleRenameComponent}
                     />
 
                     <UsedItemsSection
@@ -1234,6 +1247,7 @@ export default function CodePage() {
                         onCreate={handleCreateFromEmptySection}
                         selectedIds={selectedMapId ? new Set([selectedMapId]) : undefined}
                         onToggleSelect={handleToggleMapSelection}
+                        onRename={handleRenameComponent}
                     />
 
                     <EntityExtractionPanel

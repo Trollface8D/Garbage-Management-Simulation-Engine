@@ -17,6 +17,7 @@ type UsedItemsSectionProps = {
   onCreate: (category: "Causal" | "Map") => void;
   selectedIds?: ReadonlySet<string>;
   onToggleSelect?: (id: string) => void;
+  onRename?: (id: string, newTitle: string) => void;
 };
 
 export default function UsedItemsSection({
@@ -27,6 +28,7 @@ export default function UsedItemsSection({
   onCreate,
   selectedIds,
   onToggleSelect,
+  onRename,
 }: UsedItemsSectionProps) {
   const isCausal = category === "Causal";
   const actionLabel = isCausal ? "Create Causal Extraction" : "Create Map Extraction";
@@ -73,6 +75,7 @@ export default function UsedItemsSection({
                 onDelete={() => onDelete(item.id)}
                 selected={isSelected}
                 onSelect={handleSelect}
+                onRename={onRename ? (newTitle) => onRename(item.id, newTitle) : undefined}
               />
             ) : (
               <MapUsedCard
@@ -83,6 +86,7 @@ export default function UsedItemsSection({
                 onDelete={() => onDelete(item.id)}
                 selected={isSelected}
                 onSelect={handleSelect}
+                onRename={onRename ? (newTitle) => onRename(item.id, newTitle) : undefined}
               />
             );
           })}

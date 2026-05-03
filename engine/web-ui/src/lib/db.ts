@@ -24,6 +24,7 @@ export {
   restoreProject,
   softDeleteComponent,
   softDeleteProject,
+  updateComponentTitle,
 } from "./db-modules/projects-components";
 
 export {
