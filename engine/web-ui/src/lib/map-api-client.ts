@@ -91,6 +91,45 @@ export async function fetchMapExtractResult(jobId: string): Promise<MapExtractio
   return (await response.json()) as MapExtractionResult;
 }
 
+export async function initializeMapExtractJobWithFiles(
+  componentId: string,
+  overviewMapFiles: File[],
+  binLocationFiles: File[],
+): Promise<string> {
+  const formData = new FormData();
+  formData.set("componentId", componentId);
+  formData.set("overviewAdditionalInformation", "");
+  formData.set("binAdditionalInformation", "");
+
+  for (const file of overviewMapFiles) {
+    formData.append("overviewMapFiles", file);
+  }
+
+  for (const file of binLocationFiles) {
+    formData.append("binLocationFiles", file);
+  }
+
+  const response = await fetch(getExtractStartEndpoint(), {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const startPayload = (await response.json()) as MapExtractionJobStart;
+  const jobId = String(startPayload.jobId || "").trim();
+  if (!jobId) {
+    throw new Error("Failed to initialize map extract job.");
+  }
+
+  return jobId;
+}
+
 export async function extractMapGraph(
   input: MapExtractionRequest,
   options?: {

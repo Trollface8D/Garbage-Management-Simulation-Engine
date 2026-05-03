@@ -4,7 +4,7 @@ from uuid import uuid4
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
-from ...infra.io_utils import resolve_api_key
+from ...infra.io_utils import is_auth_available, resolve_api_key
 from ...infra.paths import DEFAULT_MODEL_NAME
 from ..models.job_models import JobRecord
 from ..services.job_runner import run_job_worker
@@ -25,12 +25,12 @@ async def create_pipeline_job(
     audioFile: UploadFile | None = File(default=None),
     textFile: UploadFile | None = File(default=None),
 ):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
-            {"error": "API key is required. Set API_KEY or GOOGLE_API_KEY in your environment."},
+            {"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."},
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     if inputMode == "text" and not inputText.strip():
         return JSONResponse({"error": "Input text is required when input mode is text."}, status_code=400)

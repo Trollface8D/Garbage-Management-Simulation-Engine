@@ -1,9 +1,13 @@
+import { type KeyboardEvent } from "react";
+
 type UsedItemCardProps = {
   title: string;
   project: string;
   lastEdited: string;
   onDelete: () => void;
   typeLabel: "Causal" | "Map";
+  selected?: boolean;
+  onSelect?: () => void;
 };
 
 function FileThumbPlaceholder() {
@@ -42,9 +46,38 @@ function UsedItemCard({
   project,
   lastEdited,
   onDelete,
+  selected,
+  onSelect,
 }: UsedItemCardProps) {
+  const interactive = typeof onSelect === "function";
+  const baseClasses =
+    "group overflow-hidden rounded-xl border bg-neutral-900/60 shadow-[0_0_0_1px_rgba(255,255,255,0.01)] transition duration-200 hover:scale-[1.02]";
+  const selectedClasses = selected
+    ? "border-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.45)]"
+    : "border-neutral-700 hover:border-sky-500 hover:shadow-[0_0_0_2px_rgba(14,165,233,0.35)]";
+  const cursorClass = interactive ? "cursor-pointer" : "";
+
+  const handleClick = () => {
+    if (onSelect) onSelect();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!onSelect) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect();
+    }
+  };
+
   return (
-    <article className="group overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900/60 shadow-[0_0_0_1px_rgba(255,255,255,0.01)] transition duration-200 hover:scale-[1.02] hover:border-sky-500 hover:shadow-[0_0_0_2px_rgba(14,165,233,0.35)]">
+    <article
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      aria-pressed={interactive ? Boolean(selected) : undefined}
+      onClick={interactive ? handleClick : undefined}
+      onKeyDown={interactive ? handleKeyDown : undefined}
+      className={`${baseClasses} ${selectedClasses} ${cursorClass}`.trim()}
+    >
       <FileThumbPlaceholder />
 
       <div className="flex items-end justify-between gap-3 bg-neutral-900 px-4 py-3">
@@ -59,7 +92,10 @@ function UsedItemCard({
 
         <button
           type="button"
-          onClick={onDelete}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
           className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-red-500/70 hover:text-red-200"
           aria-label={`Delete ${title}`}
         >

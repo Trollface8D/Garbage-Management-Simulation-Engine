@@ -26,9 +26,74 @@ class GeminiCancelledError(RuntimeError):
 
 
 class GeminiGateway:
-    def __init__(self, *, api_key: str, model_name: str) -> None:
-        self.client = genai.Client(api_key=api_key)
+    def __init__(self, *, api_key: str | None, model_name: str) -> None:
+        if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+            project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("VERTEX_AI_PROJECT")
+            location = os.getenv("VERTEX_AI_LOCATION") or os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
+            self.client = genai.Client(vertexai=True, project=project, location=location)
+            logger.info("[gemini] auth=vertex_ai project=%s location=%s", project, location)
+        else:
+            if not api_key:
+                raise ValueError("No auth configured: set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY")
+            self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
+
+    def create_cache(
+        self,
+        *,
+        text_parts: list[str],
+        ttl_seconds: int = 1800,
+    ) -> str | None:
+        """Create an explicit Gemini context cache from text parts.
+
+        Returns the cache name on success, ``None`` on any failure (most
+        commonly: stable content too small to qualify for explicit
+        caching). Callers should fall back to inline content when ``None``
+        is returned — no behavior change, just no token discount.
+        """
+        cleaned = [t for t in (s.strip() for s in text_parts) if t]
+        if not cleaned:
+            return None
+        try:
+            from google.genai.types import CreateCachedContentConfig, Content
+        except ImportError:
+            logger.warning("[gemini] cache types not importable — skipping cache")
+            return None
+        try:
+            content = Content(
+                role="user",
+                parts=[Part.from_text(text=t) for t in cleaned],
+            )
+            cache = self.client.caches.create(
+                model=self.model_name,
+                config=CreateCachedContentConfig(
+                    contents=[content],
+                    ttl=f"{int(ttl_seconds)}s",
+                ),
+            )
+            name = getattr(cache, "name", None)
+            if name:
+                logger.info(
+                    "[gemini] cache created name=%s ttl=%ss bytes=%s",
+                    name,
+                    ttl_seconds,
+                    sum(len(t) for t in cleaned),
+                )
+            return name
+        except Exception as exc:  # noqa: BLE001
+            # Common failure: content too small for explicit cache (Gemini
+            # has a minimum token threshold). Don't escalate — just log
+            # and let callers proceed without caching.
+            logger.warning("[gemini] cache create failed (falling back inline): %s", exc)
+            return None
+
+    def delete_cache(self, cache_name: str) -> None:
+        """Best-effort cache cleanup. Silent on failure."""
+        try:
+            self.client.caches.delete(name=cache_name)
+            logger.info("[gemini] cache deleted name=%s", cache_name)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[gemini] cache delete failed name=%s err=%s", cache_name, exc)
 
     def generate_text(
         self,
@@ -40,6 +105,7 @@ class GeminiGateway:
         usage_collector: dict[str, int] | None = None,
         on_retry: Callable[[dict[str, Any]], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
+        cached_content: str | None = None,
     ) -> str:
         content_parts: list[Part] = [Part.from_text(text=prompt)]
         if parts:
@@ -72,6 +138,8 @@ class GeminiGateway:
             config_kwargs["response_mime_type"] = "application/json"
             if response_schema is not None:
                 config_kwargs["response_schema"] = response_schema
+        if cached_content:
+            config_kwargs["cached_content"] = cached_content
 
         max_attempts = _safe_int_env("GEMINI_MAX_ATTEMPTS", 4, minimum=1, maximum=10)
         base_delay = 1.5

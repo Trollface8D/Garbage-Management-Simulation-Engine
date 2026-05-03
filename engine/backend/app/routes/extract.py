@@ -2,6 +2,7 @@ import mimetypes
 import os
 import json
 import logging
+import re
 import time
 from io import BytesIO
 from typing import Any
@@ -12,7 +13,7 @@ from fastapi.responses import JSONResponse
 from google.genai.types import Part
 
 from ...infra.gemini_client import GeminiGateway
-from ...infra.io_utils import read_text, resolve_api_key
+from ...infra.io_utils import is_auth_available, read_text, resolve_api_key
 from ...infra.paths import BACKEND_DIR, AUDIO_MIME_MAP, DEFAULT_MODEL_NAME
 from ..services.causal_store import (
     CausalStoreConstraintError,
@@ -30,6 +31,7 @@ from ..services.structure_extractor import (
 
 router = APIRouter(tags=["extract"])
 FOLLOW_UP_PROMPT_PATH = BACKEND_DIR / "prompt" / "follow_up.txt"
+CHUNKING_PROMPT_PATH = BACKEND_DIR / "prompt" / "causal_chunking.txt"
 logger = logging.getLogger(__name__)
 
 
@@ -182,6 +184,184 @@ def _normalize_follow_up_records(payload: Any) -> list[dict[str, Any]]:
     return records
 
 
+def _normalize_chunk_records(payload: Any) -> list[dict[str, str]]:
+    raw_records: list[Any]
+    if isinstance(payload, dict) and isinstance(payload.get("chunks"), list):
+        raw_records = payload.get("chunks")
+    elif isinstance(payload, list):
+        raw_records = payload
+    else:
+        raw_records = []
+
+    records: list[dict[str, str]] = []
+    for entry in raw_records:
+        if not isinstance(entry, dict):
+            continue
+
+        title = str(entry.get("title") or "").strip()
+        context = str(entry.get("context") or "").strip()
+        chunk_text = str(
+            entry.get("chunk_text")
+            or entry.get("chunkText")
+            or entry.get("text")
+            or entry.get("content")
+            or ""
+        ).strip()
+
+        if not chunk_text:
+            continue
+
+        records.append(
+            {
+                "title": title,
+                "context": context,
+                "chunk_text": chunk_text,
+            }
+        )
+
+    return records
+
+
+def _compact_whitespace(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _chunk_exists_in_source(chunk_text: str, source_text: str) -> bool:
+    normalized_chunk = _compact_whitespace(chunk_text)
+    if not normalized_chunk:
+        return False
+    normalized_source = _compact_whitespace(source_text)
+    return normalized_chunk in normalized_source
+
+
+@router.post("/chunk")
+async def chunk_text_with_gemini(
+    request: Request,
+    inputText: str | None = Form(default=None),
+    model: str = Form(DEFAULT_MODEL_NAME),
+):
+    if not is_auth_available():
+        return JSONResponse(
+            {
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
+            },
+            status_code=500,
+        )
+    api_key = resolve_api_key()
+
+    json_text: str | None = None
+    json_payload: dict[str, Any] = {}
+    try:
+        json_text, json_payload = await _resolve_raw_text_from_request(request)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    if inputText and json_text:
+        return JSONResponse({"error": "Provide either inputText form value or JSON text, not both."}, status_code=400)
+
+    input_text = (inputText or json_text or "").strip()
+    if not input_text:
+        return JSONResponse({"error": "No text content provided for chunking."}, status_code=400)
+
+    model_name = (json_payload.get("model") if isinstance(json_payload.get("model"), str) else model).strip()
+    if not model_name:
+        model_name = DEFAULT_MODEL_NAME
+
+    try:
+        prompt_template = read_text(CHUNKING_PROMPT_PATH).strip()
+    except OSError as exc:
+        logger.exception("Failed to load chunking prompt template")
+        return JSONResponse({"error": f"Failed to initialize chunking prompt: {exc}"}, status_code=500)
+
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "chunks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "context": {"type": "string"},
+                        "chunk_text": {"type": "string"},
+                    },
+                    "required": ["chunk_text"],
+                },
+            }
+        },
+        "required": ["chunks"],
+    }
+
+    prompt = f"{prompt_template}\n\nOriginal transcript:\n{input_text}"
+
+    gateway = GeminiGateway(api_key=api_key, model_name=model_name)
+    try:
+        raw_text = gateway.generate_text(
+            prompt,
+            response_json=True,
+            response_schema=response_schema,
+        ).strip()
+    except Exception as exc:  # pragma: no cover - provider side errors are dynamic
+        message = str(exc)
+        lowered = message.lower()
+        if any(token in lowered for token in ("429", "rate limit", "resource exhausted", "quota")):
+            return JSONResponse({"error": "Gemini API rate limit exceeded"}, status_code=429)
+        if any(token in lowered for token in ("503", "unavailable", "high demand", "temporarily")):
+            logger.exception("Chunking request to Gemini is temporarily unavailable")
+            return JSONResponse(
+                {"error": "Chunking service is temporarily busy. Please retry shortly."},
+                status_code=503,
+            )
+        logger.exception("Chunking request to Gemini failed")
+        return JSONResponse({"error": "Chunking failed.", "detail": message}, status_code=502)
+
+    if not raw_text:
+        return JSONResponse({"error": "Gemini returned empty chunk payload."}, status_code=502)
+
+    try:
+        parsed_payload = GeminiGateway.parse_json_relaxed(raw_text)
+    except ValueError:
+        logger.exception("Failed to parse Gemini chunk JSON output")
+        return JSONResponse(
+            {
+                "error": "Chunking returned an invalid response.",
+            },
+            status_code=502,
+        )
+
+    normalized_records = _normalize_chunk_records(parsed_payload)
+    if not normalized_records:
+        return JSONResponse({"error": "Chunking returned no chunks."}, status_code=502)
+
+    seen_chunks: set[str] = set()
+    filtered_records: list[dict[str, str]] = []
+    for record in normalized_records:
+        chunk_text = record["chunk_text"]
+        compact_chunk = _compact_whitespace(chunk_text)
+        if compact_chunk in seen_chunks:
+            continue
+        if not _chunk_exists_in_source(chunk_text, input_text):
+            continue
+        seen_chunks.add(compact_chunk)
+        filtered_records.append(record)
+
+    if not filtered_records:
+        return JSONResponse(
+            {
+                "error": "Chunking output did not contain verifiable original-text chunks.",
+                "detail": "Every chunk must be directly present in the provided source text.",
+            },
+            status_code=502,
+        )
+
+    return {
+        "model": model_name,
+        "chunks": [record["chunk_text"] for record in filtered_records],
+        "records": filtered_records,
+        "droppedNonOriginal": len(normalized_records) - len(filtered_records),
+    }
+
+
 @router.post("/extract")
 async def extract_structure(
     request: Request,
@@ -192,14 +372,14 @@ async def extract_structure(
     chunkId: str | None = Form(default=None),
     dbPath: str | None = Form(default=None),
 ):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     json_text: str | None = None
     json_payload: dict[str, Any] = {}
@@ -292,14 +472,14 @@ async def transcribe_audio(
     audioFile: UploadFile = File(...),
     model: str | None = Form(default=None),
 ):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     file_bytes = await audioFile.read()
     if not file_bytes:
@@ -363,14 +543,14 @@ async def transcribe_audio(
 
 @router.post("/follow-up")
 async def generate_follow_up_questions(request: Request):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     try:
         payload = await request.json()
@@ -436,14 +616,14 @@ async def transcribe_audio(
     audioFile: UploadFile = File(...),
     model: str | None = Form(default=None),
 ):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     file_bytes = await audioFile.read()
     if not file_bytes:
@@ -506,14 +686,14 @@ async def transcribe_audio(
 
 @router.post("/follow-up")
 async def generate_follow_up_questions(request: Request):
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
             {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
+                "error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY.",
             },
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     try:
         payload = await request.json()

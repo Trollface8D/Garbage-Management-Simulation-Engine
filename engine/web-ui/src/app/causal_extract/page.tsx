@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BackToHome from "../components/back-to-home";
+import ModelPicker from "../components/model-picker";
 import ProjectPageHeader from "../components/project-page-header";
 import {
     findComponentById as findSeedComponentById,
@@ -272,6 +273,7 @@ function CausalExtractHomeContent() {
     const [uploadStatus, setUploadStatus] = useState<string>("");
     const [uploadProcessLog, setUploadProcessLog] = useState<UploadProcessLogEntry[]>([]);
     const [isHydratingItems, setIsHydratingItems] = useState<boolean>(false);
+    const [selectedModel, setSelectedModel] = useState<string>("");
     const filePickerRef = useRef<HTMLInputElement | null>(null);
     const importPickerRef = useRef<HTMLInputElement | null>(null);
 
@@ -705,6 +707,7 @@ function CausalExtractHomeContent() {
                     componentId: componentId ?? "",
                     label: "file upload",
                     file,
+                    model: selectedModel,
                 });
 
                 const preview = normalizeLogPreview(saved.textContent || "");
@@ -865,12 +868,15 @@ function CausalExtractHomeContent() {
                     projectLabelClassName="text-sm font-semibold text-neutral-300"
                     projectValueClassName="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100"
                     actions={
-                        <BackToHome
-                            href={projectBackHref}
-                            label="Back to project"
-                            containerClassName=""
-                            className="rounded-md px-3 py-2"
-                        />
+                        <div className="flex flex-wrap items-center gap-3">
+                            <ModelPicker value={selectedModel} onChange={setSelectedModel} />
+                            <BackToHome
+                                href={projectBackHref}
+                                label="Back to project"
+                                containerClassName=""
+                                className="rounded-md px-3 py-2"
+                            />
+                        </div>
                     }
                 />
 

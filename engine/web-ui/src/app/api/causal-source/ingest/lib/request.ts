@@ -7,6 +7,7 @@ export async function parseIngestRequest(request: Request): Promise<ParsedIngest
     const projectId = String(formData.get("projectId") || "").trim();
     const componentId = String(formData.get("componentId") || "").trim();
     const label = String(formData.get("label") || "file upload").trim() || "file upload";
+    const model = String(formData.get("model") || "").trim();
     const file = formData.get("file");
 
     if (!projectId || !componentId) {
@@ -25,6 +26,7 @@ export async function parseIngestRequest(request: Request): Promise<ParsedIngest
         projectId,
         componentId,
         label,
+        model,
         file,
     };
 }

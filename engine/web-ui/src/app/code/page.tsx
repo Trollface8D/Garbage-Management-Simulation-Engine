@@ -1,10 +1,22 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
-import { type ChangeEvent, type ComponentType, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import ProjectPageHeader from "../components/project-page-header";
 import UsedItemsSection from "@/app/code/used-items-section";
+import CodeGenWorkspace, { type ArtifactFile } from "@/app/code/code-gen-workspace";
+import SimulationViewer from "@/app/code/simulation-viewer";
+import FloatingWorkspaceToolbar from "@/app/code/floating-workspace-toolbar";
+import EntityExtractionPanel, { type GeneratedEntity } from "@/app/code/entity-extraction-panel";
+import MetricsSelectionPanel, { type WorkspaceMetric } from "@/app/code/metrics-selection-panel";
+import JsonImportHandler, {
+    extractMapGraphPayload,
+    inferImportItemCategory,
+    normalizeImportPayload,
+    normalizeExtractionPayload,
+    type JsonImportPayload,
+    type JsonImportItem,
+} from "@/app/code/json-import-handler";
 import {
     categoryPath,
     findComponentById as findSeedComponentById,
@@ -15,6 +27,8 @@ import {
 import {
     createComponent,
     createProject,
+    loadCausalArtifactsForItem,
+    loadCausalSourceItems,
     loadComponents,
     loadProjects,
     saveCausalArtifactsForItem,
@@ -23,116 +37,92 @@ import {
     softDeleteComponent,
     type ExtractionPayloadRecord,
 } from "@/lib/pm-storage";
+import {
+    groupEntitiesWithGemini,
+    exportWorkspaceArchive,
+    importWorkspaceArchive,
+    suggestMetrics,
+    type SuggestedMetric,
+} from "@/lib/code-gen-api-client";
 import BackToHome from "../components/back-to-home";
+import { makeSlug, makeUniqueId, buildChunkTextsFromRawExtraction, extractRawExtractionFromItem } from "@/app/code/utils-entity-metric";
+import { useEntityExtraction } from "@/app/code/use-entity-extraction";
+import JSZip from "jszip";
+import { useMetricsManagement } from "@/app/code/use-metrics-management";
+import { useSourceSelection } from "@/app/code/use-source-selection";
+import { useArchiveManager, type ImportedWorkspaceSnapshot } from "@/app/code/use-archive-manager";
+import { useWorkspacePersistence } from "@/app/code/use-workspace-persistence";
+import { type MapGraphPayload } from "@/lib/map-types";
 
-type WordCloudWord = {
-    text: string;
-    value: number;
+
+type CausalComponentRef = { projectId: string; componentId: string };
+type UsedItem = { id: string; title: string; project: string; lastEdited: string };
+type ImportedMapWorkspaceSnapshot = {
+    graph: MapGraphPayload;
+    jobId: string;
+    selectedModel: string;
+    overviewAdditionalInfo: string;
+    binAdditionalInfo: string;
+    overviewFileNames: string[];
+    binFileNames: string[];
+    changeLog: string[];
+    editStatus: string;
+    selection: null;
 };
 
-type WordCloudProps = {
-    words: WordCloudWord[];
-    options?: Record<string, unknown>;
-    minSize?: [number, number];
-    size?: [number, number];
-};
+async function aggregateEntitiesFromCausalComponents(
+    refs: CausalComponentRef[],
+): Promise<GeneratedEntity[]> {
+    const counts = new Map<string, number>();
+    let sourceCount = 0;
+    let artifactCount = 0;
+    let relationCount = 0;
 
-const ReactWordcloud = dynamic(
-    () => import("react-wordcloud").then((mod) => (mod && (mod.default ?? mod))),
-    { ssr: false },
-) as unknown as ComponentType<WordCloudProps>;
-
-type GeneratedEntity = {
-    id: string;
-    name: string;
-    count: number;
-    selected: boolean;
-};
-
-type JsonImportItem = {
-    id?: string;
-    title?: string;
-    name?: string;
-    projectId?: string;
-    projectName?: string;
-    project?: string;
-    lastEdited?: string;
-    category?: string;
-    sourceText?: string;
-    rawExtraction?: ExtractionPayloadRecord[];
-    extracted?: GeminiExtractedRelation[];
-    pattern_type?: string;
-    sentence_type?: string;
-    marked_type?: string;
-    explicit_type?: string;
-    marker?: string;
-    source_text?: string;
-    head?: string;
-    relationship?: string;
-    tail?: string;
-    detail?: string;
-};
-
-type JsonImportProject = {
-    id?: string;
-    name?: string;
-};
-
-type JsonImportPayload = {
-    projects?: JsonImportProject[];
-    causal?: JsonImportItem[];
-    causalItems?: JsonImportItem[];
-    map?: JsonImportItem[];
-    mapItems?: JsonImportItem[];
-    components?: JsonImportItem[];
-};
-
-type GeminiExtractedRelation = {
-    head?: string;
-    relationship?: string;
-    tail?: string;
-    detail?: string;
-};
-
-function sanitizeFilenameSegment(value: string): string {
-    return value.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "imported";
-}
-
-const EXTRACTION_DELAY_MS = 1300;
-const PROGRESS_TICK_MS = 240;
-const PROGRESS_STEP = 6;
-
-const INITIAL_ENTITIES: GeneratedEntity[] = [
-    { id: "entity-1", name: "Janitor", count: 8, selected: true },
-    { id: "entity-2", name: "Garbage Truck", count: 14, selected: true },
-    { id: "entity-3", name: "Transfer Station", count: 4, selected: true },
-    { id: "entity-4", name: "Recycling Crew", count: 6, selected: true },
-    { id: "entity-5", name: "Entity 1", count: 11, selected: true },
-    { id: "entity-6", name: "Entity 2", count: 5, selected: true },
-    { id: "entity-7", name: "Entity 3", count: 3, selected: true },
-];
-
-function makeSlug(value: string): string {
-    const trimmed = value.trim().toLowerCase();
-    if (!trimmed) {
-        return "untitled";
+    for (const { projectId, componentId } of refs) {
+        if (!projectId || !componentId) {
+            continue;
+        }
+        const sources = await loadCausalSourceItems(projectId, componentId);
+        sourceCount += sources.length;
+        for (const source of sources) {
+            const artifacts = await loadCausalArtifactsForItem(source.id);
+            const chunks = artifacts.raw_extraction || [];
+            if (chunks.length > 0) {
+                artifactCount += 1;
+            }
+            for (const chunk of chunks) {
+                for (const cls of chunk.classes || []) {
+                    for (const rel of cls.extracted || []) {
+                        relationCount += 1;
+                        for (const term of [rel.head, rel.tail]) {
+                            const trimmed = (term || "").trim();
+                            if (!trimmed) continue;
+                            counts.set(trimmed, (counts.get(trimmed) || 0) + 1);
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    return trimmed.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "untitled";
-}
-
-function makeUniqueId(base: string, usedIds: Set<string>): string {
-    let candidate = base;
-    let seq = 2;
-    while (usedIds.has(candidate)) {
-        candidate = `${base}-${String(seq)}`;
-        seq += 1;
+    if (counts.size === 0) {
+        console.info(
+            "[code-gen] aggregator found 0 entities",
+            { refs, sourceCount, artifactCount, relationCount },
+        );
     }
-    usedIds.add(candidate);
-    return candidate;
+
+    return Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([name, count], idx) => ({
+            id: `entity-${String(idx)}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+            name,
+            count,
+            selected: true,
+        }));
 }
 
-function toUsedItem(component: SimulationComponent, projectNameById: Map<string, string>) {
+function toUsedItem(component: SimulationComponent, projectNameById: Map<string, string>): UsedItem {
     const projectId = component.category === "PolicyTesting" ? "" : component.projectId;
     const resolvedProject =
         projectNameById.get(projectId) || findSeedProjectById(projectId)?.name || "Unknown project";
@@ -145,238 +135,6 @@ function toUsedItem(component: SimulationComponent, projectNameById: Map<string,
     };
 }
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
-    typeof value === "object" && value !== null;
-
-const readText = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
-
-const clip = (value: string, max: number): string =>
-    value.length <= max ? value : `${value.slice(0, Math.max(0, max - 3))}...`;
-
-const normalizeChunkLabel = (label: string, index: number): string => {
-    const trimmed = label.trim();
-    const match = /chunk\s*[-_]?\s*(\d+)/i.exec(trimmed);
-    if (match) {
-        return `chunk ${String(match[1])}`;
-    }
-
-    return `chunk ${String(index + 1)}`;
-};
-
-const normalizeExtractedRelation = (
-    value: unknown,
-): { head: string; relationship: string; tail: string; detail: string } | null => {
-    if (!isObject(value)) {
-        return null;
-    }
-
-    const head = readText(value.head);
-    const relationship = readText(value.relationship);
-    const tail = readText(value.tail);
-    const detail = readText(value.detail);
-
-    if (!head && !relationship && !tail && !detail) {
-        return null;
-    }
-
-    return { head, relationship, tail, detail };
-};
-
-const normalizeExtractionClass = (
-    value: unknown,
-    fallbackSourceText: string,
-): {
-    pattern_type: string;
-    sentence_type: string;
-    marked_type: string;
-    explicit_type: string;
-    marker: string;
-    source_text: string;
-    extracted: Array<{ head: string; relationship: string; tail: string; detail: string }>;
-} | null => {
-    if (!isObject(value)) {
-        return null;
-    }
-
-    const extractedSource = Array.isArray(value.extracted) ? value.extracted : [value];
-    const extracted = extractedSource
-        .map((entry) => normalizeExtractedRelation(entry))
-        .filter(
-            (entry): entry is { head: string; relationship: string; tail: string; detail: string } =>
-                entry !== null,
-        );
-
-    if (extracted.length === 0) {
-        return null;
-    }
-
-    return {
-        pattern_type: readText(value.pattern_type),
-        sentence_type: readText(value.sentence_type),
-        marked_type: readText(value.marked_type),
-        explicit_type: readText(value.explicit_type),
-        marker: readText(value.marker),
-        source_text: readText(value.source_text) || fallbackSourceText || extracted[0].head || "Imported source",
-        extracted,
-    };
-};
-
-const normalizeExtractionPayload = (value: unknown): ExtractionPayloadRecord[] => {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-
-    const hasChunkStructure = value.some(
-        (entry) => isObject(entry) && (Array.isArray(entry.classes) || typeof entry.chunk_label === "string"),
-    );
-
-    if (hasChunkStructure) {
-        return value
-            .map((chunkEntry, index) => {
-                if (!isObject(chunkEntry)) {
-                    return null;
-                }
-
-                const classesInput = Array.isArray(chunkEntry.classes) ? chunkEntry.classes : [];
-                const classes = classesInput
-                    .map((classValue) => normalizeExtractionClass(classValue, ""))
-                    .filter(
-                        (classValue): classValue is {
-                            pattern_type: string;
-                            sentence_type: string;
-                            marked_type: string;
-                            explicit_type: string;
-                            marker: string;
-                            source_text: string;
-                            extracted: Array<{ head: string; relationship: string; tail: string; detail: string }>;
-                        } => classValue !== null,
-                    );
-
-                if (classes.length === 0) {
-                    return null;
-                }
-
-                return {
-                    chunk_label: normalizeChunkLabel(readText(chunkEntry.chunk_label), index),
-                    classes,
-                } satisfies ExtractionPayloadRecord;
-            })
-            .filter((chunk): chunk is ExtractionPayloadRecord => chunk !== null);
-    }
-
-    return value
-        .map((classEntry, index) => {
-            const normalizedClass = normalizeExtractionClass(classEntry, "");
-            if (!normalizedClass) {
-                return null;
-            }
-
-            return {
-                chunk_label: `chunk ${String(index + 1)}`,
-                classes: [normalizedClass],
-            } satisfies ExtractionPayloadRecord;
-        })
-        .filter((chunk): chunk is ExtractionPayloadRecord => chunk !== null);
-};
-
-const buildChunkTextsFromRawExtraction = (rawExtraction: ExtractionPayloadRecord[]): string[] =>
-    rawExtraction.map((chunk, index) => {
-        const joined = chunk.classes
-            .map((classItem) => classItem.source_text?.trim() || "")
-            .filter(Boolean)
-            .join("\n\n")
-            .trim();
-
-        return joined || `Imported extraction chunk ${String(index + 1)}`;
-    });
-
-const extractRawExtractionFromItem = (item: JsonImportItem): ExtractionPayloadRecord[] => {
-    const record = item as unknown as Record<string, unknown>;
-    const direct = normalizeExtractionPayload(item.rawExtraction);
-    if (direct.length > 0) {
-        return direct;
-    }
-
-    const snakeCase = normalizeExtractionPayload(record.raw_extraction);
-    if (snakeCase.length > 0) {
-        return snakeCase;
-    }
-
-    return normalizeExtractionPayload([item]);
-};
-
-const normalizeGeminiTranscriptArray = (input: unknown[], sourceFileName: string): JsonImportPayload => {
-    const rawExtraction = normalizeExtractionPayload(input);
-    const relationCount = rawExtraction.reduce(
-        (total, chunk) =>
-            total + chunk.classes.reduce((chunkTotal, classItem) => chunkTotal + classItem.extracted.length, 0),
-        0,
-    );
-
-    const firstSourceText =
-        rawExtraction
-            .flatMap((chunk) => chunk.classes.map((classItem) => classItem.source_text))
-            .find((text) => readText(text)) || "";
-
-    if (relationCount === 0) {
-        return { causalItems: [] };
-    }
-
-    const cleanFileName = sourceFileName.trim() || "imported-transcript.json";
-    const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
-    const title = clip(cleanFileName || firstSourceText || "imported-transcript", 180);
-
-    return {
-        causalItems: [
-            {
-                id: `causal-gemini-file-${sanitizeFilenameSegment(baseName.toLowerCase())}`,
-                title,
-                lastEdited: "extracted",
-                sourceText: firstSourceText,
-                rawExtraction,
-            },
-        ],
-    };
-};
-
-const normalizeImportPayload = (value: unknown, sourceFileName: string): JsonImportPayload => {
-    if (Array.isArray(value)) {
-        const normalized = normalizeGeminiTranscriptArray(value, sourceFileName);
-        if ((normalized.causalItems?.length ?? 0) > 0) {
-            return normalized;
-        }
-
-        throw new Error(
-            "Unsupported JSON array format. For array payloads, provide transcript items with an extracted list.",
-        );
-    }
-
-    if (isObject(value)) {
-        const record = value as Record<string, unknown>;
-        const rawExtraction = normalizeExtractionPayload(record.raw_extraction);
-
-        if (rawExtraction.length > 0) {
-            const cleanFileName = sourceFileName.trim() || "imported-causal.json";
-            const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
-
-            return {
-                projects: Array.isArray(record.projects) ? (record.projects as JsonImportProject[]) : undefined,
-                causalItems: [
-                    {
-                        id: `causal-file-${sanitizeFilenameSegment(baseName.toLowerCase())}`,
-                        title: cleanFileName,
-                        lastEdited: "extracted",
-                        rawExtraction,
-                    },
-                ],
-            };
-        }
-
-        return value as JsonImportPayload;
-    }
-
-    throw new Error("Invalid JSON format. Expected an object payload or transcript array payload.");
-};
 
 export default function CodePage() {
     const router = useRouter();
@@ -385,17 +143,88 @@ export default function CodePage() {
 
     const [projects, setProjects] = useState<SimulationProject[]>([]);
     const [components, setComponents] = useState<SimulationComponent[]>([]);
-    const [entities, setEntities] = useState<GeneratedEntity[]>(INITIAL_ENTITIES);
-    const [isExtracted, setIsExtracted] = useState<boolean>(false);
-    const [isExtracting, setIsExtracting] = useState<boolean>(false);
-    const [isGenerating, setIsGenerating] = useState<boolean>(false);
-    const [progress, setProgress] = useState<number>(0);
     const [isImporting, setIsImporting] = useState<boolean>(false);
     const [importMessage, setImportMessage] = useState<string>("");
     const [importError, setImportError] = useState<string>("");
+    const [isCodeGenRunning, setIsCodeGenRunning] = useState<boolean>(false);
+    const [selectedModel, setSelectedModel] = useState<string>("");
+    const [manualEntityName, setManualEntityName] = useState<string>("");
+    const [manualEntityError, setManualEntityError] = useState<string>("");
+    const [manualMetricName, setManualMetricName] = useState<string>("");
+    const [manualMetricError, setManualMetricError] = useState<string>("");
+    const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([]);
 
-    const progressTimerRef = useRef<number | null>(null);
-    const importInputRef = useRef<HTMLInputElement | null>(null);
+    // Custom hooks for state management
+    const entityHook = useEntityExtraction();
+    const metricsHook = useMetricsManagement();
+    const sourceHook = useSourceSelection();
+    const persistenceHook = useWorkspacePersistence(componentId);
+    const archiveHook = useArchiveManager(componentId, componentId ? `job-${componentId}` : null);
+
+    // Destructure hook returns for easier access
+    const {
+        entities,
+        setEntities,
+        isExtracted,
+        setIsExtracted,
+        isExtracting,
+        isGroupingEntities,
+        groupError,
+        setGroupError,
+        extractError,
+        setExtractError,
+        collapsedParentIds,
+        setCollapsedParentIds,
+        groupLog,
+        setGroupLog,
+        handleGroupWithGemini: hookHandleGroupWithGemini,
+        handleCancelGrouping: hookHandleCancelGrouping,
+        handleToggleEntity,
+        handleAddManualEntity: hookHandleAddManualEntity,
+        appendGroupLog,
+    } = entityHook;
+
+    const {
+        metrics,
+        setMetrics,
+        metricsExtracted,
+        setMetricsExtracted,
+        metricsError,
+        setMetricsError,
+        isSuggestingMetrics,
+        metricsLog,
+        setMetricsLog,
+        handleSuggestMetrics: hookHandleSuggestMetrics,
+        handleCancelMetricsSuggest: hookHandleCancelMetricsSuggest,
+        handleToggleMetric,
+        handleAddManualMetric: hookHandleAddManualMetric,
+    } = metricsHook;
+
+    const {
+        selectedCausalIds,
+        selectedMapId,
+        setSelectedCausalIds,
+        setSelectedMapId,
+        handleToggleCausalSelection: hookHandleToggleCausalSelection,
+        handleToggleMapSelection: hookHandleToggleMapSelection,
+        handleDeleteComponent: hookHandleDeleteComponent,
+    } = sourceHook;
+
+    const { hydrated, loadPersistedSnapshot, persistSnapshot } = persistenceHook;
+
+    const {
+        archiveBusy,
+        archiveMessage,
+        archiveError,
+        buildWorkspaceSnapshot,
+        handleExportArchive: hookHandleExportArchive,
+        handleImportArchiveFile: hookHandleImportArchiveFile,
+    } = archiveHook;
+
+    const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+
+    const inputsLocked = isCodeGenRunning;
+
     const wordCloudHostRef = useRef<HTMLDivElement | null>(null);
 
     const selectedEntities = useMemo(
@@ -428,10 +257,7 @@ export default function CodePage() {
         [],
     );
 
-    const totalEntityCount = useMemo(
-        () => selectedEntities.reduce((sum, entity) => sum + entity.count, 0),
-        [selectedEntities],
-    );
+    const totalEntityCount = useMemo(() => selectedEntities.length, [selectedEntities]);
 
     const selectedComponent = useMemo(() => {
         if (!componentId) {
@@ -497,13 +323,90 @@ export default function CodePage() {
         void refreshPmData();
     }, []);
 
+    const snapshotKey = useMemo(
+        () => `gms.code.workspace.v1:${componentId ?? "default"}`,
+        [componentId],
+    );
+
+    // Load persisted snapshot on first mount (per-component key).
     useEffect(() => {
-        return () => {
-            if (progressTimerRef.current) {
-                clearInterval(progressTimerRef.current);
+        if (typeof window === "undefined") {
+            return;
+        }
+        const saved = loadPersistedSnapshot();
+        if (!saved) {
+            return;
+        }
+        try {
+            if (Array.isArray(saved.selectedCausalIds)) {
+                sourceHook.setSelectedCausalIds(new Set(saved.selectedCausalIds.filter(Boolean)));
             }
+            if (typeof saved.selectedMapId === "string" || saved.selectedMapId === null) {
+                sourceHook.setSelectedMapId(saved.selectedMapId ?? null);
+            }
+            if (Array.isArray(saved.entities)) {
+                setEntities(saved.entities);
+            }
+            if (typeof saved.isExtracted === "boolean") {
+                setIsExtracted(saved.isExtracted);
+            }
+            if (typeof saved.selectedModel === "string") {
+                setSelectedModel(saved.selectedModel);
+            }
+            if (Array.isArray(saved.collapsedParentIds)) {
+                setCollapsedParentIds(new Set(saved.collapsedParentIds.filter(Boolean)));
+            }
+            if (Array.isArray(saved.metrics)) {
+                setMetrics(saved.metrics);
+            }
+            if (typeof saved.metricsExtracted === "boolean") {
+                metricsHook.setMetricsExtracted(saved.metricsExtracted);
+            }
+            if (Array.isArray(saved.artifactFiles)) {
+                setArtifactFiles(saved.artifactFiles as ArtifactFile[]);
+            }
+            if (typeof saved.jobId === "string") {
+                setCurrentJobId(saved.jobId || null);
+            }
+        } catch {
+            // Ignore corrupted snapshot.
+        }
+    }, [loadPersistedSnapshot]);
+
+    // Persist snapshot whenever relevant state changes.
+    useEffect(() => {
+        if (!hydrated || typeof window === "undefined") return;
+        const snapshot = {
+            schemaVersion: 1,
+            exportedAt: new Date().toISOString(),
+            componentId,
+            selectedCausalIds: Array.from(selectedCausalIds),
+            selectedMapId,
+            entities,
+            isExtracted,
+            selectedModel,
+            collapsedParentIds: Array.from(collapsedParentIds),
+            metrics,
+            metricsExtracted,
+            artifactFiles,
+            jobId: currentJobId,
         };
-    }, []);
+        persistSnapshot(snapshot);
+    }, [
+        hydrated,
+        componentId,
+        selectedCausalIds,
+        selectedMapId,
+        entities,
+        isExtracted,
+        selectedModel,
+        collapsedParentIds,
+        metrics,
+        metricsExtracted,
+        artifactFiles,
+        currentJobId,
+        persistSnapshot,
+    ]);
 
     useEffect(() => {
         if (!isExtracted || wordCloudWords.length === 0) {
@@ -568,71 +471,239 @@ export default function CodePage() {
         };
     }, [isExtracted, wordCloudWords]);
 
-    const stopGeneration = () => {
-        if (progressTimerRef.current) {
-            clearInterval(progressTimerRef.current);
-            progressTimerRef.current = null;
-        }
+    const buildWorkspaceSnapshotData = () => ({
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        componentId,
+        selectedCausalIds: Array.from(selectedCausalIds),
+        selectedMapId,
+        entities,
+        isExtracted,
+        selectedModel,
+        collapsedParentIds: Array.from(collapsedParentIds),
+        metrics,
+        metricsExtracted,
+        artifactFiles,
+        jobId: currentJobId,
+    });
 
-        setIsGenerating(false);
+    const applyImportedWorkspaceSnapshot = (snapshot: ImportedWorkspaceSnapshot) => {
+        setSelectedCausalIds(new Set(snapshot.selectedCausalIds));
+        setSelectedMapId(snapshot.selectedMapId);
+        setEntities(snapshot.entities as GeneratedEntity[]);
+        setIsExtracted(snapshot.isExtracted);
+        setSelectedModel(snapshot.selectedModel);
+        setCollapsedParentIds(new Set(snapshot.collapsedParentIds));
+        setMetrics(snapshot.metrics as WorkspaceMetric[]);
+        setMetricsExtracted(snapshot.metricsExtracted);
+        setArtifactFiles(snapshot.artifactFiles);
+        setCurrentJobId(snapshot.jobId);
+
+        setManualEntityName("");
+        setManualEntityError("");
+        setManualMetricName("");
+        setManualMetricError("");
+        setExtractError("");
+        setGroupError("");
+        setMetricsError("");
+        setImportError("");
+    };
+
+    const handleExportArchive = () => {
+        if (archiveBusy !== "idle") return;
+        void hookHandleExportArchive(buildWorkspaceSnapshotData());
+    };
+
+    const handleImportArchiveFile = async (event: ChangeEvent<HTMLInputElement>) => {
+        const result = await hookHandleImportArchiveFile(event);
+        if (result.success && result.data) {
+            applyImportedWorkspaceSnapshot(result.data);
+            await refreshPmData();
+            setImportMessage(
+                `Imported workspace snapshot${result.data.jobId ? ` and bound job ${result.data.jobId}` : ""}.`,
+            );
+        }
     };
 
     const handleExtractFromCausal = () => {
         if (isExtracting) {
             return;
         }
-
-        stopGeneration();
-        setProgress(0);
-        setIsExtracting(true);
-
-        window.setTimeout(() => {
-            setIsExtracted(true);
-            setIsExtracting(false);
-            setProgress(12);
-        }, EXTRACTION_DELAY_MS);
-    };
-
-    const handleGenerate = () => {
-        if (!isExtracted || isGenerating) {
+        if (selectedCausalIds.size === 0) {
+            setExtractError("Select at least one causal artifact above before extracting.");
             return;
         }
 
-        if (progress >= 100) {
-            setProgress(0);
+        setExtractError("");
+        setGroupError("");
+        setCollapsedParentIds(new Set());
+
+        const refs: Array<{ projectId: string; componentId: string }> = [];
+        for (const id of selectedCausalIds) {
+            const component =
+                components.find((c) => c.id === id) ?? findSeedComponentById(id);
+            if (!component || component.category !== "Causal") {
+                continue;
+            }
+            refs.push({ projectId: component.projectId, componentId: component.id });
         }
 
-        setIsGenerating(true);
-
-        progressTimerRef.current = window.setInterval(() => {
-            setProgress((currentProgress) => {
-                const next = Math.min(100, currentProgress + PROGRESS_STEP);
-                if (next >= 100) {
-                    stopGeneration();
+        void (async () => {
+            try {
+                const aggregated = await aggregateEntitiesFromCausalComponents(refs);
+                setEntities(aggregated);
+                setIsExtracted(true);
+                if (aggregated.length === 0) {
+                    setExtractError(
+                        "No extracted relations found in the selected causal artifacts.",
+                    );
                 }
-                return next;
-            });
-        }, PROGRESS_TICK_MS);
+            } catch (err) {
+                setExtractError(
+                    err instanceof Error ? err.message : "Causal aggregation failed.",
+                );
+            }
+        })();
+    };
+
+    const handleGroupWithGemini = () => {
+        hookHandleGroupWithGemini(entities, selectedModel, inputsLocked);
+    };
+
+    const handleCancelGrouping = () => {
+        hookHandleCancelGrouping();
+    };
+
+    const handleAddManualEntity = () => {
+        if (inputsLocked) return;
+        const trimmed = manualEntityName.trim();
+        if (!trimmed) {
+            setManualEntityError("Type a name first.");
+            return;
+        }
+        const exists = entities.some(
+            (entity) => entity.name.toLowerCase() === trimmed.toLowerCase(),
+        );
+        if (exists) {
+            setManualEntityError(`"${trimmed}" is already in the list.`);
+            return;
+        }
+        const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        const newEntity: GeneratedEntity = {
+            id: `entity-manual-${String(Date.now())}-${slug}`,
+            name: trimmed,
+            count: 1,
+            selected: true,
+        };
+        setEntities((prev) => [...prev, newEntity]);
+        setIsExtracted(true);
+        setManualEntityName("");
+        setManualEntityError("");
+    };
+
+    const handleSuggestMetrics = () => {
+        const sourceEntities = entities.filter(
+            (e) => !(e.memberIds && e.memberIds.length > 0),
+        );
+        hookHandleSuggestMetrics(sourceEntities, selectedModel, isSuggestingMetrics, inputsLocked);
+    };
+
+    const handleCancelMetricsSuggest = () => {
+        hookHandleCancelMetricsSuggest();
+    };
+
+    const handleAddManualMetric = () => {
+        if (inputsLocked) return;
+        const trimmed = manualMetricName.trim();
+        if (!trimmed) {
+            setManualMetricError("Type a metric name first.");
+            return;
+        }
+        const exists = metrics.some(
+            (m) => m.name.toLowerCase() === trimmed.toLowerCase(),
+        );
+        if (exists) {
+            setManualMetricError(`"${trimmed}" is already in the list.`);
+            return;
+        }
+        const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+        const id = `metric-manual-${String(Date.now())}-${slug || "metric"}`;
+        const newMetric: WorkspaceMetric = {
+            id,
+            name: slug || `metric_${String(Date.now())}`,
+            label: trimmed,
+            unit: "",
+            agg: "count",
+            entities: [],
+            viz: "line",
+            rationale: "(manual)",
+            selected: true,
+        };
+        setMetrics((prev) => [...prev, newMetric]);
+        setMetricsExtracted(true);
+        setManualMetricName("");
+        setManualMetricError("");
+    };
+
+    const handleToggleCausalSelection = (id: string) => {
+        if (inputsLocked) return;
+        hookHandleToggleCausalSelection(id, inputsLocked, () => {
+            setIsExtracted(false);
+            setEntities([]);
+            setExtractError("");
+            setGroupError("");
+            setCollapsedParentIds(new Set());
+        });
+    };
+
+    const handleToggleMapSelection = (id: string) => {
+        if (inputsLocked) return;
+        hookHandleToggleMapSelection(id, inputsLocked);
     };
 
     const handleDeleteComponent = (targetId: string) => {
         void (async () => {
             try {
-                await softDeleteComponent(targetId);
-                await refreshPmData();
+                await hookHandleDeleteComponent(targetId, refreshPmData);
             } catch {
                 setImportError("Unable to delete component from database.");
             }
         })();
     };
 
-    const handleToggleEntity = (targetId: string) => {
-        setEntities((prev) =>
-            prev.map((entity) =>
-                entity.id === targetId ? { ...entity, selected: !entity.selected } : entity,
-            ),
-        );
-    };
+    const selectedMetrics = useMemo(() => metrics.filter((m) => m.selected), [metrics]);
+
+    const missingRequirements = useMemo(() => {
+        const missing: string[] = [];
+        if (selectedCausalIds.size === 0) {
+            missing.push("Select at least one causal source above.");
+        }
+        if (!selectedMapId) {
+            missing.push("Select a Map artifact as the target for code generation.");
+        }
+        if (!isExtracted) {
+            missing.push('Run "Extract from causal" to populate the entity list.');
+        } else if (selectedEntities.length === 0) {
+            missing.push("Select at least one entity in the entity list.");
+        }
+        if (!metricsExtracted || metrics.length === 0) {
+            missing.push(
+                'Generate or manually add metrics in the "Metric to be tracked" section.',
+            );
+        } else if (selectedMetrics.length === 0) {
+            missing.push("Select at least one metric in the metric list.");
+        }
+        console.info("[code-gen] missing requirements", missing);
+        return missing;
+    }, [
+        selectedCausalIds,
+        selectedMapId,
+        isExtracted,
+        selectedEntities,
+        metricsExtracted,
+        metrics,
+        selectedMetrics,
+    ]);
 
     const resolveProjectIdForCreate = (): string | null => {
         if (resolvedProjectId) {
@@ -683,10 +754,6 @@ export default function CodePage() {
         })();
     };
 
-    const handleOpenImportDialog = () => {
-        importInputRef.current?.click();
-    };
-
     const persistImportedCausalArtifacts = async (
         entry: JsonImportItem,
         component: SimulationComponent,
@@ -694,8 +761,8 @@ export default function CodePage() {
     ): Promise<void> => {
         const rawExtraction = extractRawExtractionFromItem(entry);
         const extractedRelationCount = rawExtraction.reduce(
-            (total, chunk) =>
-                total + chunk.classes.reduce((chunkTotal, classItem) => chunkTotal + classItem.extracted.length, 0),
+            (total: number, chunk: ExtractionPayloadRecord) =>
+                total + chunk.classes.reduce((chunkTotal: number, classItem) => chunkTotal + classItem.extracted.length, 0),
             0,
         );
 
@@ -704,7 +771,7 @@ export default function CodePage() {
         }
 
         const sourceTextFromPayload = rawExtraction
-            .flatMap((chunk) => chunk.classes.map((classItem) => classItem.source_text))
+            .flatMap((chunk: ExtractionPayloadRecord) => chunk.classes.map((classItem) => classItem.source_text))
             .filter(Boolean)
             .join("\n\n");
 
@@ -741,17 +808,193 @@ export default function CodePage() {
         });
     };
 
+    const persistImportedMapArtifacts = async (
+        entry: JsonImportItem,
+        component: SimulationComponent,
+    ): Promise<void> => {
+        if (typeof window === "undefined") {
+            return;
+        }
+
+        const graph = extractMapGraphPayload(entry);
+        if (!graph) {
+            return;
+        }
+
+        const snapshotFromEntry = entry.snapshot;
+        const snapshot: ImportedMapWorkspaceSnapshot = {
+            graph,
+            jobId: "",
+            selectedModel: snapshotFromEntry?.selectedModel?.trim() || "",
+            overviewAdditionalInfo: snapshotFromEntry?.overviewAdditionalInfo || "",
+            binAdditionalInfo: snapshotFromEntry?.binAdditionalInfo || "",
+            overviewFileNames: snapshotFromEntry?.overviewFileNames ?? [],
+            binFileNames: snapshotFromEntry?.binFileNames ?? [],
+            changeLog: snapshotFromEntry?.changeLog ?? [],
+            editStatus: snapshotFromEntry?.editStatus || "Imported map extraction artifacts.",
+            selection: null,
+        };
+
+        window.localStorage.setItem(`map-workspace:${component.id}`, JSON.stringify(snapshot));
+    };
+
+    const resolveImportedMapSnapshot = (payload: unknown): ImportedMapWorkspaceSnapshot | null => {
+        if (!payload || typeof payload !== "object") {
+            return null;
+        }
+
+        const asRecord = payload as Record<string, unknown>;
+        if (asRecord.snapshot && typeof asRecord.snapshot === "object") {
+            const snapshotPayload = asRecord.snapshot as Record<string, unknown>;
+            const graph = extractMapGraphPayload(snapshotPayload.graph || snapshotPayload);
+            if (!graph) {
+                return null;
+            }
+
+            return {
+                graph,
+                jobId: typeof snapshotPayload.jobId === "string" ? snapshotPayload.jobId : "",
+                selectedModel: typeof snapshotPayload.selectedModel === "string" ? snapshotPayload.selectedModel : "",
+                overviewAdditionalInfo: typeof snapshotPayload.overviewAdditionalInfo === "string" ? snapshotPayload.overviewAdditionalInfo : "",
+                binAdditionalInfo: typeof snapshotPayload.binAdditionalInfo === "string" ? snapshotPayload.binAdditionalInfo : "",
+                overviewFileNames: Array.isArray(snapshotPayload.overviewFileNames) ? snapshotPayload.overviewFileNames.filter((f): f is string => typeof f === "string") : [],
+                binFileNames: Array.isArray(snapshotPayload.binFileNames) ? snapshotPayload.binFileNames.filter((f): f is string => typeof f === "string") : [],
+                changeLog: Array.isArray(snapshotPayload.changeLog) ? snapshotPayload.changeLog.filter((f): f is string => typeof f === "string") : [],
+                editStatus: typeof snapshotPayload.editStatus === "string" ? snapshotPayload.editStatus : "Imported map extraction artifacts.",
+                selection: null,
+            } as ImportedMapWorkspaceSnapshot;
+        }
+
+        const directSnapshot = payload as Partial<ImportedMapWorkspaceSnapshot>;
+        if (directSnapshot.graph && Array.isArray(directSnapshot.graph.vertices) && Array.isArray(directSnapshot.graph.edges)) {
+            return {
+                graph: directSnapshot.graph,
+                jobId: "",
+                selectedModel: "",
+                overviewAdditionalInfo: "",
+                binAdditionalInfo: "",
+                overviewFileNames: [],
+                binFileNames: [],
+                changeLog: [],
+                editStatus: "Imported map extraction artifacts.",
+                selection: null,
+            };
+        }
+
+        return null;
+    };
+
+    const extractMapArtifactBundleFromZip = async (file: File): Promise<JsonImportPayload | null> => {
+        try {
+            const lowerName = file.name.toLowerCase();
+            const isZipFile = lowerName.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+            if (!isZipFile) {
+                return null;
+            }
+
+            const zip = await JSZip.loadAsync(await file.arrayBuffer());
+            const bundleFile = zip.file("bundle.json");
+            if (!bundleFile) {
+                return null;
+            }
+
+            const bundleText = await bundleFile.async("string");
+            const parsed = JSON.parse(bundleText) as unknown;
+
+            const maybeBundle = parsed as Partial<{
+                artifactType?: string;
+                artifactVersion?: number;
+                componentId?: string;
+                title?: string;
+                projectName?: string;
+                snapshot?: unknown;
+            }>;
+
+            if (maybeBundle.artifactType !== "map_extract_workspace") {
+                return null;
+            }
+
+            const snapshot = resolveImportedMapSnapshot(maybeBundle);
+            if (!snapshot) {
+                return null;
+            }
+
+            const cleanFileName = file.name.replace(/\.zip$/i, "").trim() || "imported-map-artifact";
+            const baseName = cleanFileName.replace(/\.[^/.]+$/, "");
+
+            return {
+                mapItems: [
+                    {
+                        id: `map-zip-${sanitizeFileNameForId(baseName.toLowerCase())}`,
+                        title: cleanFileName,
+                        lastEdited: "imported",
+                        graph: snapshot.graph,
+                        snapshot: {
+                            graph: snapshot.graph,
+                            selectedModel: snapshot.selectedModel,
+                            overviewAdditionalInfo: snapshot.overviewAdditionalInfo,
+                            binAdditionalInfo: snapshot.binAdditionalInfo,
+                            overviewFileNames: snapshot.overviewFileNames,
+                            binFileNames: snapshot.binFileNames,
+                            changeLog: snapshot.changeLog,
+                            editStatus: snapshot.editStatus,
+                        },
+                        artifactType: "map_extract_workspace",
+                    },
+                ],
+            } as JsonImportPayload;
+        } catch {
+            return null;
+        }
+    };
+
+    const sanitizeFileNameForId = (name: string): string => {
+        return name.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "") || "imported";
+    };
+
     const readImportItems = (payload: JsonImportPayload, category: "Causal" | "Map"): JsonImportItem[] => {
-        const itemsFromDedicatedList =
-            category === "Causal"
-                ? [...(payload.causal ?? []), ...(payload.causalItems ?? [])]
-                : [...(payload.map ?? []), ...(payload.mapItems ?? [])];
+        const taggedItems: Array<{ item: JsonImportItem; fallbackCategory: "Causal" | "Map" }> = [];
 
-        const itemsFromComponents = (payload.components ?? []).filter(
-            (entry) => entry.category?.toLowerCase() === category.toLowerCase(),
-        );
+        if (category === "Causal") {
+            taggedItems.push(
+                ...(payload.causal ?? []).map((item) => ({ item, fallbackCategory: "Causal" as const })),
+                ...(payload.causalItems ?? []).map((item) => ({ item, fallbackCategory: "Causal" as const })),
+            );
+        } else {
+            taggedItems.push(
+                ...(payload.map ?? []).map((item) => ({ item, fallbackCategory: "Map" as const })),
+                ...(payload.mapItems ?? []).map((item) => ({ item, fallbackCategory: "Map" as const })),
+            );
+        }
 
-        return [...itemsFromDedicatedList, ...itemsFromComponents];
+        const itemsFromComponents = (payload.components ?? [])
+            .map((item) => {
+                const explicitCategory = (item.category || "").trim().toLowerCase();
+                if (explicitCategory === "causal") {
+                    return { item, fallbackCategory: "Causal" as const };
+                }
+                if (explicitCategory === "map") {
+                    return { item, fallbackCategory: "Map" as const };
+                }
+
+                const inferred = inferImportItemCategory(item);
+                if (inferred) {
+                    return { item, fallbackCategory: inferred };
+                }
+
+                return null;
+            })
+            .filter((entry): entry is { item: JsonImportItem; fallbackCategory: "Causal" | "Map" } => entry !== null);
+
+        taggedItems.push(...itemsFromComponents);
+
+        return taggedItems
+            .filter(({ item, fallbackCategory }) => {
+                const inferred = inferImportItemCategory(item);
+                const resolvedCategory = inferred || fallbackCategory;
+                return resolvedCategory === category;
+            })
+            .map(({ item }) => item);
     };
 
     const resolveProjectIdFromItem = async (
@@ -832,6 +1075,8 @@ export default function CodePage() {
 
             if (category === "Causal") {
                 await persistImportedCausalArtifacts(entry, component, projectId);
+            } else {
+                await persistImportedMapArtifacts(entry, component);
             }
 
             created.push(component);
@@ -853,8 +1098,23 @@ export default function CodePage() {
         setIsImporting(true);
 
         try {
-            const raw = await file.text();
-            const payload = normalizeImportPayload(JSON.parse(raw) as unknown, file.name);
+            let payload: JsonImportPayload;
+
+            const lowerName = file.name.toLowerCase();
+            const isZipFile = lowerName.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+
+            if (isZipFile) {
+                const zipPayload = await extractMapArtifactBundleFromZip(file);
+                if (!zipPayload || !zipPayload.mapItems || zipPayload.mapItems.length === 0) {
+                    throw new Error(
+                        "Invalid ZIP artifact format. Expected a map extraction workspace bundle with bundle.json.",
+                    );
+                }
+                payload = zipPayload;
+            } else {
+                const raw = await file.text();
+                payload = normalizeImportPayload(JSON.parse(raw) as unknown, file.name);
+            }
 
             const causalPayload = readImportItems(payload, "Causal");
             const mapPayload = readImportItems(payload, "Map");
@@ -934,37 +1194,6 @@ export default function CodePage() {
                     }
                 />
 
-                <div className="mb-4 flex justify-start">
-                    <input
-                        ref={importInputRef}
-                        type="file"
-                        accept="application/json,.json"
-                        className="hidden"
-                        onChange={handleImportJson}
-                    />
-
-                    <button
-                        type="button"
-                        onClick={handleOpenImportDialog}
-                        disabled={isImporting}
-                        className="rounded-md border border-emerald-700 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        {isImporting ? "Importing JSON..." : "Import JSON (Causal/Map)"}
-                    </button>
-                </div>
-
-                {importMessage ? (
-                    <div className="mb-4 rounded-md border border-emerald-700/70 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200">
-                        {importMessage}
-                    </div>
-                ) : null}
-
-                {importError ? (
-                    <div className="mb-4 rounded-md border border-red-800/70 bg-red-500/10 px-4 py-2 text-sm text-red-200">
-                        Import failed: {importError}
-                    </div>
-                ) : null}
-
                 <section className="space-y-8">
                     <UsedItemsSection
                         title="Causal used"
@@ -972,6 +1201,8 @@ export default function CodePage() {
                         items={causalItems}
                         onDelete={handleDeleteComponent}
                         onCreate={handleCreateFromEmptySection}
+                        selectedIds={selectedCausalIds}
+                        onToggleSelect={handleToggleCausalSelection}
                     />
 
                     <UsedItemsSection
@@ -980,130 +1211,140 @@ export default function CodePage() {
                         items={mapItems}
                         onDelete={handleDeleteComponent}
                         onCreate={handleCreateFromEmptySection}
+                        selectedIds={selectedMapId ? new Set([selectedMapId]) : undefined}
+                        onToggleSelect={handleToggleMapSelection}
                     />
 
-                    <div>
-                        <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">
-                            Entity that will be generated
-                        </h2>
+                    <EntityExtractionPanel
+                        entities={entities}
+                        isExtracted={isExtracted}
+                        isExtracting={isExtracting}
+                        isGroupingEntities={isGroupingEntities}
+                        extractError={extractError}
+                        groupError={groupError}
+                        groupLog={groupLog}
+                        inputsLocked={inputsLocked}
+                        selectedCausalIds={selectedCausalIds}
+                        selectedModel={selectedModel}
+                        manualEntityName={manualEntityName}
+                        manualEntityError={manualEntityError}
+                        collapsedParentIds={collapsedParentIds}
+                        onExtract={handleExtractFromCausal}
+                        onGroupWithGemini={handleGroupWithGemini}
+                        onCancelGrouping={handleCancelGrouping}
+                        onToggleEntity={handleToggleEntity}
+                        onAddManualEntity={handleAddManualEntity}
+                        onUpdateManualEntityName={setManualEntityName}
+                        onClearGroupLog={() => setGroupLog([])}
+                        onToggleCollapse={(parentId) =>
+                            setCollapsedParentIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(parentId)) next.delete(parentId);
+                                else next.add(parentId);
+                                return next;
+                            })
+                        }
+                        onModelChange={setSelectedModel}
+                    />
 
-                        <div className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-4 md:p-6">
-                            {!isExtracted ? (
-                                <div className="relative min-h-90 rounded-lg border border-dashed border-neutral-700 bg-neutral-900/60 p-6">
-                                    <div className="absolute right-4 top-4">
-                                        <button
-                                            type="button"
-                                            onClick={handleExtractFromCausal}
-                                            disabled={isExtracting}
-                                            className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                                        >
-                                            {isExtracting ? "Extracting..." : "Extract from causal"}
-                                        </button>
-                                    </div>
+                    <MetricsSelectionPanel
+                        metrics={metrics}
+                        isExtracted={isExtracted}
+                        isSuggestingMetrics={isSuggestingMetrics}
+                        metricsError={metricsError}
+                        metricsLog={metricsLog}
+                        inputsLocked={inputsLocked}
+                        manualMetricName={manualMetricName}
+                        manualMetricError={manualMetricError}
+                        selectedEntityCount={selectedEntities.length}
+                        selectedModel={selectedModel}
+                        onModelChange={setSelectedModel}
+                        onSuggestMetrics={handleSuggestMetrics}
+                        onCancelMetricsSuggest={handleCancelMetricsSuggest}
+                        onToggleMetric={handleToggleMetric}
+                        onAddManualMetric={handleAddManualMetric}
+                        onUpdateManualMetricName={setManualMetricName}
+                        onClearMetricsLog={() => setMetricsLog([])}
+                    />
 
-                                    <div className="flex h-full min-h-75 items-center justify-center text-center">
-                                        <p className="max-w-md text-sm text-neutral-400">
-                                            Run extraction to populate entity candidates and generation controls.
-                                        </p>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="grid min-h-90 gap-4 lg:grid-cols-2">
-                                    <div className="flex min-h-75 items-center justify-center rounded-lg border border-neutral-700 bg-linear-to-br from-neutral-900 to-neutral-800 p-6">
-                                        <div className="w-full max-w-sm rounded-lg border border-neutral-700 bg-neutral-950/70 p-5">
-                                            {wordCloudWords.length > 0 ? (
-                                                <div
-                                                    aria-label="Generated entity word cloud"
-                                                    className="flex h-55 w-full items-center justify-center"
-                                                >
-                                                    <div ref={wordCloudHostRef} className="h-55 w-55">
-                                                        <ReactWordcloud
-                                                            minSize={[220, 220]}
-                                                            size={[220, 220]}
-                                                            options={wordCloudOptions}
-                                                            words={wordCloudWords}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="flex h-55 items-center justify-center text-center">
-                                                    <p className="text-sm font-semibold text-neutral-300">
-                                                        Select at least one entity to render the word cloud.
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
+                    <CodeGenWorkspace
+                        componentId={componentId ?? ""}
+                        causalSourceRefs={(selectedCausalIds.size > 0
+                            ? causalItems.filter((item) => selectedCausalIds.has(item.id))
+                            : []
+                        ).flatMap((item) => {
+                            const component =
+                                components.find((c) => c.id === item.id) ??
+                                findSeedComponentById(item.id);
+                            if (!component || component.category !== "Causal") {
+                                return [];
+                            }
+                            return [{ projectId: component.projectId, componentId: item.id }];
+                        })}
+                        selectedMapId={selectedMapId}
+                        selectedMapLabel={
+                            selectedMapId
+                                ? mapItems.find((item) => item.id === selectedMapId)?.title ?? null
+                                : null
+                        }
+                        model={selectedModel}
+                        onModelChange={setSelectedModel}
+                        selectedMetrics={selectedMetrics.map((m) => ({
+                            name: m.name,
+                            label: m.label,
+                            unit: m.unit,
+                            agg: m.agg,
+                            entities: m.entities,
+                            viz: m.viz,
+                            chart_group: m.chart_group ?? null,
+                            grounding: m.grounding ?? "domain_inference",
+                            required_attrs: m.required_attrs ?? [],
+                            sampling_event: m.sampling_event ?? "tick",
+                            rationale: m.rationale,
+                        }))}
+                        pageEntities={selectedEntities.map((e) => ({
+                            id: e.id,
+                            label: e.name,
+                            type: "actor",
+                            frequency: e.count,
+                        }))}
+                        missingRequirements={missingRequirements}
+                        onRunningChange={setIsCodeGenRunning}
+                        onJobIdChange={setCurrentJobId}
+                        artifactFiles={artifactFiles}
+                        onArtifactFilesChange={setArtifactFiles}
+                    />
 
-                                    <div className="rounded-lg border border-neutral-700 bg-neutral-900/70 p-4">
-                                        <p className="text-sm font-semibold text-neutral-100">
-                                            system will create {String(totalEntityCount)} entity
-                                        </p>
-
-                                        <div className="mt-4 max-h-65 overflow-y-auto rounded-md border border-neutral-800 bg-neutral-900/70">
-                                            {entities.map((entity) => (
-                                                <label
-                                                    key={entity.id}
-                                                    className="flex items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2 last:border-b-0"
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={entity.selected}
-                                                            onChange={() => handleToggleEntity(entity.id)}
-                                                            className="h-4 w-4 accent-sky-500"
-                                                        />
-                                                        <span className="text-sm text-neutral-200">{entity.name}</span>
-                                                    </div>
-
-                                                    <span className="text-xs font-semibold text-neutral-400">
-                                                        Count: {String(entity.count)}
-                                                    </span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {isExtracted ? (
-                            <div className="mt-4 space-y-4">
-                                <div className="flex flex-wrap items-center gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={handleGenerate}
-                                        disabled={isGenerating}
-                                        className="rounded-md border border-emerald-700 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
-                                        {isGenerating ? "generating..." : "generate"}
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={stopGeneration}
-                                        className="rounded-md border border-red-800 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-500/20"
-                                    >
-                                        stop
-                                    </button>
-                                </div>
-
-                                <div className="rounded-lg border border-neutral-700 bg-neutral-900/70 p-3">
-                                    <div className="h-4 w-full overflow-hidden rounded-md bg-neutral-800">
-                                        <div
-                                            className="h-full rounded-md bg-sky-500 transition-[width] duration-200"
-                                            style={{ width: `${String(progress)}%` }}
-                                        />
-                                    </div>
-                                    <p className="mt-2 text-right text-xs font-semibold text-neutral-300">
-                                        {String(progress)}%
-                                    </p>
-                                </div>
-                            </div>
-                        ) : null}
-                    </div>
+                    <SimulationViewer
+                        jobId={currentJobId}
+                        selectedMetrics={selectedMetrics.map((m) => ({
+                            name: m.name,
+                            label: m.label,
+                            unit: m.unit,
+                            agg: m.agg,
+                            entities: m.entities,
+                            viz: m.viz,
+                            chart_group: m.chart_group ?? null,
+                            grounding: m.grounding ?? "domain_inference",
+                            required_attrs: m.required_attrs ?? [],
+                            sampling_event: m.sampling_event ?? "tick",
+                            rationale: m.rationale,
+                        }))}
+                    />
                 </section>
             </main>
+            <FloatingWorkspaceToolbar
+                archiveBusy={archiveBusy}
+                archiveError={archiveError}
+                archiveMessage={archiveMessage}
+                importError={importError}
+                importMessage={importMessage}
+                isImporting={isImporting}
+                inputsLocked={inputsLocked}
+                onExport={handleExportArchive}
+                onArchiveFileChange={handleImportArchiveFile}
+                onJsonFileChange={handleImportJson}
+            />
         </div>
     );
 }

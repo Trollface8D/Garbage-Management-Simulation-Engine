@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import JSZip from "jszip";
 import BackToHome from "@/app/components/back-to-home";
 import ModelPicker from "@/app/components/model-picker";
 import ProjectPageHeader from "@/app/components/project-page-header";
@@ -12,9 +13,10 @@ import {
   fetchMapExtractInputs,
   fetchMapExtractResult,
   fetchMapExtractStatusOnce,
+  initializeMapExtractJobWithFiles,
   resumeMapExtractJob,
 } from "@/lib/map-api-client";
-import { CaretIcon, ExportIcon, ImportIcon, SaveIcon, TrashIcon } from "@/app/components/icons/common-icons";
+import { CaretIcon, ExportIcon, ImportIcon, TrashIcon } from "@/app/components/icons/common-icons";
 import type {
   GraphSelection,
   MapEdge,
@@ -60,13 +62,32 @@ type MapWorkspaceSnapshot = {
 
 type MapArtifactBundle = {
   artifactType: "map_extract_workspace";
-  artifactVersion: 1;
+  artifactVersion: 1 | 2;
   exportedAt: string;
   componentId: string;
   title: string;
   projectName: string;
   snapshot: MapWorkspaceSnapshot;
+  attachmentManifest?: {
+    overview: Array<{
+      name: string;
+      path: string;
+      type: string;
+      lastModified: number;
+      size: number;
+    }>;
+    bin: Array<{
+      name: string;
+      path: string;
+      type: string;
+      lastModified: number;
+      size: number;
+    }>;
+  };
 };
+
+type MapArtifactAttachmentManifest = NonNullable<MapArtifactBundle["attachmentManifest"]>;
+type MapArtifactAttachmentEntries = MapArtifactAttachmentManifest["overview"];
 
 type ViewMode = "graph" | "code";
 
@@ -124,6 +145,15 @@ function dedupeUploadFiles(files: LocalUploadFile[]): LocalUploadFile[] {
   }
 
   return deduped;
+}
+
+function sanitizeArtifactFileName(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "file";
+  }
+
+  return trimmed.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "file";
 }
 
 function selectionToRef(selection: GraphSelection): SelectionRef {
@@ -1069,6 +1099,47 @@ export default function MapExtractionWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, jobId]);
 
+  // Initialize a job immediately when files are first uploaded (Option B: Immediate Backend Upload)
+  // This persists files to the backend so they survive page refresh.
+  // Only runs once per unique set of files, and only if no job is already running.
+  useEffect(() => {
+    if (!hydrated || jobId || isExtracting || isResuming || isJobActive) {
+      return;
+    }
+    if (overviewFiles.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const newJobId = await initializeMapExtractJobWithFiles(
+          componentId,
+          overviewFiles.map((entry) => entry.file),
+          binFiles.map((entry) => entry.file),
+        );
+        if (cancelled) {
+          return;
+        }
+        setJobId(newJobId);
+        setEditStatus("Files uploaded to backend for persistence. Ready for extraction.");
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        // Silently fail — files stay in local state, extraction can still proceed later
+        const message = error instanceof Error ? error.message : "Failed to upload files to backend";
+        console.warn(`[map-extraction-workspace] Job initialization failed: ${message}`);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, overviewFiles.length]);
+
   const onPickOverviewFiles = (files: FileList | null) => {
     const picked = Array.from(files || []);
     if (picked.length === 0) {
@@ -1483,32 +1554,7 @@ export default function MapExtractionWorkspace({
     setSelection({ kind: "none" });
   };
 
-  const handleSaveLocally = () => {
-    if (!graphData) {
-      setEditStatus("No graph to save yet.");
-      return;
-    }
-
-    // TODO(db): persist map extraction snapshots into SQLite when map tables are finalized.
-    window.localStorage.setItem(
-      snapshotKey,
-      JSON.stringify({
-        graph: graphData,
-        jobId,
-        selectedModel,
-        overviewAdditionalInfo,
-        binAdditionalInfo,
-        overviewFileNames: overviewDisplayNames,
-        binFileNames: binDisplayNames,
-        changeLog,
-        editStatus,
-        selection: selectionToRef(selection),
-      } satisfies MapWorkspaceSnapshot),
-    );
-    setEditStatus("Saved current map workspace snapshot locally.");
-  };
-
-  const handleExportArtifacts = () => {
+  const handleExportArtifacts = async () => {
     const snapshot: MapWorkspaceSnapshot = {
       graph: graphData,
       jobId,
@@ -1522,27 +1568,59 @@ export default function MapExtractionWorkspace({
       selection: graphData ? selectionToRef(selection) : null,
     };
 
+    const zip = new JSZip();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const safeComponentId = componentId.replace(/[^a-zA-Z0-9_-]+/g, "_");
+
+    const collectEntries = async (
+      files: LocalUploadFile[],
+      section: "overview" | "bin",
+    ): Promise<MapArtifactAttachmentEntries> => {
+      const entries: MapArtifactAttachmentEntries = [];
+
+      for (const [index, entry] of files.entries()) {
+        const safeName = sanitizeArtifactFileName(entry.file.name);
+        const zippedPath = `files/${section}/${String(index + 1).padStart(3, "0")}_${safeName}`;
+        zip.file(zippedPath, await entry.file.arrayBuffer());
+        entries.push({
+          name: entry.file.name,
+          path: zippedPath,
+          type: entry.file.type || "application/octet-stream",
+          lastModified: Number(entry.file.lastModified || Date.now()),
+          size: Number(entry.file.size || 0),
+        });
+      }
+
+      return entries;
+    };
+
+    const overviewEntries = await collectEntries(overviewFiles, "overview");
+    const binEntries = await collectEntries(binFiles, "bin");
+
     const bundle: MapArtifactBundle = {
       artifactType: "map_extract_workspace",
-      artifactVersion: 1,
+      artifactVersion: 2,
       exportedAt: new Date().toISOString(),
       componentId,
       title,
       projectName,
       snapshot,
+      attachmentManifest: {
+        overview: overviewEntries,
+        bin: binEntries,
+      },
     };
 
-    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+    zip.file("bundle.json", JSON.stringify(bundle, null, 2));
+    const blob = await zip.generateAsync({ type: "blob" });
     const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
-    const safeComponentId = componentId.replace(/[^a-zA-Z0-9_-]+/g, "_");
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     anchor.href = objectUrl;
-    anchor.download = `map_extract_artifacts_${safeComponentId}_${timestamp}.json`;
+    anchor.download = `map_extract_artifacts_${safeComponentId}_${timestamp}.zip`;
     anchor.click();
     URL.revokeObjectURL(objectUrl);
 
-    setEditStatus("Exported map extraction artifacts as JSON.");
+    setEditStatus("Exported map extraction artifacts as ZIP with bundled files.");
   };
 
   const resolveImportedSnapshot = (payload: unknown): MapWorkspaceSnapshot | null => {
@@ -1560,8 +1638,80 @@ export default function MapExtractionWorkspace({
 
   const handleImportArtifacts = async (file: File) => {
     try {
-      const raw = await file.text();
-      const parsed = JSON.parse(raw) as unknown;
+      let parsed: unknown;
+      let restoredOverviewFiles: File[] = [];
+      let restoredBinFiles: File[] = [];
+
+      const lowerName = file.name.toLowerCase();
+      const isZipUpload = lowerName.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+
+      if (isZipUpload) {
+        const zip = await JSZip.loadAsync(await file.arrayBuffer());
+        const bundleFile = zip.file("bundle.json");
+        if (!bundleFile) {
+          setEditStatus("Invalid ZIP artifact format. Missing bundle.json.");
+          return;
+        }
+
+        parsed = JSON.parse(await bundleFile.async("string")) as unknown;
+
+        const maybeBundle = parsed as Partial<MapArtifactBundle>;
+        const attachmentManifest = maybeBundle.attachmentManifest;
+
+        const restoreSectionFiles = async (
+          entries: unknown,
+        ): Promise<File[]> => {
+          if (!Array.isArray(entries)) {
+            return [];
+          }
+
+          const restored: File[] = [];
+          for (const rawEntry of entries) {
+            if (!rawEntry || typeof rawEntry !== "object") {
+              continue;
+            }
+
+            const item = rawEntry as {
+              name?: unknown;
+              path?: unknown;
+              type?: unknown;
+              lastModified?: unknown;
+            };
+
+            const path = typeof item.path === "string" ? item.path : "";
+            if (!path) {
+              continue;
+            }
+
+            const zippedFile = zip.file(path);
+            if (!zippedFile) {
+              continue;
+            }
+
+            const content = await zippedFile.async("arraybuffer");
+            const fileName =
+              (typeof item.name === "string" && item.name.trim()) ||
+              path.split("/").pop() ||
+              "file";
+            const fileType = typeof item.type === "string" ? item.type : "application/octet-stream";
+            const lastModified =
+              typeof item.lastModified === "number" && Number.isFinite(item.lastModified)
+                ? item.lastModified
+                : Date.now();
+
+            restored.push(new File([content], fileName, { type: fileType, lastModified }));
+          }
+
+          return restored;
+        };
+
+        restoredOverviewFiles = await restoreSectionFiles(attachmentManifest?.overview);
+        restoredBinFiles = await restoreSectionFiles(attachmentManifest?.bin);
+      } else {
+        const raw = await file.text();
+        parsed = JSON.parse(raw) as unknown;
+      }
+
       const snapshot = resolveImportedSnapshot(parsed);
 
       if (!snapshot) {
@@ -1576,11 +1726,11 @@ export default function MapExtractionWorkspace({
 
       setOverviewFiles((prev) => {
         prev.forEach(revokeFilePreview);
-        return [];
+        return dedupeUploadFiles(restoredOverviewFiles.map((fileItem) => toUploadEntry(fileItem)));
       });
       setBinFiles((prev) => {
         prev.forEach(revokeFilePreview);
-        return [];
+        return dedupeUploadFiles(restoredBinFiles.map((fileItem) => toUploadEntry(fileItem)));
       });
 
       setGraphData(snapshot.graph ?? null);
@@ -1588,8 +1738,18 @@ export default function MapExtractionWorkspace({
       setSelectedModel(typeof snapshot.selectedModel === "string" ? snapshot.selectedModel.trim() : "");
       setOverviewAdditionalInfo(typeof snapshot.overviewAdditionalInfo === "string" ? snapshot.overviewAdditionalInfo : "");
       setBinAdditionalInfo(typeof snapshot.binAdditionalInfo === "string" ? snapshot.binAdditionalInfo : "");
-      setOverviewStoredFileNames(dedupeNames(Array.isArray(snapshot.overviewFileNames) ? snapshot.overviewFileNames : []));
-      setBinStoredFileNames(dedupeNames(Array.isArray(snapshot.binFileNames) ? snapshot.binFileNames : []));
+      setOverviewStoredFileNames(
+        dedupeNames([
+          ...(Array.isArray(snapshot.overviewFileNames) ? snapshot.overviewFileNames : []),
+          ...restoredOverviewFiles.map((fileItem) => fileItem.name),
+        ]),
+      );
+      setBinStoredFileNames(
+        dedupeNames([
+          ...(Array.isArray(snapshot.binFileNames) ? snapshot.binFileNames : []),
+          ...restoredBinFiles.map((fileItem) => fileItem.name),
+        ]),
+      );
       setChangeLog(Array.isArray(snapshot.changeLog) ? snapshot.changeLog : []);
       setEditStatus(typeof snapshot.editStatus === "string" ? snapshot.editStatus : "Imported map extraction artifacts.");
       setHistory([]);
@@ -1597,13 +1757,18 @@ export default function MapExtractionWorkspace({
 
       if (snapshot.graph) {
         setSelection(selectionFromRef(snapshot.graph, snapshot.selection ?? null));
-        setExtractStatus("Imported map extraction artifacts. Re-upload source files to run extraction again.");
+        const hasBundledFiles = restoredOverviewFiles.length > 0 || restoredBinFiles.length > 0;
+        setExtractStatus(
+          hasBundledFiles
+            ? "Imported map extraction artifacts with bundled files."
+            : "Imported map extraction artifacts. Re-upload source files to run extraction again.",
+        );
       } else {
         setSelection({ kind: "none" });
         setExtractStatus("Imported artifact bundle without graph data.");
       }
     } catch {
-      setEditStatus("Failed to import artifact JSON. Ensure the file is valid.");
+      setEditStatus("Failed to import artifact bundle. Ensure the ZIP/JSON file is valid.");
     }
   };
 
@@ -1637,19 +1802,11 @@ export default function MapExtractionWorkspace({
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={handleSaveLocally}
-              aria-label="Save map workspace"
-              title="Save"
-              className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20"
-            >
-              <SaveIcon className="h-4 w-4" />
-              <span>Save</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportArtifacts}
+              onClick={() => {
+                void handleExportArtifacts();
+              }}
               aria-label="Export map artifacts"
-              title="Export artifacts (.json)"
+              title="Export artifacts (.zip)"
               className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-500/10 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20"
             >
               <ExportIcon className="h-4 w-4" />
@@ -1659,7 +1816,7 @@ export default function MapExtractionWorkspace({
               type="button"
               onClick={() => artifactImportInputRef.current?.click()}
               aria-label="Import map artifacts"
-              title="Import artifacts (.json)"
+              title="Import artifacts (.zip/.json)"
               className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-500/10 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20"
             >
               <ImportIcon className="h-4 w-4" />
@@ -1668,7 +1825,7 @@ export default function MapExtractionWorkspace({
             <input
               ref={artifactImportInputRef}
               type="file"
-              accept="application/json,.json"
+              accept="application/zip,application/x-zip-compressed,.zip,application/json,.json"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];
