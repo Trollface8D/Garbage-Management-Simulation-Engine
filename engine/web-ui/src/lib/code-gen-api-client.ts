@@ -21,19 +21,20 @@ export type CodeGenPolicyOutline = {
 
 export type CodeGenJobStatus = {
   jobId: string;
-  status: "queued" | "running" | "paused" | "completed" | "failed" | "cancelled" | "partial" | "previewing";
+  status: "queued" | "running" | "paused" | "completed" | "failed" | "cancelled" | "partial" | "previewing" | "awaiting_confirmation";
   currentStage: string | null;
   stageMessage: string;
   stageHistory: Array<{ stage: string; message: string; tokenUsage?: Record<string, number> }>;
   tokenUsage: Record<string, number> | null;
   error: string | null;
   cancelRequested: boolean;
-  pauseRequested?: boolean;
   completedStages: string[];
   remainingStages: number;
   nextStage: string | null;
   canResume: boolean;
   resumeDisabledReason: string | null;
+  awaitingConfirmationStage: string | null;
+  confirmedStages: string[];
 };
 
 export type CodeGenPreviewResult = {
@@ -232,6 +233,26 @@ export async function cancelCodeGenJob(jobId: string): Promise<void> {
   }
 }
 
+export async function resumeCodeGenJob(jobId: string): Promise<{ jobId: string; status: string }> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/resume`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  return jsonOrThrow<{ jobId: string; status: string }>(response);
+}
+
+export async function confirmCodeGenStage(jobId: string, stage: string): Promise<void> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/confirm`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ stage }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+}
+
 
 export async function rollbackCodeGenJob(
   jobId: string,
@@ -241,7 +262,7 @@ export async function rollbackCodeGenJob(
   const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/rollback`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ toStage, mode }),
+    body: JSON.stringify({ toStage, mode, force: true }),
     cache: "no-store",
   });
   if (!response.ok) {

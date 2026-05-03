@@ -22,7 +22,28 @@ def request_cancel(job_id: str) -> bool:
             return False
         job.cancel_requested = True
         job.updated_at = utc_now_iso()
+        # Wake up any confirmation gate so the worker can raise JobCancelledError.
+        if job.awaiting_confirmation_stage is not None:
+            job.confirm_event.set()
     logger.info("[job_store] cancel requested jobId=%s", job_id)
+    return True
+
+
+def request_confirm(job_id: str, stage: str) -> bool:
+    """Signal confirmation for a gated stage. Returns True if accepted."""
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is None:
+            return False
+        if job.awaiting_confirmation_stage != stage:
+            return False
+        if stage not in job.confirmed_stages:
+            job.confirmed_stages.append(stage)
+        job.awaiting_confirmation_stage = None
+        job.status = "running"
+        job.updated_at = utc_now_iso()
+        job.confirm_event.set()
+    logger.info("[job_store] confirmed stage jobId=%s stage=%s", job_id, stage)
     return True
 
 
@@ -90,7 +111,7 @@ def emit_job_event(job: JobRecord, event: str, payload: Any) -> None:
             if job.status in {"failed", "cancelled"} or job.cancel_requested:
                 logger.info("[job_store] ignored stage for %s (cancel=%s) jobId=%s stage=%s", job.status, job.cancel_requested, job.job_id, stage)
                 return
-            if job.status == "queued":
+            if job.status in {"queued", "awaiting_confirmation"}:
                 job.status = "running"
             job.current_stage = stage or job.current_stage
             job.stage_message = message
@@ -147,4 +168,6 @@ def serialize_job(job: JobRecord) -> dict[str, Any]:
         "runDir": job.run_dir,
         "cancelRequested": job.cancel_requested,
         "completedStages": list(job.completed_stages),
+        "awaitingConfirmationStage": job.awaiting_confirmation_stage,
+        "confirmedStages": list(job.confirmed_stages),
     }

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from threading import Event
 from typing import Any
 import queue
 import time
@@ -22,3 +23,7 @@ class JobRecord:
     cancel_requested: bool = False
     last_activity_ts: float = field(default_factory=time.monotonic)
     completed_stages: list[str] = field(default_factory=list)
+    # Confirmation gate: worker pauses at gated stages until user confirms.
+    awaiting_confirmation_stage: str | None = None
+    confirmed_stages: list[str] = field(default_factory=list)
+    confirm_event: Event = field(default_factory=Event)

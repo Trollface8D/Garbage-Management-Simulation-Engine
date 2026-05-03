@@ -27,6 +27,7 @@ from ..services.job_store import (
     JOBS_LOCK,
     emit_job_event,
     request_cancel,
+    request_confirm,
     serialize_job,
     utc_now_iso,
 )
@@ -57,7 +58,7 @@ def _resume_state_payload(
     remaining = [stage for stage in checkpoints.STAGE_ORDER if stage not in completed_set]
     next_stage = remaining[0] if remaining else None
 
-    can_resume = bool(remaining) and status not in {"running", "queued"}
+    can_resume = bool(remaining) and status not in {"running", "queued", "awaiting_confirmation"}
     reason: str | None = None
     if not remaining:
         reason = "No stages left to run."
@@ -65,6 +66,8 @@ def _resume_state_payload(
         reason = "Job already running."
     elif status == "queued":
         reason = "Job already queued."
+    elif status == "awaiting_confirmation":
+        reason = "Job is awaiting user confirmation."
 
     return {
         "completedStages": completed,
@@ -86,6 +89,9 @@ def _start_timeout_watchdog(job: JobRecord) -> None:
             with JOBS_LOCK:
                 if job.status in {"completed", "failed", "cancelled"}:
                     return
+                # Don't time out jobs waiting for user confirmation — that's intentional.
+                if job.status == "awaiting_confirmation":
+                    continue
                 idle = time.monotonic() - job.last_activity_ts
             if idle >= CODE_GEN_JOB_TIMEOUT_SECONDS:
                 err = f"code_gen idle for {int(idle)}s — terminated."
@@ -281,13 +287,38 @@ def cancel_code_gen_job(job_id: str):
 def rollback_code_gen_job(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
     """Roll back checkpoints.
 
-    Body: ``{"toStage": "<stage>", "mode": "after" | "from"}``
+    Body: ``{"toStage": "<stage>", "mode": "after" | "from", "force": false}``
       - ``after`` (default): keep ``toStage`` as completed; resume from the next.
       - ``from``: drop ``toStage`` itself and re-run it on resume.
+      - ``force``: cancel a running job before rolling back (default false).
     """
     stage = str(payload.get("toStage") or "").strip()
     if not stage or stage not in checkpoints.STAGE_ORDER:
         return JSONResponse({"error": "toStage is invalid."}, status_code=400)
+
+    force = bool(payload.get("force", False))
+
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is not None and job.status in {"running", "queued", "awaiting_confirmation"}:
+            if not force:
+                return JSONResponse(
+                    {"error": "Job is still running. Cancel it first, or pass force=true."},
+                    status_code=409,
+                )
+            job.cancel_requested = True
+            if job.awaiting_confirmation_stage is not None:
+                job.confirm_event.set()
+
+    # Brief wait for worker to acknowledge cancel if force=true
+    if force and job is not None:
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            with JOBS_LOCK:
+                current_status = job.status
+            if current_status not in {"running", "queued", "awaiting_confirmation"}:
+                break
+            time.sleep(0.1)
 
     mode = str(payload.get("mode") or "after").strip()
     if mode == "from":
@@ -301,10 +332,103 @@ def rollback_code_gen_job(job_id: str, payload: dict[str, Any] = Body(default_fa
             job.completed_stages = [
                 s for s in (job.completed_stages or []) if s not in removed
             ]
+            # Reset confirmed stages for any rolled-back confirmation gates.
+            job.confirmed_stages = [s for s in job.confirmed_stages if s not in removed]
+            job.awaiting_confirmation_stage = None
             job.error = None
+            job.cancel_requested = False
+            # Put job in a resumable state (partial = has some checkpoints, not running).
+            if job.status in {"cancelled", "failed", "running", "queued", "awaiting_confirmation"}:
+                job.status = "partial"
             job.updated_at = utc_now_iso()
 
-    return {"jobId": job_id, "removed": removed, "mode": mode}
+    return {"jobId": job_id, "removed": removed, "mode": mode, "resumable": True}
+
+
+@router.post("/code_gen/jobs/{job_id}/resume")
+def resume_code_gen_job(job_id: str):
+    """Re-spawn the worker for an existing job from where it left off.
+
+    Valid for jobs in queued / cancelled / failed status. Uses the same job_id
+    so previously saved checkpoints are reused.
+    """
+    if not is_auth_available():
+        return JSONResponse(
+            {"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."},
+            status_code=500,
+        )
+
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+
+    if job is None:
+        # Try to reconstruct from disk checkpoints.
+        manifest = checkpoints.load_inputs(job_id)
+        if manifest is None:
+            return JSONResponse(
+                {"error": f"Job '{job_id}' not found and no inputs manifest on disk."},
+                status_code=404,
+            )
+        now = utc_now_iso()
+        job = JobRecord(job_id=job_id, status="queued", created_at=now, updated_at=now)
+        with JOBS_LOCK:
+            JOBS[job_id] = job
+
+    with JOBS_LOCK:
+        current_status = job.status
+
+    if current_status in {"running", "queued", "awaiting_confirmation"}:
+        return JSONResponse({"error": "Job already running or queued."}, status_code=409)
+
+    manifest = checkpoints.load_inputs(job_id)
+    if manifest is None:
+        return JSONResponse(
+            {"error": "No inputs manifest on disk — cannot resume. Start a new job."},
+            status_code=409,
+        )
+
+    api_key = resolve_api_key()
+    model_name = str(manifest.get("modelName") or DEFAULT_MODEL_NAME)
+    use_env_model_overrides = bool(manifest.get("useEnvModelOverrides", True))
+    inputs = {
+        "causalData": manifest.get("causalData") or "",
+        "mapNodeJson": manifest.get("mapNodeJson"),
+        "selectedEntities": manifest.get("selectedEntities") or [],
+        "selectedPolicies": manifest.get("selectedPolicies") or [],
+        "selectedMetrics": manifest.get("selectedMetrics") or [],
+        "userEntityList": manifest.get("userEntityList") or [],
+    }
+
+    with JOBS_LOCK:
+        job.status = "queued"
+        job.cancel_requested = False
+        job.error = None
+        job.updated_at = utc_now_iso()
+
+    _spawn_worker(
+        job,
+        api_key=api_key,
+        model_name=model_name,
+        use_env_model_overrides=use_env_model_overrides,
+        inputs=inputs,
+    )
+    logger.info("[code_gen] resumed jobId=%s", job_id)
+    return {"jobId": job_id, "status": "queued"}
+
+
+@router.post("/code_gen/jobs/{job_id}/confirm")
+def confirm_code_gen_stage(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
+    """Confirm a gated stage so the worker proceeds past its confirmation gate."""
+    stage = str(payload.get("stage") or "").strip()
+    if not stage:
+        return JSONResponse({"error": "stage is required."}, status_code=400)
+    accepted = request_confirm(job_id, stage)
+    if not accepted:
+        return JSONResponse(
+            {"error": f"No active confirmation gate for stage '{stage}'."},
+            status_code=409,
+        )
+    return {"jobId": job_id, "confirmed": True, "stage": stage}
 
 
 @router.get("/code_gen/jobs/{job_id}/iterations/{stage}")

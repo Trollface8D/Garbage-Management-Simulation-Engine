@@ -5,6 +5,7 @@ import {
   cancelCodeGenJob,
   fetchCodeGenCheckpointDetail,
   fetchCodeGenCheckpoints,
+  fetchCodeGenStatus,
   rollbackCodeGenJob,
   type CodeGenCheckpointDetail,
   type CodeGenPolicyOutline,
@@ -67,7 +68,7 @@ const STAGE_ENTRIES: StageEntry[] = [
 
 const NO_ROLLBACK_STAGES = new Set(["state1_entity_list", "state1b_policy_outline"]);
 
-type StageStatus = "pending" | "running" | "done" | "cancelled" | "failed";
+type StageStatus = "pending" | "running" | "done" | "cancelled" | "failed" | "awaiting_confirmation";
 
 function shortStageName(raw: string | null | undefined): string {
   if (!raw) return "";
@@ -79,6 +80,7 @@ function stageStatus(
   currentStage: string,
   completed: Set<string>,
   jobStatus: string,
+  awaitingConfirmationStage?: string | null,
 ): StageStatus {
   if (completed.has(stageKey)) return "done";
   // Keep state 1/1b visible as running during preview and partial phases
@@ -90,6 +92,7 @@ function stageStatus(
   ) {
     return "running";
   }
+  if (awaitingConfirmationStage === stageKey) return "awaiting_confirmation";
   if (currentStage === stageKey) {
     if (jobStatus === "cancelled") return "cancelled";
     if (jobStatus === "failed") return "failed";
@@ -104,6 +107,8 @@ function statusDot(status: StageStatus): { label: string; className: string } {
       return { label: "✓", className: "bg-emerald-500 text-neutral-900" };
     case "running":
       return { label: "…", className: "bg-sky-500 text-neutral-900 animate-pulse" };
+    case "awaiting_confirmation":
+      return { label: "?", className: "bg-yellow-400 text-neutral-900 animate-pulse" };
     case "cancelled":
       return { label: "■", className: "bg-amber-500 text-neutral-900" };
     case "failed":
@@ -122,11 +127,14 @@ export type CodeGenStageLogProps = {
   remainingStages?: number | null;
   nextStage?: string | null;
   cancelRequested?: boolean;
+  awaitingConfirmationStage?: string | null;
   isActive: boolean;
   onStatusUpdate?: (message: string) => void;
   initialSelectedPolicyIds?: Set<string>;
   initialManualPolicies?: CodeGenPolicyOutline[];
   onProceedRequested?: (selectedPolicies: string[], manualPolicies: CodeGenPolicyOutline[]) => void;
+  onResumeRequested?: () => void;
+  onConfirmStage?: (stage: string) => void;
   policyConfirmReady?: boolean;
 };
 
@@ -140,11 +148,14 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
     remainingStages,
     nextStage,
     cancelRequested,
+    awaitingConfirmationStage,
     isActive,
     onStatusUpdate,
     initialSelectedPolicyIds,
     initialManualPolicies,
     onProceedRequested,
+    onResumeRequested,
+    onConfirmStage,
     policyConfirmReady,
   } = props;
 
@@ -271,16 +282,25 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
       setActionStatus(`Rolling back to ${stage}…`);
       try {
         await rollbackCodeGenJob(jobId, stage, "from");
-        setActionStatus(
-          `Rolled back '${stage}' and later. Resume to re-run from this stage.`,
-        );
-        // Drop any cached detail beyond the rollback so the panel re-fetches
-        // when the stage is re-run.
+        // Drop cached details for rolled-back stages so panel re-fetches on re-run.
         setStageDetails((prev) => {
           const next = { ...prev };
-          delete next[stage];
+          // Remove all stages from `stage` onward.
+          let found = false;
+          for (const key of Object.keys(next)) {
+            if (key === stage) found = true;
+            if (found) delete next[key];
+          }
           return next;
         });
+        // Refresh remote completed list immediately.
+        try {
+          const data = await fetchCodeGenStatus(jobId);
+          setRemoteCompleted(data.completedStages || []);
+        } catch {
+          /* best-effort */
+        }
+        setActionStatus(`Rolled back. Click "Resume & proceed" to re-run from '${stage}'.`);
         onStatusUpdate?.(`Rollback done for '${stage}'.`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -332,6 +352,11 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
               cancel requested
             </span>
           ) : null}
+          {awaitingConfirmationStage ? (
+            <span className="rounded-md border border-yellow-700 bg-yellow-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-yellow-200">
+              awaiting confirmation ↓
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -352,7 +377,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
         <div className="mt-3 space-y-2">
           <ol className="space-y-1">
             {STAGE_ENTRIES.map((entry, index) => {
-              const baseStatus = stageStatus(entry.key, shortCurrentStage, completedSet, jobStatus);
+              const baseStatus = stageStatus(entry.key, shortCurrentStage, completedSet, jobStatus, awaitingConfirmationStage);
               const isPolicyCheckpointLoading =
                 entry.key === "state1b_policy_outline" &&
                 expandedStage === entry.key &&
@@ -373,11 +398,13 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                   className={`rounded-md border ${
                     status === "running"
                       ? "border-sky-700 bg-sky-500/5"
-                      : status === "done"
-                        ? "border-emerald-700/60 bg-emerald-500/5"
-                        : status === "failed"
-                          ? "border-red-700 bg-red-500/5"
-                          : "border-neutral-800 bg-neutral-900/40"
+                      : status === "awaiting_confirmation"
+                        ? "border-yellow-600 bg-yellow-500/5"
+                        : status === "done"
+                          ? "border-emerald-700/60 bg-emerald-500/5"
+                          : status === "failed"
+                            ? "border-red-700 bg-red-500/5"
+                            : "border-neutral-800 bg-neutral-900/40"
                   }`}
                 >
                   <button
@@ -420,6 +447,25 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                         <p className="wrap-break-word text-neutral-300">{progressMsg}</p>
                       ) : null}
 
+                      {status === "awaiting_confirmation" && entry.key === awaitingConfirmationStage ? (
+                        <div className="rounded-md border border-yellow-700/60 bg-yellow-500/10 p-3 space-y-2">
+                          <p className="text-xs font-semibold text-yellow-200">
+                            Waiting for confirmation before running {entry.label}
+                          </p>
+                          <p className="text-[11px] text-yellow-100/70">
+                            All policies and entity classes are ready. Review the stage log above, then confirm to proceed.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => onConfirmStage?.(entry.key)}
+                            disabled={actionPending || isActive === false}
+                            className="rounded-md border border-yellow-600 bg-yellow-500/15 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:bg-yellow-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Confirm & run {entry.label}
+                          </button>
+                        </div>
+                      ) : null}
+
                       {status === "done" ? (
                         entry.key === "state1b_policy_outline" ? (
                           <PolicyConfirmBlock
@@ -444,9 +490,25 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                             onRemoveManualPolicy={(rule_id) => {
                               setDraftManualPolicies((prev) => prev.filter((item) => item.rule_id !== rule_id));
                             }}
-                            onConfirm={() => onProceedRequested?.([...draftSelectedPolicyIds], draftManualPolicies)}
+                            onConfirm={
+                              awaitingConfirmationStage
+                                ? () => onConfirmStage?.(awaitingConfirmationStage)
+                                : hasHistory
+                                  ? () => onResumeRequested?.()
+                                  : () => onProceedRequested?.([...draftSelectedPolicyIds], draftManualPolicies)
+                            }
+                            proceedLabelOverride={
+                              awaitingConfirmationStage
+                                ? "Confirm & proceed"
+                                : isFailed
+                                  ? "Restart & proceed"
+                                  : hasHistory
+                                    ? "Resume & proceed"
+                                    : undefined
+                            }
                             confirmReady={policyConfirmReady}
                             isRunning={isActive}
+                            isGated={!!awaitingConfirmationStage}
                             actionPending={actionPending}
                           />
                         ) : (
@@ -569,7 +631,9 @@ function PolicyConfirmBlock({
   onConfirm,
   confirmReady,
   isRunning,
+  isGated,
   actionPending,
+  proceedLabelOverride,
 }: {
   detail: CodeGenCheckpointDetail | undefined;
   loading: boolean;
@@ -582,7 +646,9 @@ function PolicyConfirmBlock({
   onConfirm?: () => void;
   confirmReady?: boolean;
   isRunning: boolean;
+  isGated?: boolean;
   actionPending: boolean;
+  proceedLabelOverride?: string;
 }) {
   const [labelInput, setLabelInput] = useState("");
   const [descInput, setDescInput] = useState("");
@@ -625,8 +691,8 @@ function PolicyConfirmBlock({
   const selectedCount = selectedPolicyIds?.size ?? 0;
   const manualCount = manualPolicies?.length ?? 0;
   const hasSelection = selectedCount > 0 || manualCount > 0;
-  const canProceed = ready && !actionPending && !isRunning && hasSelection;
-  const proceedLabel = "Confirm & proceed";
+  const canProceed = ready && !actionPending && (isGated || !isRunning) && (proceedLabelOverride ? true : hasSelection);
+  const proceedLabel = proceedLabelOverride ?? "Confirm & proceed";
   const proceedTitle = !ready
     ? "Preview is still running."
     : !hasSelection

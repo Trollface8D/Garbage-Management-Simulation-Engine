@@ -19,10 +19,12 @@ from ..models.job_models import JobRecord
 from ..services import code_gen_checkpoints as checkpoints
 from ..services import code_gen_prompts as prompts
 from ..services.job_store import (
+    JOBS_LOCK,
     JobCancelledError,
     emit_job_event,
     is_cancel_requested,
     touch_activity,
+    utc_now_iso,
 )
 
 logger = logging.getLogger(__name__)
@@ -170,6 +172,31 @@ def _resume_skip_completed(job: JobRecord) -> set[str]:
             completed.add(stage)
     completed.update(job.completed_stages or [])
     return completed
+
+
+# Stages that require explicit user confirmation before the worker proceeds.
+CONFIRMATION_GATES: frozenset[str] = frozenset({"state1c_entity_dependencies"})
+
+
+def _wait_for_confirmation(ctx: "StageContext", stage: str) -> None:
+    """Block worker until user confirms the gate stage, honouring cancel."""
+    job = ctx.job
+    # Set awaiting state under lock so serializer surfaces it immediately.
+    with JOBS_LOCK:
+        job.awaiting_confirmation_stage = stage
+        job.status = "awaiting_confirmation"
+        job.updated_at = utc_now_iso()
+    logger.info("[code_gen] awaiting confirmation jobId=%s stage=%s", job.job_id, stage)
+    ctx.emit_stage_message(stage, f"{stage}: awaiting user confirmation")
+    # Reset event so we don't skip past it if it was set previously.
+    job.confirm_event.clear()
+    while True:
+        # Wait 0.5s at a time so cancel can interrupt the gate.
+        job.confirm_event.wait(timeout=0.5)
+        ctx.raise_if_cancelled()
+        if stage in job.confirmed_stages:
+            break
+    logger.info("[code_gen] confirmation received jobId=%s stage=%s", job.job_id, stage)
 
 
 # ---------------------------------------------------------------------------
@@ -860,6 +887,10 @@ def run_code_gen_worker(
                 )
                 ctx.emit_stage_message(stage, f"{stage}: skipped (already completed)")
                 continue
+
+            if stage in CONFIRMATION_GATES and stage not in job.confirmed_stages:
+                _wait_for_confirmation(ctx, stage)
+                ctx.raise_if_cancelled()
 
             ctx.emit_stage_message(stage, f"{stage}: starting")
             touch_activity(job)

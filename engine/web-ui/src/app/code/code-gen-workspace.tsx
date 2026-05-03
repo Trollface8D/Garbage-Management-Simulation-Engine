@@ -66,8 +66,10 @@ function buildCodeGenWorkflowState({
     isResuming ||
     isPolling ||
     jobStatus === "running" ||
-    jobStatus === "queued";
+    jobStatus === "queued" ||
+    jobStatus === "awaiting_confirmation";
   const statusLabel = jobStatus || "—";
+  const canResume = (jobStatus === "cancelled" || jobStatus === "failed") && !isRunning;
 
   return {
     status: jobStatus,
@@ -79,9 +81,13 @@ function buildCodeGenWorkflowState({
       ? "Generating…"
       : isStarting
         ? "Starting…"
-        : "Generate",
-    primaryActionTitle: isActivelyProcessing ? "Generation is running…" : undefined,
-    primaryActionDisabled: isActivelyProcessing,
+        : isResuming
+          ? "Resuming…"
+          : canResume
+            ? "Resume"
+            : "Generate",
+    primaryActionTitle: isRunning && !canResume ? "Generation is running…" : undefined,
+    primaryActionDisabled: isActivelyProcessing || (isRunning && !canResume),
     showProgressBar: isRunning || (typeof jobStatus === "string" && completedStages > 0),
     policyConfirmReady: false,
   };
@@ -419,6 +425,15 @@ export default function CodeGenWorkspace({
     }
   };
 
+  const handleResume = async () => {
+    setActionError("");
+    try {
+      await job.resume();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Resume failed.");
+    }
+  };
+
   const handleEditInput = async () => {
     // If actively processing, show confirmation and cancel the job first
     if (workflow.isRunning) {
@@ -504,7 +519,10 @@ export default function CodeGenWorkspace({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => void handleGenerate()}
+          onClick={() => {
+            const isResume = job.status?.status === "cancelled" || job.status?.status === "failed";
+            void (isResume ? handleResume() : handleGenerate());
+          }}
           disabled={workflow.primaryActionDisabled}
           title={workflow.primaryActionTitle}
           className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -595,12 +613,15 @@ export default function CodeGenWorkspace({
           remainingStages={remainingStages}
           nextStage={job.status?.nextStage ?? null}
           cancelRequested={job.status?.cancelRequested}
+          awaitingConfirmationStage={job.status?.awaitingConfirmationStage ?? null}
           isActive={workflow.isRunning}
           initialSelectedPolicyIds={selectedPolicyIds}
           initialManualPolicies={manualPolicies}
           onProceedRequested={(selectedPolicies, manualPoliciesDraft) =>
             void handleGenerate(selectedPolicies, manualPoliciesDraft)
           }
+          onResumeRequested={() => void job.resume()}
+          onConfirmStage={(stage) => void job.confirm(stage)}
           policyConfirmReady={workflow.policyConfirmReady}
         />
       </div>

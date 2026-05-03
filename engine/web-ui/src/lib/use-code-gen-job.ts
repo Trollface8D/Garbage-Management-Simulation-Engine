@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   cancelCodeGenJob,
+  confirmCodeGenStage,
   createCodeGenJob,
   fetchCodeGenStatus,
   previewEntities,
+  resumeCodeGenJob,
   type CodeGenCreateRequest,
   type CodeGenJobStatus,
   type CodeGenPreviewResult,
@@ -19,6 +21,7 @@ import {
 
 const POLL_INTERVAL_MS = 1500;
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "partial"]);
+// awaiting_confirmation is non-terminal — worker is alive, just gated.
 
 function createPreviewingStatus(jobId: string): CodeGenJobStatus {
   return {
@@ -35,6 +38,8 @@ function createPreviewingStatus(jobId: string): CodeGenJobStatus {
     nextStage: "state1b_policy_outline",
     canResume: false,
     resumeDisabledReason: "Preview is still running.",
+    awaitingConfirmationStage: null,
+    confirmedStages: [],
   };
 }
 
@@ -51,6 +56,8 @@ export type UseCodeGenJobState = {
   start: (req: CodeGenCreateRequest) => Promise<string>;
   runPreview: (jobId?: string) => Promise<CodeGenPreviewResult>;
   cancel: (jobId?: string) => Promise<void>;
+  resume: (jobId?: string) => Promise<void>;
+  confirm: (stage: string, jobId?: string) => Promise<void>;
   reset: () => void;
 };
 
@@ -61,7 +68,7 @@ export function useCodeGenJob(componentId?: string) {
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
-  const [isResuming] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
   const [isRestoringFromPersistence, setIsRestoringFromPersistence] = useState(true);
   const pollTimerRef = useRef<number | null>(null);
   const pollStabilizedRef = useRef(false);
@@ -162,8 +169,6 @@ export function useCodeGenJob(componentId?: string) {
             setStatus(next);
             // Auto-clear jobId and preview when job is cancelled server-side
             if (next.status === "cancelled") {
-              setJobId(null);
-              setPreview(null);
               stopPolling();
               window.clearTimeout(stabilizeTimer);
               return;
@@ -264,14 +269,15 @@ export function useCodeGenJob(componentId?: string) {
       if (!id) return;
       try {
         await cancelCodeGenJob(id);
-        stopPolling();
-        // Immediately refresh status so UI reflects the cancellation
+        // Optimistically mark cancelRequested so the badge lights up immediately.
+        setStatus((prev) => (prev ? { ...prev, cancelRequested: true } : prev));
+        // One immediate status refresh to accelerate feedback; polling continues
+        // and will naturally stop when it sees the terminal "cancelled" status.
         try {
           const next = await fetchCodeGenStatus(id);
           setStatus(next);
           if (next.status === "cancelled") {
-            setJobId(null);
-            setPreview(null);
+            stopPolling();
           }
         } catch {
           /* best-effort — polling will catch up */
@@ -281,6 +287,44 @@ export function useCodeGenJob(componentId?: string) {
       }
     },
     [jobId, stopPolling],
+  );
+
+  const resume = useCallback(
+    async (overrideJobId?: string) => {
+      const id = overrideJobId ?? jobId;
+      if (!id) throw new Error("No job to resume.");
+      setError(null);
+      setIsResuming(true);
+      try {
+        await resumeCodeGenJob(id);
+        setJobId(id);
+        startPolling(id);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Resume failed.";
+        setError(message);
+        throw err;
+      } finally {
+        setIsResuming(false);
+      }
+    },
+    [jobId, startPolling],
+  );
+
+  const confirm = useCallback(
+    async (stage: string, overrideJobId?: string) => {
+      const id = overrideJobId ?? jobId;
+      if (!id) throw new Error("No active job.");
+      setError(null);
+      try {
+        await confirmCodeGenStage(id, stage);
+        // Status will update via polling; no need to force a refresh.
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Confirm failed.";
+        setError(message);
+        throw err;
+      }
+    },
+    [jobId],
   );
 
   const reset = useCallback(() => {
@@ -294,7 +338,8 @@ export function useCodeGenJob(componentId?: string) {
     }
   }, [stopPolling, componentId]);
 
-  // isActivelyProcessing: true only during immediate user actions (not during polling)
+  // isActivelyProcessing: true only during immediate user actions (not during polling).
+  // awaiting_confirmation is intentionally excluded — buttons must remain clickable.
   const isActivelyProcessing =
     isStarting ||
     isPreviewing ||
@@ -314,6 +359,8 @@ export function useCodeGenJob(componentId?: string) {
     start,
     runPreview,
     cancel,
+    resume,
+    confirm,
     reset,
   };
 }
