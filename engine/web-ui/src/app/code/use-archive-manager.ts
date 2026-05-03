@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, type ChangeEvent } from "react";
 import {
     exportWorkspaceArchive,
     importWorkspaceArchive,
+    type CodeGenPolicyOutline,
 } from "@/lib/code-gen-api-client";
 import { type ArtifactFile } from "@/app/code/code-gen-workspace";
 
@@ -16,6 +17,8 @@ export type ImportedWorkspaceSnapshot = {
     metricsExtracted: boolean;
     artifactFiles: ArtifactFile[];
     jobId: string | null;
+    selectedPolicyIds: Set<string>;
+    manualPolicies: CodeGenPolicyOutline[];
 };
 
 type WorkspaceSnapshot = {
@@ -44,6 +47,8 @@ type WorkspaceSnapshot = {
     metricsExtracted: boolean;
     artifactFiles: ArtifactFile[];
     jobId: string | null;
+    selectedPolicyIds?: string[];
+    manualPolicies?: CodeGenPolicyOutline[];
 };
 
 /**
@@ -66,6 +71,8 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
             metrics: unknown[];
             metricsExtracted: boolean;
             artifactFiles: ArtifactFile[];
+            selectedPolicyIds?: Set<string>;
+            manualPolicies?: CodeGenPolicyOutline[];
         }): WorkspaceSnapshot => ({
             schemaVersion: 1,
             exportedAt: new Date().toISOString(),
@@ -80,6 +87,8 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
             metricsExtracted: data.metricsExtracted,
             artifactFiles: data.artifactFiles,
             jobId: currentJobId,
+            selectedPolicyIds: data.selectedPolicyIds ? Array.from(data.selectedPolicyIds) : [],
+            manualPolicies: data.manualPolicies ?? [],
         }),
         [componentId, currentJobId],
     );
@@ -135,6 +144,8 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
                     metricsExtracted: false,
                     artifactFiles: [] as ArtifactFile[],
                     jobId: null as string | null,
+                    selectedPolicyIds: new Set<string>(),
+                    manualPolicies: [] as CodeGenPolicyOutline[],
                 };
 
                 if (Array.isArray(parsed.selectedCausalIds)) {
@@ -181,6 +192,17 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
 
                 if (typeof parsed.jobId === "string") {
                     data.jobId = parsed.jobId.trim() || null;
+                }
+
+                if (Array.isArray(parsed.selectedPolicyIds)) {
+                    data.selectedPolicyIds = new Set(
+                        (parsed.selectedPolicyIds as unknown[])
+                            .filter((v): v is string => typeof v === "string" && v.length > 0),
+                    );
+                }
+
+                if (Array.isArray(parsed.manualPolicies)) {
+                    data.manualPolicies = parsed.manualPolicies as CodeGenPolicyOutline[];
                 }
 
                 return { success: true, data };

@@ -21,13 +21,14 @@ export type CodeGenPolicyOutline = {
 
 export type CodeGenJobStatus = {
   jobId: string;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled" | "partial";
+  status: "queued" | "running" | "paused" | "completed" | "failed" | "cancelled" | "partial" | "previewing";
   currentStage: string | null;
   stageMessage: string;
   stageHistory: Array<{ stage: string; message: string; tokenUsage?: Record<string, number> }>;
   tokenUsage: Record<string, number> | null;
   error: string | null;
   cancelRequested: boolean;
+  pauseRequested?: boolean;
   completedStages: string[];
   remainingStages: number;
   nextStage: string | null;
@@ -231,6 +232,16 @@ export async function fetchCodeGenCheckpointDetail(
 
 export async function cancelCodeGenJob(jobId: string): Promise<void> {
   const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+}
+
+export async function pauseCodeGenJob(jobId: string): Promise<void> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/pause`, {
     method: "POST",
     cache: "no-store",
   });

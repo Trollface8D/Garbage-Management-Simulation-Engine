@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   artifactUrl,
   fetchCodeGenResult,
@@ -30,6 +30,80 @@ type CausalChoice = {
   label: string;
 };
 
+type CodeGenWorkflowState = {
+  status: string | null;
+  statusLabel: string;
+  isRunning: boolean;
+  isActivelyProcessing: boolean;
+  canCancel: boolean;
+  primaryActionLabel: string;
+  primaryActionTitle?: string;
+  primaryActionDisabled: boolean;
+  showProgressBar: boolean;
+  policyConfirmReady: boolean;
+};
+
+function buildCodeGenWorkflowState({
+  jobStatus,
+  isStarting,
+  isPreviewing,
+  isResuming,
+  isPolling,
+  isActivelyProcessing,
+  hasPreview,
+  shouldShowResumeLabel,
+  completedStages,
+}: {
+  jobStatus: string | null;
+  isStarting: boolean;
+  isPreviewing: boolean;
+  isResuming: boolean;
+  isPolling: boolean;
+  isActivelyProcessing: boolean;
+  hasPreview: boolean;
+  shouldShowResumeLabel: boolean;
+  completedStages: number;
+}): CodeGenWorkflowState {
+  const isRunning =
+    isStarting ||
+    isPreviewing ||
+    isResuming ||
+    isPolling ||
+    jobStatus === "running" ||
+    jobStatus === "queued";
+  const statusLabel =
+    jobStatus === "partial" && hasPreview && !isRunning
+      ? "awaiting confirmation"
+      : jobStatus || (hasPreview ? "awaiting confirmation" : "—");
+
+  return {
+    status: jobStatus,
+    statusLabel,
+    isRunning,
+    isActivelyProcessing,
+    canCancel: isRunning,
+    primaryActionLabel: isPreviewing
+      ? "Previewing entities…"
+      : isStarting
+        ? "Starting…"
+        : shouldShowResumeLabel
+          ? "Resume"
+          : hasPreview
+            ? "Preview loaded ↓"
+            : "Generate",
+    primaryActionTitle: shouldShowResumeLabel
+      ? undefined
+      : hasPreview
+        ? "Preview already loaded — confirm or edit input below."
+        : isActivelyProcessing
+          ? "Preview is running…"
+          : undefined,
+    primaryActionDisabled: isActivelyProcessing || (hasPreview && !shouldShowResumeLabel),
+    showProgressBar: isRunning || (typeof jobStatus === "string" && completedStages > 0),
+    policyConfirmReady: hasPreview && !isRunning && !isResuming,
+  };
+}
+
 export type ArtifactFile = {
   path: string;
   kind?: string;
@@ -53,6 +127,10 @@ type Props = {
   onArtifactFilesChange: (files: ArtifactFile[]) => void;
   onRunningChange?: (running: boolean) => void;
   onJobIdChange?: (jobId: string | null) => void;
+  selectedPolicyIds: Set<string>;
+  onPolicyIdsChange: (ids: Set<string>) => void;
+  manualPolicies: CodeGenPolicyOutline[];
+  onManualPoliciesChange: (policies: CodeGenPolicyOutline[]) => void;
 };
 
 function loadMapGraphForComponent(componentId: string): MapGraphPayload | null {
@@ -104,14 +182,16 @@ export default function CodeGenWorkspace({
   onArtifactFilesChange,
   onRunningChange,
   onJobIdChange,
+  selectedPolicyIds,
+  onPolicyIdsChange,
+  manualPolicies,
+  onManualPoliciesChange,
 }: Props) {
   const job = useCodeGenJob(componentId);
   const [causalChoices, setCausalChoices] = useState<CausalChoice[]>([]);
   const [mapGraph, setMapGraph] = useState<MapGraphPayload | null>(null);
   const [mapStatus, setMapStatus] = useState<string>("no map selected");
   const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(new Set());
-  const [selectedPolicyIds, setSelectedPolicyIds] = useState<Set<string>>(new Set());
-  const [manualPolicies, setManualPolicies] = useState<CodeGenPolicyOutline[]>([]);
   const [actionError, setActionError] = useState<string>("");
   const [previewOpen, setPreviewOpen] = useState<boolean>(false);
   const [previewText, setPreviewText] = useState<string>("");
@@ -130,11 +210,6 @@ export default function CodeGenWorkspace({
       setMapGraph(persisted.mapGraph);
       setMapStatus(persisted.mapStatus);
       setSelectedEntityIds(new Set(persisted.selectedEntityIds));
-      setSelectedPolicyIds(new Set(persisted.selectedPolicyIds));
-      // Support older persisted shape where manualPolicies were strings.
-      const mp = persisted.manualPolicies || [] as unknown as Array<string | CodeGenPolicyOutline>;
-      const normalized = mp.map((m) => typeof m === "string" ? { rule_id: `manual_${String(m).slice(0,8)}`, label: m, trigger: "manual", target_entity_id: "", target_method: "", inputs: [], description: m } as CodeGenPolicyOutline : (m as CodeGenPolicyOutline));
-      setManualPolicies(normalized);
       setPreviewText(persisted.previewText);
       setWasRestoredFromPersistence(true);
     }
@@ -150,8 +225,6 @@ export default function CodeGenWorkspace({
       mapGraph,
       mapStatus,
       selectedEntityIds: Array.from(selectedEntityIds),
-      selectedPolicyIds: Array.from(selectedPolicyIds),
-      manualPolicies,
       artifactFiles,
       previewText,
     };
@@ -164,8 +237,6 @@ export default function CodeGenWorkspace({
     mapGraph,
     mapStatus,
     selectedEntityIds,
-    selectedPolicyIds,
-    manualPolicies,
     artifactFiles,
     previewText,
   ]);
@@ -206,21 +277,35 @@ export default function CodeGenWorkspace({
     );
   }, [selectedMapId, selectedMapLabel]);
 
-  const jobStatus = job.status?.status;
-  const isRunning =
-    job.isStarting ||
-    job.isPreviewing ||
-    job.isResuming ||
-    job.isPolling ||
-    jobStatus === "running" ||
-    jobStatus === "queued";
-
-  // Derived from hook: only true during immediate user actions, not during polling
-  const isActivelyProcessing = job.isActivelyProcessing;
+  const workflow = useMemo(
+    () =>
+      buildCodeGenWorkflowState({
+        jobStatus: job.status?.status ?? null,
+        isStarting: job.isStarting,
+        isPreviewing: job.isPreviewing,
+        isResuming: job.isResuming,
+        isPolling: job.isPolling,
+        isActivelyProcessing: job.isActivelyProcessing,
+        hasPreview: Boolean(job.preview),
+        shouldShowResumeLabel: job.status?.status === "paused",
+        completedStages: job.status?.completedStages?.length ?? 0,
+      }),
+    [
+      artifactFiles.length,
+      job.isActivelyProcessing,
+      job.isPolling,
+      job.isPreviewing,
+      job.isResuming,
+      job.isStarting,
+      job.jobId,
+      job.preview,
+      job.status,
+    ],
+  );
 
   useEffect(() => {
-    onRunningChange?.(isRunning);
-  }, [isRunning, onRunningChange]);
+    onRunningChange?.(workflow.isRunning);
+  }, [workflow.isRunning, onRunningChange]);
 
   useEffect(() => {
     onJobIdChange?.(job.jobId);
@@ -254,17 +339,13 @@ export default function CodeGenWorkspace({
     };
   }, [causalSourceRefs]);
 
-  // When preview arrives, auto-select all derived policies. The user can
-  // de-select inside the stage log (state1b_policy_outline expansion) before
-  // hitting Resume; the refined selection is shipped to the resume endpoint.
+  // When a new preview arrives, auto-select all derived policies. On page
+  // reload, job.preview is null so persisted selectedPolicyIds survive.
   useEffect(() => {
     const preview = job.preview;
     if (!preview) return;
-    setSelectedPolicyIds((prev) => {
-      if (prev.size > 0) return prev;
-      return new Set(preview.policies.map((p: CodeGenPolicyOutline) => p.rule_id));
-    });
-  }, [job.preview]);
+    onPolicyIdsChange(new Set(preview.policies.map((p: CodeGenPolicyOutline) => p.rule_id)));
+  }, [job.preview, onPolicyIdsChange]);
 
   // When job completes, fetch the artifact manifest from the result.
   useEffect(() => {
@@ -386,8 +467,8 @@ export default function CodeGenWorkspace({
     try {
       const nextSelectedPolicyIds = selectedPolicyIdsOverride ?? Array.from(selectedPolicyIds);
       const nextManualPolicies = manualPoliciesOverride ?? manualPolicies;
-      setSelectedPolicyIds(new Set(nextSelectedPolicyIds));
-      setManualPolicies([...nextManualPolicies]);
+      onPolicyIdsChange(new Set(nextSelectedPolicyIds));
+      onManualPoliciesChange([...nextManualPolicies]);
 
       // Build payload entries: selected rule_id objects + manual policy objects
       const selectedPolicyPayload = [
@@ -411,6 +492,17 @@ export default function CodeGenWorkspace({
           userEntityList: pageEntities,
           previewOnly: true,
         });
+        // Ensure preview (state1 + state1b) finishes before resuming the
+        // full pipeline. Running preview synchronously avoids a race where
+        // resume is requested while the preview worker is still finishing,
+        // which previously led to HTTP 409 from the server.
+        try {
+          await job.runPreview(newJobId);
+        } catch (err) {
+          setActionError(err instanceof Error ? err.message : "Preview failed during generate.");
+          return;
+        }
+
         await job.generate(newJobId, {
           selectedEntities: Array.from(selectedEntityIds).map((id) => ({ id })),
           selectedPolicies: selectedPolicyPayload,
@@ -433,15 +525,15 @@ export default function CodeGenWorkspace({
 
   const handleCancel = async () => {
     try {
-      await job.cancel();
+      await job.pause();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Cancel failed.");
+      setActionError(err instanceof Error ? err.message : "Pause failed.");
     }
   };
 
   const handleEditInput = async () => {
     // If actively processing, show confirmation and cancel the job first
-    if (isRunning) {
+    if (workflow.isRunning) {
       const shouldCancel = window.confirm(
         "This will cancel the active job. Discard progress and reset inputs?\n\nContinue?",
       );
@@ -460,13 +552,19 @@ export default function CodeGenWorkspace({
         `Edit Input will discard ${artifactFiles.length} artifact(s).\n\nContinue?`,
       );
       if (!shouldDiscard) return;
+    } else if (job.preview || job.jobId) {
+      // Preview loaded / awaiting confirmation — warn before discarding
+      const shouldDiscard = window.confirm(
+        "Edit Input will discard the current preview and policy outline.\n\nContinue?",
+      );
+      if (!shouldDiscard) return;
     }
 
     setActionError("");
     onArtifactFilesChange([]);
+    onPolicyIdsChange(new Set());
+    onManualPoliciesChange([]);
     lastResultJobIdRef.current = null;
-    setSelectedPolicyIds(new Set());
-    setManualPolicies([]);
     setPreviewText("");
     setWasRestoredFromPersistence(false);
     clearAllPersistence(componentId);
@@ -479,8 +577,8 @@ export default function CodeGenWorkspace({
   const stageMessage = job.status?.stageMessage ?? "";
 
   const causalCount = causalChoices.length;
-  const hasSavedState = Boolean(job.jobId || job.status || job.preview);
-  const shouldShowResumeLabel = hasSavedState && artifactFiles.length > 0;
+  const isPaused = job.status?.status === "paused";
+  const shouldShowResumeLabel = isPaused;
 
   return (
     <section className="rounded-xl border border-neutral-700 bg-neutral-900/60 p-4 md:p-6">
@@ -490,6 +588,11 @@ export default function CodeGenWorkspace({
           {wasRestoredFromPersistence && (
             <p className="text-xs rounded-md bg-emerald-500/20 border border-emerald-600/50 px-2 py-1 text-emerald-200">
               ✓ Restored from previous session
+            </p>
+          )}
+          {isPaused && (
+            <p className="text-xs rounded-md bg-sky-500/20 border border-sky-600/50 px-2 py-1 text-sky-200">
+              ⏸ Paused — click Resume to continue
             </p>
           )}
           {job.status?.status === "cancelled" && (
@@ -526,32 +629,18 @@ export default function CodeGenWorkspace({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => void handlePreview()}
-          disabled={isActivelyProcessing || !!job.preview}
-          title={
-            job.preview
-              ? "Preview already loaded — confirm or edit input below."
-              : isActivelyProcessing
-                ? "Preview is running…"
-                : undefined
-          }
+          onClick={isPaused ? () => void handleGenerate() : () => void handlePreview()}
+          disabled={workflow.primaryActionDisabled}
+          title={workflow.primaryActionTitle}
           className="rounded-md border border-sky-600 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {job.isPreviewing
-            ? "Previewing entities…"
-            : job.isStarting
-              ? "Starting…"
-              : job.preview
-                ? "Preview loaded ↓"
-                : shouldShowResumeLabel
-                  ? "Resume"
-                  : "Generate"}
+          {workflow.primaryActionLabel}
         </button>
 
         <button
           type="button"
           onClick={() => void handleCancel()}
-          disabled={!isActivelyProcessing}
+          disabled={!workflow.canCancel}
           className="rounded-md border border-red-800 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Cancel
@@ -575,7 +664,7 @@ export default function CodeGenWorkspace({
         const remaining = job.status?.remainingStages ?? null;
         const total = remaining !== null ? completed + remaining : null;
         const percent = total && total > 0 ? Math.round((completed / total) * 100) : 0;
-        const showBar = isRunning || (typeof jobStatus === "string" && completed > 0);
+        const showBar = workflow.showProgressBar;
         if (!showBar) return null;
         return (
           <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
@@ -594,11 +683,11 @@ export default function CodeGenWorkspace({
             <div className="h-2 w-full overflow-hidden rounded-md bg-neutral-800">
               <div
                 className={`h-full rounded-md transition-[width] duration-300 ${
-                  jobStatus === "failed"
+                  workflow.status === "failed"
                     ? "bg-red-500"
-                    : jobStatus === "cancelled"
+                    : workflow.status === "cancelled"
                       ? "bg-amber-500"
-                      : jobStatus === "completed"
+                      : workflow.status === "completed"
                         ? "bg-emerald-500"
                         : "bg-sky-500"
                 }`}
@@ -624,20 +713,20 @@ export default function CodeGenWorkspace({
       <div className="mt-6">
         <CodeGenStageLogPanel
           jobId={job.jobId}
-          jobStatus={jobStatus || (job.preview ? "partial" : "—")}
+          jobStatus={job.status?.status || (job.preview ? "partial" : "—")}
           currentStage={currentStage}
           stageMessage={stageMessage}
           completedStages={completedStages}
           remainingStages={remainingStages}
           nextStage={job.status?.nextStage ?? null}
           cancelRequested={job.status?.cancelRequested}
-          isActive={isRunning}
+          isActive={workflow.isRunning}
           initialSelectedPolicyIds={selectedPolicyIds}
           initialManualPolicies={manualPolicies}
           onProceedRequested={(selectedPolicies, manualPoliciesDraft) =>
             void handleGenerate(selectedPolicies, manualPoliciesDraft)
           }
-          policyConfirmReady={!!job.preview && !isRunning && !job.isResuming}
+          policyConfirmReady={workflow.policyConfirmReady}
         />
       </div>
 

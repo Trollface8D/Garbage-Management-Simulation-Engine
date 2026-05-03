@@ -65,6 +65,8 @@ const STAGE_ENTRIES: StageEntry[] = [
   },
 ];
 
+const NO_ROLLBACK_STAGES = new Set(["state1_entity_list", "state1b_policy_outline"]);
+
 type StageStatus = "pending" | "running" | "done" | "cancelled" | "failed";
 
 function shortStageName(raw: string | null | undefined): string {
@@ -79,6 +81,15 @@ function stageStatus(
   jobStatus: string,
 ): StageStatus {
   if (completed.has(stageKey)) return "done";
+  // Keep state 1/1b visible as running during preview and partial phases
+  // until they're actually marked completed (not just while preview is in-flight).
+  // This ensures the user sees continuous progress, not a flicker to pending.
+  if (
+    (jobStatus === "previewing" || jobStatus === "partial") &&
+    (stageKey === "state1_entity_list" || stageKey === "state1b_policy_outline")
+  ) {
+    return "running";
+  }
   if (currentStage === stageKey) {
     if (jobStatus === "cancelled") return "cancelled";
     if (jobStatus === "failed") return "failed";
@@ -341,7 +352,17 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
         <div className="mt-3 space-y-2">
           <ol className="space-y-1">
             {STAGE_ENTRIES.map((entry, index) => {
-              const status = stageStatus(entry.key, shortCurrentStage, completedSet, jobStatus);
+              const baseStatus = stageStatus(entry.key, shortCurrentStage, completedSet, jobStatus);
+              const isPolicyCheckpointLoading =
+                entry.key === "state1b_policy_outline" &&
+                expandedStage === entry.key &&
+                completedSet.has(entry.key) &&
+                !stageDetails[entry.key];
+              const status =
+                (entry.key === "state1b_policy_outline" && detailLoading === entry.key && baseStatus === "done") ||
+                isPolicyCheckpointLoading
+                  ? "running"
+                  : baseStatus;
               const dot = statusDot(status);
               const isExpanded = expandedStage === entry.key;
               const progressMsg =
@@ -438,11 +459,11 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                       ) : null}
 
                       <div className="flex flex-wrap items-center gap-2">
-                        {status === "done" ? (
+                        {status === "done" && !NO_ROLLBACK_STAGES.has(entry.key) ? (
                           <button
                             type="button"
                             onClick={() => handleRollback(entry.key)}
-                            disabled={actionPending || isActive}
+                            disabled={actionPending}
                             className="inline-flex items-center rounded-md border border-amber-700 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                             title="Delete this stage's checkpoint and everything after it. Resume to re-run."
                           >
@@ -599,15 +620,18 @@ function PolicyConfirmBlock({
     );
   }
 
-  // Allow user-driven confirm regardless of preview readiness
-  const ready = true;
+  const ready = confirmReady ?? true;
   const token = detail?.tokenUsage || undefined;
   const selectedCount = selectedPolicyIds?.size ?? 0;
   const manualCount = manualPolicies?.length ?? 0;
   const hasSelection = selectedCount > 0 || manualCount > 0;
-  const canProceed = ready && !actionPending && !isRunning;
+  const canProceed = ready && !actionPending && !isRunning && hasSelection;
   const proceedLabel = "Confirm & proceed";
-  const proceedTitle = !canProceed ? "Select at least one policy above or add a manual policy." : undefined;
+  const proceedTitle = !ready
+    ? "Preview is still running."
+    : !hasSelection
+      ? "Select at least one policy above or add a manual policy."
+      : undefined;
 
   const previewPolicies: CodeGenPolicyOutline[] = (() => {
     try {
@@ -724,6 +748,7 @@ function PolicyConfirmBlock({
             type="button"
             onClick={onConfirm}
             title={proceedTitle}
+            disabled={!canProceed}
             className="rounded-md border border-emerald-600 bg-emerald-500/15 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {proceedLabel}

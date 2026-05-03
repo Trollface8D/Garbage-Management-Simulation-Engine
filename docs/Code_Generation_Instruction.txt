@@ -1,0 +1,16 @@
+- While in code generation phase, user must be allow to do these interactions:
+a) Cancel button: when click the code generation process will be paused and wait for user to click generate (or resume button, resume button is the same button in the UI, feature as a resume the code generation process when process is paused)
+b) Edit button: When click the code generation will be stop and remove all of the progress (same as reset behevior).
+
+Code generation flow
+1. User click generate button to start the code generation
+2. Enter stage 1 (entities), user has no interaction this this phase. Simulation Entities will be created and refered as target entity. The entire target entity is refered from outside code generation phase called entity list generation, entity in entity list is coverted to target entity.
+3. After target entity generated, enter stage 2 (policies). User has interactions. First, user must choose the policy that generated from policy entity. Second, user can optionally add policy with title and description. Note, User must choose at least 1 policy to be able to click confirm & proceed button. Choosen policy will be an outline for policy module (present in stage 7) which used for enforcing as a rule inside simulation. 
+4. After policies generated, enter stage 3 (dependency). user has no interaction in this phase. This phase must identify dependency between each entity and represent it as inter-entity dependency edge. This edges will determine order of each entity classes (present in stage 4).
+5. After dependency generated, enter stage 4 (Entity classes). User has no interaction in this phase. This is iterative phase for creating code generation for each entity classes. Entity classes contain behavior to the other entity, atributes represent entity, etc. 
+6. After entity classes generated, enter stage 5 (Validate Photocol). User has no interaction in this phase. This phase must do static checks to ensure that entity classes meet the runtime photocol.
+7. After Validated Photocol, enter stage 6 (Enviroment). User has no interaction in this phase. Enviorment is created to connect each entity in the defined space which this space can have self behavior that affect other entites.
+8. After enviorment is generated, enter stage 7 (Policy Module). User has no interaction in this phase. Iterativly generate policy module as a rule inside simulation from policy outline, generated from polices stage (stage 2). Rules can affect entity according to entity's tags or entity's current enviorment.
+9. After policy module is generated, enter stage 8 (Validate policies). User has no interaction in this phase. This phase should make a static check for the each generated policy rule.
+10. After policy module is generated, enter stage 9 (Finalize). User has no interaction in this phase. Bundle artifacts (entity_list, manifest, code) for download. 
+11. After, simulation code generated, it must fetch to "Run simulation & visualize" module which show each entities classes.
