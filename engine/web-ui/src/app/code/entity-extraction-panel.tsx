@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { type ComponentType, useEffect, useMemo, useRef } from "react";
+import { type ComponentType, memo, useEffect, useMemo, useRef } from "react";
 import ModelPicker from "@/app/components/model-picker";
 
 type WordCloudWord = {
@@ -56,7 +56,7 @@ type EntityExtractionPanelProps = {
     onModelChange: (model: string) => void;
 };
 
-export default function EntityExtractionPanel({
+const EntityExtractionPanel = memo(function EntityExtractionPanel({
     entities,
     isExtracted,
     isExtracting,
@@ -430,4 +430,6 @@ export default function EntityExtractionPanel({
             </div>
         </div>
     );
-}
+});
+
+export default EntityExtractionPanel;
