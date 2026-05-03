@@ -462,6 +462,12 @@ export default function CodeGenWorkspace({
         `Edit Input will discard ${artifactFiles.length} artifact(s).\n\nContinue?`,
       );
       if (!shouldDiscard) return;
+    } else if (job.preview || job.jobId) {
+      // Preview loaded / awaiting confirmation — warn before discarding
+      const shouldDiscard = window.confirm(
+        "Edit Input will discard the current preview and policy outline.\n\nContinue?",
+      );
+      if (!shouldDiscard) return;
     }
 
     setActionError("");

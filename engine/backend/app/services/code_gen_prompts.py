@@ -239,10 +239,14 @@ def build_state1b_policy_outline_prompt(
     """
     entities_json = json.dumps({"entities": entities or []}, ensure_ascii=False)
     instructions = (
-        "Identify every behavior-change rule the causal data implies. For each rule, output a row "
-        "describing the trigger, the target entity (or 'environment'), and the method name the "
-        "rule will call on the target. The target class will be implemented in State 2 and MUST "
-        "expose this method, so pick names that read like real entity behavior, not policy names."
+        "Extract every enforcement rule that the current system ALREADY applies, as evidenced by "
+        "the causal data. Each rule must describe an existing causal mechanism — a condition the "
+        "system currently responds to and an action it currently takes. "
+        "Do NOT propose improvements, corrections, or new behaviors. "
+        "Describe the system as-is: what condition already triggers it, which entity already "
+        "handles it, and what method that entity already performs. "
+        "For each rule, output one row: the observed trigger, the target entity (or 'environment'), "
+        "and a method name that reads as the entity's own behavior (not a policy label)."
     )
     prompt = _assemble(
         [
