@@ -82,6 +82,11 @@ function stageStatus(
   jobStatus: string,
   awaitingConfirmationStage?: string | null,
 ): StageStatus {
+  // Gate is on state1c but confirmation UX lives on state1b (the policy review stage).
+  // Show awaiting_confirmation on state1b so the user knows to act there.
+  if (awaitingConfirmationStage === "state1c_entity_dependencies" && stageKey === "state1b_policy_outline") {
+    return "awaiting_confirmation";
+  }
   if (completed.has(stageKey)) return "done";
   // Keep state 1/1b visible as running during preview and partial phases
   // until they're actually marked completed (not just while preview is in-flight).
@@ -92,7 +97,6 @@ function stageStatus(
   ) {
     return "running";
   }
-  if (awaitingConfirmationStage === stageKey) return "awaiting_confirmation";
   if (currentStage === stageKey) {
     if (jobStatus === "cancelled") return "cancelled";
     if (jobStatus === "failed") return "failed";
@@ -337,6 +341,13 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
     if (isActive || hasHistory) setCollapsed(false);
   }, [isActive, hasHistory, userToggled]);
 
+  // Auto-expand state1b when confirmation gate becomes active so user sees confirm UI.
+  useEffect(() => {
+    if (awaitingConfirmationStage === "state1c_entity_dependencies") {
+      setExpandedStage("state1b_policy_outline");
+    }
+  }, [awaitingConfirmationStage]);
+
   const isEmptySlate = !jobId && !isActive;
 
   return (
@@ -384,8 +395,9 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                 completedSet.has(entry.key) &&
                 !stageDetails[entry.key];
               const status =
-                (entry.key === "state1b_policy_outline" && detailLoading === entry.key && baseStatus === "done") ||
-                isPolicyCheckpointLoading
+                baseStatus !== "awaiting_confirmation" &&
+                ((entry.key === "state1b_policy_outline" && detailLoading === entry.key && baseStatus === "done") ||
+                  isPolicyCheckpointLoading)
                   ? "running"
                   : baseStatus;
               const dot = statusDot(status);
@@ -466,7 +478,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                         </div>
                       ) : null}
 
-                      {status === "done" ? (
+                      {(status === "done" || (status === "awaiting_confirmation" && entry.key === "state1b_policy_outline")) ? (
                         entry.key === "state1b_policy_outline" ? (
                           <PolicyConfirmBlock
                             detail={stageDetails[entry.key]}
@@ -691,13 +703,21 @@ function PolicyConfirmBlock({
   const selectedCount = selectedPolicyIds?.size ?? 0;
   const manualCount = manualPolicies?.length ?? 0;
   const hasSelection = selectedCount > 0 || manualCount > 0;
-  const canProceed = ready && !actionPending && (isGated || !isRunning) && (proceedLabelOverride ? true : hasSelection);
+  const canProceed = ready && !actionPending && (isGated || !isRunning) && (isGated ? true : (proceedLabelOverride ? true : hasSelection));
   const proceedLabel = proceedLabelOverride ?? "Confirm & proceed";
   const proceedTitle = !ready
     ? "Preview is still running."
-    : !hasSelection
+    : (!isGated && !hasSelection)
       ? "Select at least one policy above or add a manual policy."
       : undefined;
+
+  const handleConfirm = () => {
+    if (isGated && !hasSelection) {
+      window.alert("Please select at least one policy before confirming.");
+      return;
+    }
+    onConfirm?.();
+  };
 
   const previewPolicies: CodeGenPolicyOutline[] = (() => {
     try {
@@ -812,7 +832,7 @@ function PolicyConfirmBlock({
           <p className="text-xs text-emerald-100">Review {combinedPolicies.length} {combinedPolicies.length === 1 ? "policy" : "policies"} above. You can also add manual policies before continuing.</p>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={handleConfirm}
             title={proceedTitle}
             disabled={!canProceed}
             className="rounded-md border border-emerald-600 bg-emerald-500/15 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
