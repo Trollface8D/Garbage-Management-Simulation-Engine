@@ -105,6 +105,23 @@ def cancel_simulation(job_id: str, sim_run_id: str) -> SimulationRunInfo:
 
 
 @router.get(
+    "/code_gen/jobs/{job_id}/simulations/{sim_run_id}/entity_interactions",
+)
+def read_entity_interactions(
+    job_id: str,
+    sim_run_id: str,
+) -> dict:
+    run = simulation_runner.get_run(sim_run_id)
+    if not run or run.job_id != job_id:
+        raise HTTPException(status_code=404, detail="simulation run not found")
+    path = run.out_dir / "entity_interactions.txt"
+    if not path.exists():
+        return {"status": run.status, "text": None, "available": False}
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return {"status": run.status, "text": text, "available": True}
+
+
+@router.get(
     "/code_gen/jobs/{job_id}/simulations/{sim_run_id}/log",
     response_model=SimulationLogChunk,
 )

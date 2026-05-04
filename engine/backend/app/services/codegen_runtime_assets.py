@@ -112,10 +112,20 @@ class Reporter:
         except TypeError:
             return []
         target = entity_kind.strip().lower()
+        import re as _re
+        # Strip non-word chars (e.g. Thai punctuation, dots) for fuzzy compare
+        target_clean = _re.sub(r'[\W_]', '', target, flags=_re.UNICODE)
         out: list[Any] = []
         for inst in iterable:
             cls_name = type(inst).__name__.lower()
-            if cls_name == target or target in cls_name:
+            # Strip the "entity_" prefix that codegen always prepends
+            bare = cls_name[7:] if cls_name.startswith("entity_") else cls_name
+            bare_clean = _re.sub(r'[\W_]', '', bare, flags=_re.UNICODE)
+            if (cls_name == target or
+                    target in cls_name or
+                    bare in target or
+                    (target_clean and bare_clean and
+                     (bare_clean in target_clean or target_clean in bare_clean))):
                 out.append(inst)
         return out
 
@@ -190,6 +200,29 @@ class Reporter:
                 v = self._read_attr(inst, attr)
                 if v is not None:
                     pool.append(v)
+
+        # Fallback: if the exact required_attrs yielded nothing, scan all
+        # numeric attrs on the matched entities. This handles the common case
+        # where the AI-suggested attr name doesn't match the generated code.
+        if not pool:
+            seen: set = set()
+            for dep in deps:
+                ent_kind = str(dep.get("entity") or "")
+                if not ent_kind:
+                    continue
+                for inst in self._entity_instances_of(ent_kind):
+                    iid = id(inst)
+                    if iid in seen:
+                        continue
+                    seen.add(iid)
+                    for a in vars(inst):
+                        if a.startswith("_"):
+                            continue
+                        v = self._read_attr(inst, a)
+                        if v is not None:
+                            pool.append(v)
+                            break  # one attr per entity instance
+
         if not pool:
             return
         value = self._aggregate(pool, agg)
@@ -251,6 +284,73 @@ from environment import Environment
 from reporter import Reporter
 
 
+def _snapshot(inst: object) -> dict:
+    out = {}
+    for k, v in vars(inst).items():
+        if k.startswith("_"):
+            continue
+        if isinstance(v, (int, float, str, bool)):
+            out[k] = v
+    return out
+
+
+class EntityInteractionLogger:
+    """Writes entity state-change diffs to entity_interactions.txt per tick."""
+
+    def __init__(self, out_dir: "Path", run_id: str, tick_seconds: float) -> None:
+        self._path = out_dir / "entity_interactions.txt"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        self._fp = self._path.open("w", encoding="utf-8")
+        self._tick_seconds = tick_seconds
+        self._fp.write(f"=== Entity Interaction Log  run_id={run_id} ===\\n")
+        self._fp.write(f"tick_seconds={tick_seconds}\\n\\n")
+        self._prev: dict = {}
+
+    def _fmt_time(self, t: float) -> str:
+        total = int(t)
+        h = total // 3600
+        m = (total % 3600) // 60
+        s = total % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
+    def record(self, entities: list, tick_number: int, env: object) -> None:
+        t = tick_number * self._tick_seconds
+        lines = [f"--- tick {tick_number:>4}  t={self._fmt_time(t)} ---"]
+        for inst in entities:
+            name = type(inst).__name__
+            eid  = getattr(inst, "entity_object_id", name)
+            snap = _snapshot(inst)
+            prev = self._prev.get(eid, {})
+            changes = {k: (prev.get(k), v) for k, v in snap.items() if prev.get(k) != v}
+            if changes:
+                lines.append(f"  [{name}] id={eid}")
+                for attr, (old, new) in changes.items():
+                    lines.append(f"    {attr}: {old!r} -> {new!r}")
+            self._prev[eid] = snap
+        props = {}
+        try:
+            props = env.get_all_properties() if hasattr(env, "get_all_properties") else {}
+        except Exception:
+            pass
+        prev_props = self._prev.get("__env__", {})
+        prop_changes = {k: (prev_props.get(k), v) for k, v in props.items() if prev_props.get(k) != v}
+        if prop_changes:
+            lines.append("  [ENV global properties]")
+            for k, (old, new) in prop_changes.items():
+                lines.append(f"    {k}: {old!r} -> {new!r}")
+        self._prev["__env__"] = dict(props)
+        if len(lines) == 1:
+            lines.append("  (no state changes)")
+        self._fp.write("\\n".join(lines) + "\\n")
+        self._fp.flush()
+
+    def close(self) -> None:
+        try:
+            self._fp.flush()
+        finally:
+            self._fp.close()
+
+
 def _load_entities() -> list:
     """Dynamically import and instantiate all entity classes from entities/ directory."""
     entities = []
@@ -277,12 +377,19 @@ def _load_entities() -> list:
                 if attr_name.startswith("Entity_"):
                     entity_class = getattr(module, attr_name)
                     if isinstance(entity_class, type):
-                        # Instantiate entity with no args (or minimal default args)
+                        # entity_object base requires entity_object_id; use class name as default
                         try:
-                            entity_instance = entity_class()
-                            entities.append(entity_instance)
+                            entity_instance = entity_class(attr_name)
+                        except TypeError:
+                            try:
+                                entity_instance = entity_class()
+                            except Exception as e:
+                                print(f"warning: failed to instantiate {attr_name}: {e}")
+                                continue
                         except Exception as e:
                             print(f"warning: failed to instantiate {attr_name}: {e}")
+                            continue
+                        entities.append(entity_instance)
         except Exception as e:
             print(f"warning: failed to load entity {entity_file.stem}: {e}")
     
@@ -319,6 +426,7 @@ def main() -> int:
         contracts_path=str(contracts_path),
     )
 
+    ilogger = EntityInteractionLogger(out_dir, run_id, args.tick_seconds)
     try:
         for tick in range(args.ticks):
             try:
@@ -326,8 +434,10 @@ def main() -> int:
             except TypeError:
                 env.tick()
             reporter.sample(env=env, tick_number=tick + 1)
+            ilogger.record(entities, tick + 1, env)
     finally:
         reporter.close()
+        ilogger.close()
 
     print(f"run complete: {reporter.log_path}")
     return 0
