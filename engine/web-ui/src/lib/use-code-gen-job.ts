@@ -59,6 +59,7 @@ export type UseCodeGenJobState = {
   resume: (jobId?: string) => Promise<void>;
   confirm: (stage: string, jobId?: string) => Promise<void>;
   reset: () => void;
+  adoptJobId: (id: string) => Promise<void>;
 };
 
 export function useCodeGenJob(componentId?: string) {
@@ -339,6 +340,25 @@ export function useCodeGenJob(componentId?: string) {
     }
   }, [stopPolling, componentId]);
 
+  // Adopt an externally-supplied jobId (e.g. after workspace import).
+  // Fetches fresh status from the backend so stage log and simulation viewer
+  // reflect the restored job immediately without a full page reload.
+  const adoptJobId = useCallback(
+    async (id: string): Promise<void> => {
+      stopPolling();
+      setJobId(id);
+      setPreview(null);
+      setError(null);
+      try {
+        const next = await fetchCodeGenStatus(id);
+        setStatus(next);
+      } catch {
+        setStatus(null);
+      }
+    },
+    [stopPolling],
+  );
+
   // isActivelyProcessing: true only during immediate user actions (not during polling).
   // awaiting_confirmation is intentionally excluded — buttons must remain clickable.
   const isActivelyProcessing =
@@ -363,5 +383,6 @@ export function useCodeGenJob(componentId?: string) {
     resume,
     confirm,
     reset,
+    adoptJobId,
   };
 }
