@@ -94,16 +94,23 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
     );
 
     const handleExportArchive = useCallback(
-        async (snapshot: WorkspaceSnapshot) => {
+        async (snapshot: WorkspaceSnapshot, jobIdOverride?: string | null) => {
             if (archiveBusy !== "idle") return;
 
             setArchiveBusy("exporting");
             setArchiveError("");
             setArchiveMessage("");
 
-            // Prefer the job id embedded in the snapshot (actual runtime job)
-            // over the hook's constructor parameter which may be a static placeholder.
-            const effectiveJobId = (snapshot.jobId ?? currentJobId) || null;
+            // Priority: explicit caller-supplied id > snapshot field > hook constructor param.
+            // The hook constructor receives a static placeholder (`job-${componentId}`) so it
+            // must be the last resort — never the primary source.
+            const effectiveJobId = (jobIdOverride ?? snapshot.jobId ?? currentJobId) || null;
+
+            if (!effectiveJobId) {
+                setArchiveError("No active code-gen job to export. Generate code first.");
+                setArchiveBusy("idle");
+                return;
+            }
 
             try {
                 const blob = await exportWorkspaceArchive(snapshot, effectiveJobId);

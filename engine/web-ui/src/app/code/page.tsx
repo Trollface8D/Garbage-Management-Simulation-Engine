@@ -533,7 +533,9 @@ export default function CodePage() {
 
     const handleExportArchive = () => {
         if (archiveBusy !== "idle") return;
-        void hookHandleExportArchive(buildWorkspaceSnapshotData());
+        // Pass currentJobId explicitly so the hook never falls back to its
+        // stale constructor placeholder (`job-${componentId}`).
+        void hookHandleExportArchive(buildWorkspaceSnapshotData(), currentJobId);
     };
 
     const handleImportArchiveFile = async (event: ChangeEvent<HTMLInputElement>) => {
