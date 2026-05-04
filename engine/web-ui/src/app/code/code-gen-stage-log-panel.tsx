@@ -185,6 +185,9 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
   // Authoritative completed list set after a rollback; overrides the stale prop
   // until the job resumes (at which point live polling takes over again).
   const [completedOverride, setCompletedOverride] = useState<string[] | null>(null);
+  // Override for currentStage after rollback — prevents stale "running" display
+  // on stages that were cleared. Cleared alongside completedOverride.
+  const [currentStageOverride, setCurrentStageOverride] = useState<string | null | undefined>(undefined);
 
   const completedSet = useMemo(() => {
     const merged = new Set<string>();
@@ -197,17 +200,22 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
     return merged;
   }, [completedStages, remoteCompleted, completedOverride]);
 
-  const shortCurrentStage = shortStageName(currentStage);
+  const effectiveCurrentStage = currentStageOverride !== undefined ? currentStageOverride : currentStage;
+  const shortCurrentStage = shortStageName(effectiveCurrentStage);
 
   useEffect(() => {
     setDraftSelectedPolicyIds(new Set(initialSelectedPolicyIds || []));
     setDraftManualPolicies([...(initialManualPolicies || [])]);
     setCompletedOverride(null);
+    setCurrentStageOverride(undefined);
   }, [jobId, initialSelectedPolicyIds, initialManualPolicies]);
 
-  // Once the job resumes and becomes active, live polling takes over — drop override.
+  // Once the job resumes and becomes active, live polling takes over — drop overrides.
   useEffect(() => {
-    if (isActive) setCompletedOverride(null);
+    if (isActive) {
+      setCompletedOverride(null);
+      setCurrentStageOverride(undefined);
+    }
   }, [isActive]);
 
   useEffect(() => {
@@ -312,14 +320,18 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
           }
           return next;
         });
-        // Fetch authoritative completed list and override stale prop.
+        // Fetch authoritative completed list and override stale props.
         try {
           const data = await fetchCodeGenStatus(jobId);
           const fresh = data.completedStages || [];
           setRemoteCompleted(fresh);
           setCompletedOverride(fresh);
+          // Override currentStage so stages after the rollback target show "pending"
+          // instead of "running" (the stale prop value from before rollback).
+          setCurrentStageOverride(data.currentStage ?? stage);
         } catch {
-          /* best-effort */
+          // Fall back to rollback target so cleared stages don't show "running".
+          setCurrentStageOverride(stage);
         }
         setActionStatus(`Rolled back. '${stage}' artifact preserved. Click "Resume & proceed" to continue.`);
         onStatusUpdate?.(`Rollback done after '${stage}'.`);
