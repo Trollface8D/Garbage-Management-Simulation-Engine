@@ -3,7 +3,7 @@
 
     "codegen_entity_list_json_schema": "Use this JSON schema exactly:\n{\n  \"entities\": [\n    {\"id\": \"string\", \"label\": \"string\", \"type\": \"string\", \"frequency\": 0, \"priority\": 0}\n  ]\n}\nField rules:\n- id: normalized snake_case identifier derived from label.\n- label: exact surface form as it appears in causal data.\n- type: one of [\"actor\", \"resource\", \"environment\", \"policy\"] — infer from context.\n- frequency: integer count of occurrences across all causal data.\n- priority: integer rank starting at 1; lower = generate first (most mentioned = 1).",
 
-    "codegen_entity_object_output_hint": "Output raw Python class code only. Do NOT include markdown fences (```python), module-level imports unrelated to the class, file headers, comments explaining the task, or any prose. One class per response. Class name must match the entity id in PascalCase.",
+    "codegen_entity_object_output_hint": "Output raw Python class code only. Do NOT include markdown fences (```python), module-level imports unrelated to the class, file headers, comments explaining the task, or any prose. One class per response. Use the class name specified in the prompt exactly.",
 
     "codegen_environment_output_hint": "Output raw Python class code only. No markdown fences, no prose. The environment class must import and reference all provided entity classes by name. Do not redefine entity logic — only integrate it.",
 

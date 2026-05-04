@@ -1,0 +1,695 @@
+"""HTTP surface for the code-generation pipeline.
+
+Mirrors ``map_extract`` route shapes so the frontend status / cancel hooks
+can be reused. Stage implementations live in ``services/code_gen_runner.py``.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import threading
+import time
+from typing import Any
+from uuid import uuid4
+
+from fastapi import APIRouter, Body
+from fastapi.responses import FileResponse, JSONResponse
+
+from ...infra.io_utils import is_auth_available, resolve_api_key
+from ...infra.paths import DEFAULT_MODEL_NAME
+from ..models.job_models import JobRecord
+from ..services import code_gen_checkpoints as checkpoints
+from ..services.code_gen_runner import run_code_gen_worker, run_stage_inline
+from ..services.job_store import (
+    JOBS,
+    JOBS_LOCK,
+    emit_job_event,
+    request_cancel,
+    request_confirm,
+    serialize_job,
+    utc_now_iso,
+)
+
+
+router = APIRouter(tags=["code_gen"])
+logger = logging.getLogger(__name__)
+CODE_GEN_JOB_TIMEOUT_SECONDS = int(os.getenv("CODE_GEN_JOB_TIMEOUT_SECONDS", "1800"))
+
+ARTIFACT_EXTENSION_WHITELIST: frozenset[str] = frozenset(
+    {".py", ".json", ".md", ".log", ".txt"}
+)
+
+
+def _ordered_completed_stages(stages: list[str] | None) -> list[str]:
+    stage_set = {str(stage or "").strip() for stage in (stages or [])}
+    return [stage for stage in checkpoints.STAGE_ORDER if stage in stage_set]
+
+
+def _resume_state_payload(
+    *,
+    status: str,
+    completed_stages: list[str] | None,
+    current_stage: str | None = None,
+) -> dict[str, Any]:
+    completed = _ordered_completed_stages(completed_stages)
+    completed_set = set(completed)
+    remaining = [stage for stage in checkpoints.STAGE_ORDER if stage not in completed_set]
+    next_stage = remaining[0] if remaining else None
+
+    can_resume = bool(remaining) and status not in {"running", "queued", "awaiting_confirmation"}
+    reason: str | None = None
+    if not remaining:
+        reason = "No stages left to run."
+    elif status == "running":
+        reason = "Job already running."
+    elif status == "queued":
+        reason = "Job already queued."
+    elif status == "awaiting_confirmation":
+        reason = "Job is awaiting user confirmation."
+
+    return {
+        "completedStages": completed,
+        "remainingStages": len(remaining),
+        "nextStage": next_stage,
+        "canResume": can_resume,
+        "resumeDisabledReason": None if can_resume else reason,
+        "activeStage": current_stage,
+    }
+
+
+def _start_timeout_watchdog(job: JobRecord) -> None:
+    def watchdog() -> None:
+        if CODE_GEN_JOB_TIMEOUT_SECONDS <= 0:
+            return
+        poll_interval = 5
+        while True:
+            time.sleep(poll_interval)
+            with JOBS_LOCK:
+                if job.status in {"completed", "failed", "cancelled"}:
+                    return
+                # Don't time out jobs waiting for user confirmation — that's intentional.
+                if job.status == "awaiting_confirmation":
+                    continue
+                idle = time.monotonic() - job.last_activity_ts
+            if idle >= CODE_GEN_JOB_TIMEOUT_SECONDS:
+                err = f"code_gen idle for {int(idle)}s — terminated."
+                logger.error("[code_gen] watchdog terminated jobId=%s", job.job_id)
+                with JOBS_LOCK:
+                    job.cancel_requested = False
+                emit_job_event(job, "error", {"error": err})
+                emit_job_event(job, "close", None)
+                return
+
+    threading.Thread(target=watchdog, daemon=True).start()
+
+
+def _spawn_worker(
+    job: JobRecord,
+    *,
+    api_key: str,
+    model_name: str,
+    use_env_model_overrides: bool,
+    inputs: dict[str, Any],
+) -> None:
+    thread = threading.Thread(
+        target=run_code_gen_worker,
+        kwargs={
+            "job": job,
+            "api_key": api_key,
+            "model_name": model_name,
+            "use_env_model_overrides": use_env_model_overrides,
+            "inputs": inputs,
+        },
+        daemon=True,
+    )
+    thread.start()
+    _start_timeout_watchdog(job)
+
+
+@router.post("/code_gen/jobs")
+async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dict)):
+    """Create a new code-generation job.
+
+    Body shape (all optional except ``causalData``):
+      {
+        "causalData": "...",
+        "mapNodeJson": {...} | null,
+        "selectedEntities": [...],
+        "selectedPolicies": [...],
+        "model": "gemini-..."   // optional override
+      }
+    """
+    causal_data = str(payload.get("causalData") or "").strip()
+    if not causal_data:
+        return JSONResponse({"error": "causalData is required."}, status_code=400)
+
+    requested_model = str(payload.get("model") or "").strip()
+    resolved_model = requested_model or DEFAULT_MODEL_NAME
+    use_env_model_overrides = not bool(requested_model)
+
+    if not is_auth_available():
+        return JSONResponse(
+            {"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."},
+            status_code=500,
+        )
+    api_key = resolve_api_key()
+
+    map_node_json = payload.get("mapNodeJson")
+    if map_node_json is not None and not isinstance(map_node_json, dict):
+        return JSONResponse({"error": "mapNodeJson must be an object or null."}, status_code=400)
+    selected_entities = list(payload.get("selectedEntities") or [])
+    selected_policies = list(payload.get("selectedPolicies") or [])
+    selected_metrics = list(payload.get("selectedMetrics") or [])
+    user_entity_list = list(payload.get("userEntityList") or [])
+    preview_only = bool(payload.get("previewOnly", False))
+    if not selected_metrics:
+        return JSONResponse(
+            {"error": "selectedMetrics is required — pick at least one metric to track."},
+            status_code=400,
+        )
+
+    now = utc_now_iso()
+    job_id = f"code_gen-{uuid4().hex}"
+    job = JobRecord(job_id=job_id, status="queued", created_at=now, updated_at=now)
+
+    with JOBS_LOCK:
+        JOBS[job_id] = job
+
+    checkpoints.save_inputs(
+        job_id,
+        causal_data=causal_data,
+        map_node_json=map_node_json,
+        selected_entities=selected_entities,
+        selected_policies=selected_policies,
+        selected_metrics=selected_metrics,
+        user_entity_list=user_entity_list,
+        model_name=resolved_model,
+        use_env_model_overrides=use_env_model_overrides,
+    )
+
+    inputs = {
+        "causalData": causal_data,
+        "mapNodeJson": map_node_json,
+        "selectedEntities": selected_entities,
+        "selectedPolicies": selected_policies,
+        "selectedMetrics": selected_metrics,
+        "userEntityList": user_entity_list,
+    }
+    if not preview_only:
+        _spawn_worker(
+            job,
+            api_key=api_key,
+            model_name=resolved_model,
+            use_env_model_overrides=use_env_model_overrides,
+            inputs=inputs,
+        )
+
+    logger.info(
+        "[code_gen] job queued jobId=%s entityCount=%s policyCount=%s metricCount=%s previewOnly=%s",
+        job_id,
+        len(selected_entities),
+        len(selected_policies),
+        len(selected_metrics),
+        preview_only,
+    )
+    return {
+        "pipeline": "code_gen",
+        "jobId": job_id,
+        "status": "queued",
+        "statusUrl": f"/code_gen/jobs/{job_id}",
+        "resultUrl": f"/code_gen/jobs/{job_id}/result",
+    }
+
+
+@router.get("/code_gen/jobs/{job_id}")
+def get_code_gen_job(job_id: str):
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+
+    if job is not None:
+        payload = serialize_job(job)
+        payload.update(
+            _resume_state_payload(
+                status=str(payload.get("status") or ""),
+                completed_stages=list(payload.get("completedStages") or []),
+                current_stage=str(payload.get("currentStage") or "") or None,
+            )
+        )
+        return payload
+
+    disk_stages = checkpoints.list_stages(job_id)
+    if not disk_stages:
+        return JSONResponse({"error": f"Job '{job_id}' not found."}, status_code=404)
+
+    disk_completed = [s["stage"] for s in disk_stages]
+    disk_status = "completed" if "finalize_bundle" in disk_completed else "partial"
+    disk_token_usage = checkpoints.latest_usage_totals(job_id)
+    payload = {
+        "jobId": job_id,
+        "status": disk_status,
+        "currentStage": None,
+        "stageMessage": "Restored from checkpoint files (backend was restarted).",
+        "stageHistory": [],
+        "tokenUsage": disk_token_usage,
+        "costEstimate": None,
+        "error": None,
+        "cancelRequested": False,
+        "completedStages": disk_completed,
+    }
+    payload.update(
+        _resume_state_payload(
+            status=disk_status,
+            completed_stages=disk_completed,
+            current_stage=None,
+        )
+    )
+    return payload
+
+
+@router.get("/code_gen/jobs/{job_id}/result")
+def get_code_gen_result(job_id: str):
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+    if job is None or job.result is None:
+        return JSONResponse({"error": "Result not available."}, status_code=404)
+    return job.result
+
+
+@router.post("/code_gen/jobs/{job_id}/cancel")
+def cancel_code_gen_job(job_id: str):
+    accepted = request_cancel(job_id)
+    return {"jobId": job_id, "cancelRequested": accepted}
+
+
+@router.post("/code_gen/jobs/{job_id}/rollback")
+def rollback_code_gen_job(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
+    """Roll back checkpoints.
+
+    Body: ``{"toStage": "<stage>", "mode": "after" | "from", "force": false}``
+      - ``after`` (default): keep ``toStage`` as completed; resume from the next.
+      - ``from``: drop ``toStage`` itself and re-run it on resume.
+      - ``force``: cancel a running job before rolling back (default false).
+    """
+    stage = str(payload.get("toStage") or "").strip()
+    if not stage or stage not in checkpoints.STAGE_ORDER:
+        return JSONResponse({"error": "toStage is invalid."}, status_code=400)
+
+    force = bool(payload.get("force", False))
+
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is not None and job.status in {"running", "queued", "awaiting_confirmation"}:
+            if not force:
+                return JSONResponse(
+                    {"error": "Job is still running. Cancel it first, or pass force=true."},
+                    status_code=409,
+                )
+            job.cancel_requested = True
+            if job.awaiting_confirmation_stage is not None:
+                job.confirm_event.set()
+
+    # Brief wait for worker to acknowledge cancel if force=true
+    if force and job is not None:
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            with JOBS_LOCK:
+                current_status = job.status
+            if current_status not in {"running", "queued", "awaiting_confirmation"}:
+                break
+            time.sleep(0.1)
+
+    mode = str(payload.get("mode") or "after").strip()
+    if mode == "from":
+        removed = checkpoints.delete_from(job_id, stage)
+    else:
+        removed = checkpoints.delete_after(job_id, stage)
+
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is not None:
+            job.completed_stages = [
+                s for s in (job.completed_stages or []) if s not in removed
+            ]
+            # Reset confirmed stages for any rolled-back confirmation gates.
+            job.confirmed_stages = [s for s in job.confirmed_stages if s not in removed]
+            job.awaiting_confirmation_stage = None
+            job.error = None
+            job.cancel_requested = False
+            # Put job in a resumable state (partial = has some checkpoints, not running).
+            if job.status in {"cancelled", "failed", "running", "queued", "awaiting_confirmation"}:
+                job.status = "partial"
+            job.updated_at = utc_now_iso()
+
+    return {"jobId": job_id, "removed": removed, "mode": mode, "resumable": True}
+
+
+@router.patch("/code_gen/jobs/{job_id}/policies")
+def update_job_policies(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
+    """Overwrite selectedPolicies in the saved inputs manifest.
+
+    Body: ``{"selectedPolicies": [...]}``
+    Call before resume to change which policies are used in the next run.
+    """
+    selected_policies = list(payload.get("selectedPolicies") or [])
+    try:
+        checkpoints.update_selected_policies(job_id, selected_policies)
+    except FileNotFoundError:
+        return JSONResponse(
+            {"error": f"No inputs manifest for job '{job_id}'."},
+            status_code=404,
+        )
+    return {"jobId": job_id, "selectedPolicies": selected_policies}
+
+
+@router.post("/code_gen/jobs/{job_id}/resume")
+def resume_code_gen_job(job_id: str):
+    """Re-spawn the worker for an existing job from where it left off.
+
+    Valid for jobs in queued / cancelled / failed status. Uses the same job_id
+    so previously saved checkpoints are reused.
+    """
+    if not is_auth_available():
+        return JSONResponse(
+            {"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."},
+            status_code=500,
+        )
+
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+
+    if job is None:
+        # Try to reconstruct from disk checkpoints.
+        manifest = checkpoints.load_inputs(job_id)
+        if manifest is None:
+            return JSONResponse(
+                {"error": f"Job '{job_id}' not found and no inputs manifest on disk."},
+                status_code=404,
+            )
+        now = utc_now_iso()
+        job = JobRecord(job_id=job_id, status="queued", created_at=now, updated_at=now)
+        with JOBS_LOCK:
+            JOBS[job_id] = job
+
+    with JOBS_LOCK:
+        current_status = job.status
+
+    if current_status in {"running", "queued", "awaiting_confirmation"}:
+        return JSONResponse({"error": "Job already running or queued."}, status_code=409)
+
+    manifest = checkpoints.load_inputs(job_id)
+    if manifest is None:
+        return JSONResponse(
+            {"error": "No inputs manifest on disk — cannot resume. Start a new job."},
+            status_code=409,
+        )
+
+    api_key = resolve_api_key()
+    model_name = str(manifest.get("modelName") or DEFAULT_MODEL_NAME)
+    use_env_model_overrides = bool(manifest.get("useEnvModelOverrides", True))
+    inputs = {
+        "causalData": manifest.get("causalData") or "",
+        "mapNodeJson": manifest.get("mapNodeJson"),
+        "selectedEntities": manifest.get("selectedEntities") or [],
+        "selectedPolicies": manifest.get("selectedPolicies") or [],
+        "selectedMetrics": manifest.get("selectedMetrics") or [],
+        "userEntityList": manifest.get("userEntityList") or [],
+    }
+
+    with JOBS_LOCK:
+        job.status = "queued"
+        job.cancel_requested = False
+        job.error = None
+        job.updated_at = utc_now_iso()
+
+    _spawn_worker(
+        job,
+        api_key=api_key,
+        model_name=model_name,
+        use_env_model_overrides=use_env_model_overrides,
+        inputs=inputs,
+    )
+    logger.info("[code_gen] resumed jobId=%s", job_id)
+    return {"jobId": job_id, "status": "queued"}
+
+
+@router.post("/code_gen/jobs/{job_id}/confirm")
+def confirm_code_gen_stage(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
+    """Confirm a gated stage so the worker proceeds past its confirmation gate."""
+    stage = str(payload.get("stage") or "").strip()
+    if not stage:
+        return JSONResponse({"error": "stage is required."}, status_code=400)
+    accepted = request_confirm(job_id, stage)
+    if not accepted:
+        return JSONResponse(
+            {"error": f"No active confirmation gate for stage '{stage}'."},
+            status_code=409,
+        )
+    return {"jobId": job_id, "confirmed": True, "stage": stage}
+
+
+@router.get("/code_gen/jobs/{job_id}/iterations/{stage}")
+def list_code_gen_iterations(job_id: str, stage: str):
+    if stage not in checkpoints.ITERATIVE_STAGES:
+        return JSONResponse(
+            {"error": f"stage {stage!r} is not iterative."},
+            status_code=400,
+        )
+    return {"jobId": job_id, "stage": stage, "iterations": checkpoints.list_iterations(job_id, stage)}
+
+
+@router.get("/code_gen/jobs/{job_id}/iterations/{stage}/{iter_id}")
+def get_code_gen_iteration(job_id: str, stage: str, iter_id: str):
+    payload = checkpoints.load_iteration(job_id, stage, iter_id)
+    if payload is None:
+        return JSONResponse({"error": "Iteration not found."}, status_code=404)
+    return payload
+
+
+@router.delete("/code_gen/jobs/{job_id}/iterations/{stage}/{iter_id}")
+def delete_code_gen_iteration(job_id: str, stage: str, iter_id: str):
+    ok = checkpoints.delete_iteration(job_id, stage, iter_id)
+    if not ok:
+        return JSONResponse({"error": "Iteration not found."}, status_code=404)
+    return {"jobId": job_id, "stage": stage, "iterId": iter_id, "deleted": True}
+
+
+@router.post("/code_gen/jobs/{job_id}/preview_entities")
+def preview_entities(job_id: str):
+    """Run Stage 1 + Stage 1b synchronously and return their outputs."""
+    if not is_auth_available():
+        return JSONResponse({"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."}, status_code=500)
+    api_key = resolve_api_key()
+
+    manifest = checkpoints.load_inputs(job_id)
+    if manifest is None:
+        return JSONResponse(
+            {"error": f"No inputs manifest found for job '{job_id}'."},
+            status_code=404,
+        )
+
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+    if job is None:
+        now = utc_now_iso()
+        job = JobRecord(job_id=job_id, status="running", created_at=now, updated_at=now)
+        with JOBS_LOCK:
+            JOBS[job_id] = job
+
+    if job.status in {"running", "queued"} and job.current_stage:
+        return JSONResponse(
+            {"error": "Job is currently running; cancel it before previewing."},
+            status_code=409,
+        )
+
+    with JOBS_LOCK:
+        job.cancel_requested = False
+        if job.status in {"cancelled", "failed"}:
+            job.status = "queued"
+            job.current_stage = None
+            job.error = None
+        job.updated_at = utc_now_iso()
+
+    inputs = {
+        "causalData": manifest.get("causalData") or "",
+        "mapNodeJson": manifest.get("mapNodeJson"),
+        "selectedEntities": manifest.get("selectedEntities") or [],
+        "selectedPolicies": manifest.get("selectedPolicies") or [],
+        "selectedMetrics": manifest.get("selectedMetrics") or [],
+        "userEntityList": manifest.get("userEntityList") or [],
+    }
+    model_name = str(manifest.get("modelName") or DEFAULT_MODEL_NAME)
+    use_env_model_overrides = bool(manifest.get("useEnvModelOverrides", True))
+
+    try:
+        with JOBS_LOCK:
+            job.status = "running"
+            job.current_stage = "state1_entity_list"
+            job.updated_at = utc_now_iso()
+        state1_payload = run_stage_inline(
+            stage="state1_entity_list",
+            job=job,
+            api_key=api_key,
+            model_name=model_name,
+            use_env_model_overrides=use_env_model_overrides,
+            inputs=inputs,
+        )
+        with JOBS_LOCK:
+            job.current_stage = "state1b_policy_outline"
+            job.updated_at = utc_now_iso()
+        state1b_payload = run_stage_inline(
+            stage="state1b_policy_outline",
+            job=job,
+            api_key=api_key,
+            model_name=model_name,
+            use_env_model_overrides=use_env_model_overrides,
+            inputs=inputs,
+        )
+    except Exception as exc:
+        logger.exception("[code_gen] preview_entities failed jobId=%s", job_id)
+        with JOBS_LOCK:
+            job.status = "failed"
+            job.error = str(exc)
+            job.current_stage = None
+            job.updated_at = utc_now_iso()
+        return JSONResponse(
+            {"error": f"preview_entities failed: {exc}"},
+            status_code=500,
+        )
+
+    with JOBS_LOCK:
+        job.status = "partial"
+        job.current_stage = None
+        job.updated_at = utc_now_iso()
+
+    return {
+        "jobId": job_id,
+        "entities": state1_payload.get("entities") or [],
+        "policies": state1b_payload.get("policies") or [],
+        "warning": state1_payload.get("warning"),
+    }
+
+
+@router.get("/code_gen/jobs/{job_id}/artifacts/{path:path}")
+def get_code_gen_artifact(job_id: str, path: str):
+    """Serve a generated artifact, with traversal protection."""
+    resolved = checkpoints.resolve_artifact_path(job_id, path)
+    if resolved is None or not resolved.exists() or not resolved.is_file():
+        return JSONResponse({"error": "Artifact not found."}, status_code=404)
+    if resolved.suffix.lower() not in ARTIFACT_EXTENSION_WHITELIST:
+        return JSONResponse(
+            {"error": f"Extension {resolved.suffix!r} is not served."},
+            status_code=403,
+        )
+    return FileResponse(resolved, filename=resolved.name)
+
+
+@router.get("/code_gen/jobs/{job_id}/checkpoints")
+def list_code_gen_checkpoints(job_id: str):
+    stages = checkpoints.list_stages(job_id)
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        in_memory_completed = list(job.completed_stages) if job else None
+        status = job.status if job else None
+
+    if in_memory_completed is not None:
+        completed = in_memory_completed
+    else:
+        completed = [s["stage"] for s in stages]
+        if status is None and any(s["stage"] == "finalize_bundle" for s in stages):
+            status = "completed"
+        elif status is None and completed:
+            status = "partial"
+
+    return {
+        "jobId": job_id,
+        "status": status,
+        "stageOrder": list(checkpoints.STAGE_ORDER),
+        "completedStages": completed,
+        "checkpoints": stages,
+    }
+
+
+def _summarize_code_gen_stage(stage: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Compact summary + bounded preview for the stage-log dropdown."""
+    summary: dict[str, Any] = {}
+    preview: Any = None
+    try:
+        if stage == "state1_entity_list":
+            entities = payload.get("entities") or []
+            summary["entityCount"] = len(entities)
+            preview = {"entities": entities[:8]}
+        elif stage == "state1b_policy_outline":
+            policies = payload.get("policies") or []
+            summary["policyCount"] = len(policies)
+            preview = {"policies": policies[:12]}
+        elif stage == "state1c_entity_dependencies":
+            edges = payload.get("edges") or []
+            summary["edgeCount"] = len(edges)
+            preview = {"edges": edges[:12], "order": payload.get("order") or []}
+        elif stage == "state2_code_entity_object":
+            iterations = payload.get("iterations") or []
+            summary["iterationCount"] = payload.get("iterationCount") or len(iterations)
+            preview = {"iterations": [{"iterId": it.get("iterId"), "filename": it.get("filename"), "validationErrors": (it.get("validation") or {}).get("errors") or []} for it in iterations[:12]]}
+        elif stage == "state2v_validate_protocol":
+            failures = payload.get("failures") or []
+            summary["iterationCount"] = payload.get("iterations") or 0
+            summary["failureCount"] = len(failures)
+            preview = {"failures": failures[:12]}
+        elif stage == "state3_code_environment":
+            validation_errors = (payload.get("validation") or {}).get("errors") or []
+            summary["hasCode"] = bool(payload.get("code"))
+            summary["validationErrorCount"] = len(validation_errors)
+            preview = {"filename": payload.get("filename"), "mapAvailable": payload.get("mapAvailable"), "validationErrors": validation_errors[:12]}
+        elif stage == "state4_code_policy":
+            iterations = payload.get("iterations") or []
+            summary["iterationCount"] = payload.get("iterationCount") or len(iterations)
+            preview = {"iterations": [{"iterId": it.get("iterId"), "filename": it.get("filename")} for it in iterations[:12]]}
+        elif stage == "state4v_validate_policy":
+            failures = payload.get("failures") or []
+            summary["iterationCount"] = payload.get("iterations") or 0
+            summary["failureCount"] = len(failures)
+            preview = {"failures": failures[:12]}
+        elif stage == "finalize_bundle":
+            files = payload.get("files") or []
+            summary["fileCount"] = len(files)
+            preview = {"files": [{"path": f.get("path"), "kind": f.get("kind")} for f in files[:24]]}
+        else:
+            preview = payload
+    except Exception:  # noqa: BLE001 — summary is best-effort.
+        preview = None
+    return {"summary": summary, "preview": preview}
+
+
+def _code_gen_stage_token_usage(job: JobRecord | None, stage: str) -> dict[str, Any] | None:
+    if job is None:
+        return None
+    last: dict[str, Any] | None = None
+    prefixed = f"code_gen/{stage}"
+    for entry in job.stage_history:
+        entry_stage = str(entry.get("stage") or "")
+        if entry_stage == stage or entry_stage == prefixed:
+            usage = entry.get("tokenUsage")
+            if isinstance(usage, dict):
+                last = usage
+    return last
+
+
+@router.get("/code_gen/jobs/{job_id}/checkpoints/{stage}")
+def get_code_gen_checkpoint(job_id: str, stage: str):
+    if stage not in checkpoints.STAGE_ORDER:
+        return JSONResponse({"error": f"Unknown stage '{stage}'."}, status_code=400)
+    payload = checkpoints.load_stage(job_id, stage)
+    if payload is None:
+        return JSONResponse({"error": f"No checkpoint for stage '{stage}'."}, status_code=404)
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+    summarized = _summarize_code_gen_stage(stage, payload)
+    return {
+        "jobId": job_id,
+        "stage": stage,
+        "summary": summarized["summary"],
+        "preview": summarized["preview"],
+        "tokenUsage": _code_gen_stage_token_usage(job, stage),
+    }

@@ -30,7 +30,7 @@ def _is_rate_limit_error(exc: Exception) -> bool:
 
 def extract_structure_with_gemini(
     *,
-    api_key: str,
+    api_key: str | None,
     input_text: str,
     model_name: str,
 ) -> list[ExtractionClassRecord]:

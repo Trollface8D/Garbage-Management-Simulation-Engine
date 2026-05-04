@@ -435,6 +435,11 @@ export async function trackRecentArtifact(item: Omit<RecentArtifact, "openedAt">
   notifyPMStorageChanged();
 }
 
+export async function renameComponent(componentId: string, newTitle: string): Promise<void> {
+  await pmPost<{ ok: boolean }>("rename-component", { componentId, newTitle });
+  notifyPMStorageChanged();
+}
+
 export async function softDeleteComponent(componentId: string): Promise<void> {
   await pmPost<{ ok: boolean }>("soft-delete-component", { componentId });
   notifyPMStorageChanged();

@@ -468,6 +468,19 @@ export function createComponent(component: SimulationComponent): SimulationCompo
   return component;
 }
 
+export function updateComponentTitle(componentId: string, newTitle: string): boolean {
+  const id = componentId.trim();
+  const title = newTitle.trim();
+  if (!id || !title) return false;
+  const now = new Date().toISOString();
+  const result = drizzleDb
+    .update(projectComponents)
+    .set({ title, updatedAt: now })
+    .where(eq(projectComponents.id, id))
+    .run();
+  return (result.changes ?? 0) > 0;
+}
+
 export function softDeleteComponent(componentId: string): boolean {
   const trimmedComponentId = componentId.trim();
   if (!trimmedComponentId) {
