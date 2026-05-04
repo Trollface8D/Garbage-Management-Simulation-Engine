@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import json
 import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,24 @@ def _read_template(name: str) -> str:
 ENTITY_OBJECT_TEMPLATE: str = _read_template("entity_object_template.py")
 ENVIRONMENT_TEMPLATE: str = _read_template("environment_template.py")
 POLICY_BASE_TEMPLATE: str = _read_template("policy_template.py")
+
+
+def entity_label_to_class_name(label: str) -> str:
+    """Derive a readable PascalCase class name from an entity label.
+
+    Falls back gracefully when label is empty or an entity_id string.
+    Examples:
+        "sorting facility"  -> "SortingFacility"
+        "waste"             -> "Waste"
+        "entity-19-staff"   -> "Staff"  (strips numeric prefix segments)
+    """
+    text = (label or "").strip()
+    # If it looks like an entity_id (entity-NN-label), strip the prefix
+    text = re.sub(r'^entity[-_][\w\d]+[-_][\w\d]+[-_]', '', text)
+    text = re.sub(r'^entity[-_][\w\d]+[-_]', '', text)
+    text = re.sub(r'^entity[-_]', '', text)
+    words = re.split(r'[\s\-_]+', text)
+    return ''.join(w.capitalize() for w in words if w and not w.isdigit())
 
 
 @lru_cache(maxsize=1)
@@ -450,6 +469,11 @@ def build_state2_entity_prompt(
     """
     base = (_stage("state2_code_entity_object").get("prompt") or "")
     base = base.replace("{entity_id}", entity_id)
+    class_name = entity_label_to_class_name(entity_obj.get("label") or entity_id)
+    class_name_instruction = (
+        f"The Python class name for this entity MUST be `{class_name}`. "
+        "Use this exact name — not the entity id, not a numeric variant."
+    )
     digest_json = json.dumps(interface_digest or {"classes": []}, ensure_ascii=False)
     relevant_policies = [
         p
@@ -466,7 +490,7 @@ def build_state2_entity_prompt(
         if retry_error
         else ""
     )
-    sections: list[str] = [base]
+    sections: list[str] = [base, class_name_instruction]
     if not omit_cached_context:
         sections.extend(build_state2_cached_context(causal_data=causal_data))
     sections.extend(
@@ -547,6 +571,11 @@ def build_state4_policy_prompt(
     base = _stage("state4_code_policy").get("prompt") or ""
     rule_id = str(rule.get("rule_id") or "policy")
     base = base.replace("{policy_rule}", rule_id)
+    policy_class_name = entity_label_to_class_name(rule.get("label") or rule_id) + "Policy"
+    class_name_instruction = (
+        f"The Python class name for this policy MUST be `{policy_class_name}`. "
+        "Use this exact name — not the rule id, not a numeric variant."
+    )
     rule_json = json.dumps(rule, ensure_ascii=False)
     retry_section = (
         f"Previous attempt failed validation. Fix and retry. Error:\n{retry_error.strip()}"
@@ -564,6 +593,7 @@ def build_state4_policy_prompt(
     return _assemble(
         [
             base,
+            class_name_instruction,
             POLICY_TIME_PROTOCOL,
             _runtime("codegen_policy_accumulation_policy"),
             _runtime("codegen_fallback_policy_context"),
