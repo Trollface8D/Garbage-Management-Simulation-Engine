@@ -226,6 +226,7 @@ export default function CodePage() {
     } = archiveHook;
 
     const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+    const [importedJobId, setImportedJobId] = useState<string | null>(null);
 
     const inputsLocked = isCodeGenRunning;
 
@@ -518,6 +519,7 @@ export default function CodePage() {
         setMetricsExtracted(snapshot.metricsExtracted);
         setArtifactFiles(snapshot.artifactFiles);
         setCurrentJobId(snapshot.jobId);
+        if (snapshot.jobId) setImportedJobId(snapshot.jobId);
         if (snapshot.selectedPolicyIds) setSelectedPolicyIds(snapshot.selectedPolicyIds);
         if (snapshot.manualPolicies) setManualPolicies(snapshot.manualPolicies);
 
@@ -1354,6 +1356,7 @@ export default function CodePage() {
                         onPolicyIdsChange={setSelectedPolicyIds}
                         manualPolicies={manualPolicies}
                         onManualPoliciesChange={setManualPolicies}
+                        importedJobId={importedJobId}
                     />
 
                     <SimulationViewer

@@ -121,6 +121,8 @@ type Props = {
   onPolicyIdsChange: (ids: Set<string>) => void;
   manualPolicies: CodeGenPolicyOutline[];
   onManualPoliciesChange: (policies: CodeGenPolicyOutline[]) => void;
+  /** Externally-supplied jobId from workspace import; triggers adoptJobId when it changes. */
+  importedJobId?: string | null;
 };
 
 function loadMapGraphForComponent(componentId: string): MapGraphPayload | null {
@@ -176,6 +178,7 @@ export default function CodeGenWorkspace({
   onPolicyIdsChange,
   manualPolicies,
   onManualPoliciesChange,
+  importedJobId,
 }: Props) {
   const job = useCodeGenJob(componentId);
   const [causalChoices, setCausalChoices] = useState<CausalChoice[]>([]);
@@ -188,6 +191,17 @@ export default function CodeGenWorkspace({
   const [wasRestoredFromPersistence, setWasRestoredFromPersistence] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const lastResultJobIdRef = useRef<string | null>(null);
+  const prevImportedJobIdRef = useRef<string | null>(null);
+
+  // When the page signals a new imported jobId, adopt it so the stage log and
+  // simulation viewer reflect the restored job without a full page reload.
+  useEffect(() => {
+    if (!importedJobId || importedJobId === prevImportedJobIdRef.current) return;
+    prevImportedJobIdRef.current = importedJobId;
+    void job.adoptJobId(importedJobId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importedJobId]);
+
 
   const pageEntityIdsSignature = pageEntities.map((entity) => entity.id).join("\u0000");
 
