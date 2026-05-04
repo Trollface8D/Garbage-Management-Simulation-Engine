@@ -13,7 +13,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from ...infra.gemini_client import GeminiCancelledError, GeminiGateway
@@ -740,12 +742,203 @@ def _stage_state4v_validate_policy(ctx: StageContext) -> dict[str, Any]:
     return {"stage": "state4v_validate_policy", "iterations": len(iterations), "failures": []}
 
 
+# ----- Template Management Helpers -----
+
+def _get_template_dir() -> Path:
+    """Get the path to the template directory."""
+    return (
+        Path(__file__).resolve().parents[4]
+        / "Experiment/code_generation/entity_design/entity/gemini_3_pro_entity/template"
+    )
+
+
+def _copy_template_files(artifact_base: Path) -> list[dict[str, str]]:
+    """
+    Copy all template files to the artifacts directory.
+    
+    Copies:
+      - environment_template.py
+      - entity_object_template.py
+      - policy_template.py
+      - entity_template.py
+    
+    Returns:
+        List of manifest entries for the copied template files.
+    """
+    template_dir = _get_template_dir()
+    manifest_entries: list[dict[str, str]] = []
+    
+    template_files = [
+        "environment_template.py",
+        "entity_object_template.py",
+        "policy_template.py",
+        "entity_template.py",
+    ]
+    
+    for template_file in template_files:
+        template_path = template_dir / template_file
+        if template_path.exists():
+            target_path = artifact_base / template_file
+            try:
+                content = template_path.read_text(encoding="utf-8")
+                target_path.write_text(content, encoding="utf-8")
+                manifest_entries.append({
+                    "path": template_file,
+                    "kind": "template",
+                    "filename": template_file,
+                })
+            except Exception as exc:
+                logger.warning(
+                    "[code_gen][finalize] failed to copy template %s: %s",
+                    template_file, exc
+                )
+    
+    return manifest_entries
+
+
+def _fix_environment_imports(code: str) -> str:
+    """
+    Fix imports in generated environment.py to reference local template files.
+    
+    Uses non-relative imports so imports work when run.py executes as a script.
+    """
+    if not code.strip():
+        return code
+    
+    # Check if already has the import (either form)
+    if ("from environment_template import SimulationEnvironment" in code or
+        "from .environment_template import SimulationEnvironment" in code):
+        return code
+    
+    # Replace relative import with absolute import if present
+    code = code.replace(
+        "from .environment_template import SimulationEnvironment",
+        "from environment_template import SimulationEnvironment"
+    )
+    
+    # Find where to insert the import (after other imports, before class def)
+    lines = code.split("\n")
+    import_section_end = 0
+    in_imports = False
+    for i, line in enumerate(lines):
+        if line.startswith(("import ", "from ")):
+            in_imports = True
+            import_section_end = i + 1
+        elif in_imports and line.strip() and not line.startswith("#"):
+            if not line.startswith(("import ", "from ")):
+                break
+    
+    # Insert the import
+    insert_line = import_section_end
+    lines.insert(insert_line, "from environment_template import SimulationEnvironment")
+    
+    return "\n".join(lines)
+
+
+def _fix_entity_imports(code: str) -> str:
+    """
+    Fix imports in generated entity files to reference local template files.
+    
+    Uses non-relative imports so imports work when run.py executes as a script.
+    """
+    if not code.strip():
+        return code
+    
+    # Check if already has the import (either form)
+    if ("from entity_object_template import entity_object" in code or
+        "from .entity_object_template import entity_object" in code):
+        return code
+    
+    # Check if it's trying to import from .environment (wrong) and fix
+    if "from .environment import entity_object" in code:
+        code = code.replace(
+            "from .environment import entity_object",
+            "from entity_object_template import entity_object"
+        )
+        return code
+    
+    # Replace relative import with absolute import if present
+    code = code.replace(
+        "from .entity_object_template import entity_object",
+        "from entity_object_template import entity_object"
+    )
+    
+    # Find where to insert the import
+    lines = code.split("\n")
+    import_section_end = 0
+    in_imports = False
+    for i, line in enumerate(lines):
+        if line.startswith(("import ", "from ")):
+            in_imports = True
+            import_section_end = i + 1
+        elif in_imports and line.strip() and not line.startswith("#"):
+            if not line.startswith(("import ", "from ")):
+                break
+    
+    # Insert the import if not already there
+    insert_line = import_section_end
+    lines.insert(insert_line, "from entity_object_template import entity_object")
+    
+    return "\n".join(lines)
+
+
+def _fix_policy_imports(code: str) -> str:
+    """
+    Fix imports in generated policy files to reference local template files.
+    
+    Uses non-relative imports so imports work when run.py executes as a script.
+    """
+    if not code.strip():
+        return code
+    
+    # Check if already has the import (either form)
+    if ("from policy_template import Policy" in code or
+        "from .policy_template import Policy" in code):
+        return code
+    
+    # Check if it's trying to import from .environment (wrong) and fix
+    if "from .environment import Policy" in code:
+        code = code.replace(
+            "from .environment import Policy",
+            "from policy_template import Policy"
+        )
+        return code
+    
+    # Replace relative import with absolute import if present
+    code = code.replace(
+        "from .policy_template import Policy",
+        "from policy_template import Policy"
+    )
+    
+    # Find where to insert the import
+    lines = code.split("\n")
+    import_section_end = 0
+    in_imports = False
+    for i, line in enumerate(lines):
+        if line.startswith(("import ", "from ")):
+            in_imports = True
+            import_section_end = i + 1
+        elif in_imports and line.strip() and not line.startswith("#"):
+            if not line.startswith(("import ", "from ")):
+                break
+    
+    # Insert the import if not already there
+    insert_line = import_section_end
+    lines.insert(insert_line, "from policy_template import Policy")
+    
+    return "\n".join(lines)
+
+
 def _stage_finalize_bundle(ctx: StageContext) -> dict[str, Any]:
     """Write a flat artifact tree under ``<job>/artifacts/``.
 
     Layout:
       artifacts/entities/<id>.py
       artifacts/environment.py
+      artifacts/environment_template.py (base class)
+      artifacts/entity_object_template.py (base class)
+      artifacts/policy_template.py (base class)
+      artifacts/entity_template.py (compatibility re-export)
       artifacts/policies/<rule_id>.py
       artifacts/manifest.json
     """
@@ -758,6 +951,11 @@ def _stage_finalize_bundle(ctx: StageContext) -> dict[str, Any]:
 
     manifest_files: list[dict[str, Any]] = []
 
+    # Step 1: Copy all template files to artifacts root
+    template_entries = _copy_template_files(base)
+    manifest_files.extend(template_entries)
+
+    # Step 2: Write entity files with fixed imports
     for entry in checkpoints.list_iterations(ctx.job_id, "state2_code_entity_object"):
         payload = checkpoints.load_iteration(
             ctx.job_id, "state2_code_entity_object", entry["iterId"]
@@ -765,17 +963,24 @@ def _stage_finalize_bundle(ctx: StageContext) -> dict[str, Any]:
         if not isinstance(payload, dict):
             continue
         filename = str(payload.get("filename") or f"{entry['iterId']}.py")
+        entity_code = str(payload.get("code") or "")
+        # Fix imports to reference local templates
+        entity_code = _fix_entity_imports(entity_code)
         target = entities_dir / filename
-        target.write_text(str(payload.get("code") or ""), encoding="utf-8")
+        target.write_text(entity_code, encoding="utf-8")
         manifest_files.append({"path": f"entities/{filename}", "iterId": entry["iterId"], "kind": "entity"})
 
+    # Step 3: Write environment file with fixed imports
     state3 = ctx.stage_payload("state3_code_environment") or {}
     env_code = str(state3.get("code") or "")
     if env_code.strip():
+        # Fix imports to reference local templates
+        env_code = _fix_environment_imports(env_code)
         env_path = base / "environment.py"
         env_path.write_text(env_code, encoding="utf-8")
         manifest_files.append({"path": "environment.py", "kind": "environment"})
 
+    # Step 4: Write policy files with fixed imports
     for entry in checkpoints.list_iterations(ctx.job_id, "state4_code_policy"):
         payload = checkpoints.load_iteration(
             ctx.job_id, "state4_code_policy", entry["iterId"]
@@ -783,8 +988,11 @@ def _stage_finalize_bundle(ctx: StageContext) -> dict[str, Any]:
         if not isinstance(payload, dict):
             continue
         filename = str(payload.get("filename") or f"{entry['iterId']}.py")
+        policy_code = str(payload.get("code") or "")
+        # Fix imports to reference local templates
+        policy_code = _fix_policy_imports(policy_code)
         target = policies_dir / filename
-        target.write_text(str(payload.get("code") or ""), encoding="utf-8")
+        target.write_text(policy_code, encoding="utf-8")
         manifest_files.append({"path": f"policies/{filename}", "iterId": entry["iterId"], "kind": "policy"})
 
     # Runtime assets — deterministic, no LLM call. The generated bundle

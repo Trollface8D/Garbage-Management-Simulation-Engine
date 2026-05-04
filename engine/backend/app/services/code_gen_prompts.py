@@ -437,6 +437,11 @@ def build_state2_cached_context(*, causal_data: str) -> list[str]:
     snippets currently get re-uploaded for every entity.
     """
     parts = [
+        "CRITICAL IMPORTS: Your generated entity code MUST include this import at the top:\n"
+        "  from entity_object_template import entity_object\n"
+        "(Use absolute import without leading dot. All template files are in the same directory.)\n"
+        "This template file is provided in the artifacts directory.\n"
+        "Do NOT attempt to define entity_object yourself — import it from the template.",
         ENTITY_TIME_PROTOCOL,
         _runtime("codegen_template_routing_policy"),
         _runtime("codegen_accumulation_policy"),
@@ -547,17 +552,33 @@ def build_state3_environment_prompt(
         if ENVIRONMENT_TEMPLATE
         else ""
     )
+    import_instructions = (
+        "CRITICAL IMPORTS: Your generated code MUST include this import at the top:\n"
+        "  from environment_template import SimulationEnvironment\n"
+        "(Use absolute import without leading dot. All template files are in the same directory.)\n"
+        "This template file is provided in the artifacts directory.\n"
+        "Do NOT attempt to define SimulationEnvironment yourself — import it from the template."
+    )
+    entity_classes_instruction = (
+        "CRITICAL: Entity classes are PROVIDED TO THE CONSTRUCTOR, NOT imported:\n"
+        "- Your __init__ MUST accept `entities: list` parameter (list of Entity instances).\n"
+        "- Store them: `self.entities = entities` (or name dict/list by entity_id for lookups).\n"
+        "- Access at runtime: use `self.entities` — do NOT import entity modules.\n"
+        "- Do NOT add import statements for entity classes.\n"
+        "Below are the entity class definitions for your reference (read-only):\n"
+        + (entities_blob.strip() if entities_blob.strip() else "(empty)")
+    )
     return _assemble(
         [
             base,
+            import_instructions,
             ENVIRONMENT_TIME_PROTOCOL,
             _runtime("codegen_map_input_policy"),
             fallback,
             _runtime("codegen_environment_output_hint"),
             _runtime("compact_output_policy"),
             env_template_section,
-            "Entity classes (single delimited blob — import / reference, do NOT redefine):\n"
-            + (entities_blob.strip() if entities_blob.strip() else "(empty)"),
+            entity_classes_instruction,
             map_section,
             "Causal data:\n" + (causal_data or "").strip(),
             retry_section,
@@ -600,10 +621,18 @@ def build_state4_policy_prompt(
         if POLICY_BASE_TEMPLATE
         else ""
     )
+    import_instructions = (
+        "CRITICAL IMPORTS: Your generated policy code MUST include this import at the top:\n"
+        "  from policy_template import Policy\n"
+        "(Use absolute import without leading dot. All template files are in the same directory.)\n"
+        "This template file is provided in the artifacts directory.\n"
+        "Do NOT attempt to define the Policy base class yourself — import it from the template."
+    )
     return _assemble(
         [
             base,
             class_name_instruction,
+            import_instructions,
             POLICY_TIME_PROTOCOL,
             _runtime("codegen_policy_accumulation_policy"),
             _runtime("codegen_fallback_policy_context"),
@@ -707,6 +736,8 @@ def validate_environment_protocol(src: str) -> list[str]:
     cls = classes[0]
     if not _has_method(cls, "tick"):
         errors.append(f"class {cls.name!r} must define `tick(self, dt)`")
+    if not _has_method(cls, "__init__"):
+        errors.append(f"class {cls.name!r} must define `__init__` to accept entities")
     forbidden = _forbidden_tokens_in_source(src)
     if forbidden:
         errors.append(f"forbidden time/sleep API used: {', '.join(forbidden)}")

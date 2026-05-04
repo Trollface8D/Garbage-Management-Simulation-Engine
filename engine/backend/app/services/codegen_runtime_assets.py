@@ -242,11 +242,51 @@ The Reporter and metric contract files live next to this script.
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from environment import Environment
 from reporter import Reporter
+
+
+def _load_entities() -> list:
+    """Dynamically import and instantiate all entity classes from entities/ directory."""
+    entities = []
+    entities_dir = Path(__file__).resolve().parent / "entities"
+    
+    if not entities_dir.exists():
+        return entities
+    
+    for entity_file in sorted(entities_dir.glob("*.py")):
+        if entity_file.name.startswith("_"):
+            continue
+        
+        try:
+            # Load module dynamically
+            spec = importlib.util.spec_from_file_location(entity_file.stem, entity_file)
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[entity_file.stem] = module
+            spec.loader.exec_module(module)
+            
+            # Find the entity class (first class that starts with Entity_)
+            for attr_name in dir(module):
+                if attr_name.startswith("Entity_"):
+                    entity_class = getattr(module, attr_name)
+                    if isinstance(entity_class, type):
+                        # Instantiate entity with no args (or minimal default args)
+                        try:
+                            entity_instance = entity_class()
+                            entities.append(entity_instance)
+                        except Exception as e:
+                            print(f"warning: failed to instantiate {attr_name}: {e}")
+        except Exception as e:
+            print(f"warning: failed to load entity {entity_file.stem}: {e}")
+    
+    return entities
 
 
 def main() -> int:
@@ -266,7 +306,11 @@ def main() -> int:
         print(f"metric_contracts.json not found at {contracts_path}; aborting.")
         return 2
 
-    env = Environment()
+    # Load and instantiate all entities
+    entities = _load_entities()
+    
+    # Pass entities to Environment constructor
+    env = Environment(entities=entities)
     reporter = Reporter(
         env=env,
         run_id=run_id,
