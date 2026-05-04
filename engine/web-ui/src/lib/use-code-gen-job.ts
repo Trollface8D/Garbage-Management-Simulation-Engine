@@ -93,13 +93,11 @@ export function useCodeGenJob(componentId?: string) {
       setStatus(persisted.status);
       setError(persisted.error);
 
-      // Auto-resume polling if job was active during reload
-      if (
-        persisted.jobId &&
-        persisted.status &&
-        !TERMINAL_STATUSES.has(persisted.status.status)
-      ) {
-        // Delay polling start slightly to allow state stabilization
+      // Refresh status from backend on restore — always do one poll so that
+      // server restarts are reflected (e.g. "cancelled" → "partial" when
+      // checkpoints exist but the server was just restarted).
+      if (persisted.jobId && persisted.status) {
+        const wasActive = !TERMINAL_STATUSES.has(persisted.status.status);
         const timer = window.setTimeout(() => {
           void (async () => {
             try {
@@ -107,7 +105,7 @@ export function useCodeGenJob(componentId?: string) {
               setStatus(next);
               setIsRestoringFromPersistence(false);
               if (!TERMINAL_STATUSES.has(next.status)) {
-                // Resume polling
+                // Resume polling for active jobs
                 pollTimerRef.current = window.setInterval(() => {
                   void (async () => {
                     try {
@@ -131,7 +129,10 @@ export function useCodeGenJob(componentId?: string) {
               }
             } catch (err) {
               setIsRestoringFromPersistence(false);
-              setError(err instanceof Error ? err.message : "Failed to resume polling.");
+              if (wasActive) {
+                setError(err instanceof Error ? err.message : "Failed to resume polling.");
+              }
+              // For terminal statuses, silently ignore poll errors (server may be offline).
             }
           })();
         }, 100);

@@ -518,7 +518,12 @@ export default function CodeGenWorkspace({
           )}
           {job.status?.status === "cancelled" && (
             <p className="text-xs rounded-md bg-amber-500/20 border border-amber-600/50 px-2 py-1 text-amber-200">
-              ⚠ Job cancelled — click Edit Input to reset
+              ⚠ Job cancelled — click Resume to continue from checkpoints, or Edit Input to start fresh
+            </p>
+          )}
+          {job.status?.status === "partial" && (
+            <p className="text-xs rounded-md bg-amber-500/20 border border-amber-600/50 px-2 py-1 text-amber-200">
+              ⚠ Server was restarted — click Resume to continue from where it left off
             </p>
           )}
           <p className="text-xs text-neutral-400">
