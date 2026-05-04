@@ -51,13 +51,18 @@ POLICY_BASE_TEMPLATE: str = _read_template("policy_template.py")
 
 
 def entity_label_to_class_name(label: str) -> str:
-    """Derive a readable PascalCase class name from an entity label.
+    """Derive a PascalCase class name from an entity id/label, prefixed with 'Entity_'.
 
+    The class name is derived from the entity's id in PascalCase format, prefixed with 'Entity_'.
     Falls back gracefully when label is empty or an entity_id string.
+    
     Examples:
-        "sorting facility"  -> "SortingFacility"
-        "waste"             -> "Waste"
-        "entity-19-staff"   -> "Staff"  (strips numeric prefix segments)
+        "waste"                          -> "Entity_Waste"
+        "sorting_facility_operators"     -> "Entity_SortingFacilityOperators"
+        "truck"                          -> "Entity_Truck"
+        "entity-19-staff"                -> "Entity_Staff"  (strips numeric prefix segments)
+    
+    Note: The entity_id from State 1 is the source of truth for class naming.
     """
     text = (label or "").strip()
     # If it looks like an entity_id (entity-NN-label), strip the prefix
@@ -65,7 +70,8 @@ def entity_label_to_class_name(label: str) -> str:
     text = re.sub(r'^entity[-_][\w\d]+[-_]', '', text)
     text = re.sub(r'^entity[-_]', '', text)
     words = re.split(r'[\s\-_]+', text)
-    return ''.join(w.capitalize() for w in words if w and not w.isdigit())
+    pascal_case = ''.join(w.capitalize() for w in words if w and not w.isdigit())
+    return f'Entity_{pascal_case}'
 
 
 @lru_cache(maxsize=1)
@@ -586,7 +592,11 @@ def build_state4_policy_prompt(
         "Base class — your Policy class MUST subclass `Policy` defined below. "
         "Implement `apply` and optionally override `is_applicable_to`. "
         "Do NOT redefine the base class:\n\n"
-        "```python\n" + POLICY_BASE_TEMPLATE + "\n```"
+        "```python\n" + POLICY_BASE_TEMPLATE + "\n```\n\n"
+        "CRITICAL INSTRUCTION: Output ONLY your concrete policy implementation class. "
+        "Do NOT include the abstract base `Policy` class in your output. "
+        "The template above is reference material only — use it to understand the interface, "
+        "then output only the concrete policy class (e.g., `" + policy_class_name + "`) that implements it."
         if POLICY_BASE_TEMPLATE
         else ""
     )
@@ -715,7 +725,7 @@ def validate_policy_protocol(src: str) -> list[str]:
     classes = _walk_classes(tree)
     if not classes:
         return ["no class definition found"]
-    cls = classes[0]
+    cls = classes[-1]  # Use last class (concrete implementation, not base template)
     if not (_has_method(cls, "before_tick") or _has_method(cls, "after_tick")):
         errors.append(f"class {cls.name!r} must define `before_tick` or `after_tick`")
     forbidden = _forbidden_tokens_in_source(src)

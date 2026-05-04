@@ -1,6 +1,10 @@
 {
   "runtime_prompts": {
 
+    "codegen_entity_naming_convention": "CLASS NAMING RULE:\n- Derive the class name from the entity's id in PascalCase, prefixed with 'Entity_'.\n- Examples:\n  * entity id 'waste' → class name 'Entity_Waste'\n  * entity id 'sorting_facility_operators' → class name 'Entity_SortingFacilityOperators'\n  * entity id 'truck' → class name 'Entity_Truck'\n- NEVER use 'EntityCanonical', numbered suffixes like 'Entity2', or any other naming pattern.\n- Use the entity.id from the entity list (State 1 output) as the source of truth.\n\nFILE NAMING RULE:\n- Output file MUST be named: entity_{entity_id}_{order}.py\n- 'entity_id' is the snake_case id from State 1 (e.g., 'waste', 'sorting_facility_operators').\n- 'order' is the zero-based index of generation order (0, 1, 2, ...).\n- Examples:\n  * First generated entity with id 'waste' → entity_waste_0.py\n  * Second generated entity with id 'sorting_facility_operators' → entity_sorting_facility_operators_1.py\n- NEVER use patterns like 'entity-canonical-0--' or 'entity-2--'.",
+
+    "codegen_entity_step_method_requirement": "STEP METHOD REQUIREMENT:\n- All entity classes MUST include a step(self, dt, env) method.\n- dt: float — time delta representing this timestep's duration in simulation time units.\n- env: Optional[SimulationEnvironment] — reference to the simulation environment.\n- For ACTIVE entities: Implement the full cycle (perceive → decide → act) or other behavior.\n- For PASSIVE entities: The method may be a no-op (def step(self, dt, env): pass), but the signature MUST be present.\n- For HYBRID entities: Implement according to the specific behavioral requirements.\n- Do NOT skip or rename step() for any entity type — it is a contract all entities must honor.",
+
     "codegen_entity_list_json_schema": "Use this JSON schema exactly:\n{\n  \"entities\": [\n    {\"id\": \"string\", \"label\": \"string\", \"type\": \"string\", \"frequency\": 0, \"priority\": 0}\n  ]\n}\nField rules:\n- id: normalized snake_case identifier derived from label.\n- label: exact surface form as it appears in causal data.\n- type: one of [\"actor\", \"resource\", \"environment\", \"policy\"] — infer from context.\n- frequency: integer count of occurrences across all causal data.\n- priority: integer rank starting at 1; lower = generate first (most mentioned = 1).",
 
     "codegen_entity_object_output_hint": "Output raw Python class code only. Do NOT include markdown fences (```python), module-level imports unrelated to the class, file headers, comments explaining the task, or any prose. One class per response. Use the class name specified in the prompt exactly.",
@@ -49,10 +53,12 @@
     "task_description": "Generate one entity Python class per iteration, in priority order, accumulating prior classes as context.",
     "input_dependencies": ["causal_data", "entity_list_json", "already_generated_entities", "selected_template"],
     "output_schema_ref": "codegen_entity_object_output_hint",
-    "note": "Generate one entity class per call. Caller is responsible for iterating over entity_list_json sorted by priority and passing already_generated_entities from prior iterations.",
-    "prompt": "Using the provided causal data and the selected template, generate the Python class for the entity with id '{entity_id}'. Define all attributes and methods implied by the causal data. Use already_generated_entities for interface consistency only — do not repeat their code. Apply the template routing policy to confirm the correct template is in use.",
+    "note": "Generate one entity class per call. Caller is responsible for iterating over entity_list_json sorted by priority and passing already_generated_entities from prior iterations. Output file MUST be named entity_{entity_id}_{order}.py where entity_id is snake_case from State 1 and order is the zero-based iteration index.",
+    "prompt": "Using the provided causal data and the selected template, generate the Python class for the entity with id '{entity_id}'. Follow the entity naming convention strictly: the class name MUST be 'Entity_{EntityIdInPascalCase}' derived from the entity id. All entities MUST include a step(self, dt, env) method (may be pass for passive entities). Define all attributes and methods implied by the causal data. Use already_generated_entities for interface consistency only — do not repeat their code. Apply the template routing policy to confirm the correct template is in use.",
     "assembled_prompt_parts": [
       "state2_code_entity_object.prompt",
+      "codegen_entity_naming_convention",
+      "codegen_entity_step_method_requirement",
       "codegen_template_routing_policy",
       "codegen_accumulation_policy",
       "codegen_entity_object_output_hint",
