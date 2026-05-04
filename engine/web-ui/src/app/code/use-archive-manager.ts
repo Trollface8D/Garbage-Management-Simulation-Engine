@@ -101,15 +101,19 @@ export function useArchiveManager(componentId: string | null, currentJobId: stri
             setArchiveError("");
             setArchiveMessage("");
 
+            // Prefer the job id embedded in the snapshot (actual runtime job)
+            // over the hook's constructor parameter which may be a static placeholder.
+            const effectiveJobId = (snapshot.jobId ?? currentJobId) || null;
+
             try {
-                const blob = await exportWorkspaceArchive(snapshot, currentJobId);
+                const blob = await exportWorkspaceArchive(snapshot, effectiveJobId);
                 const url = URL.createObjectURL(blob);
                 const stamp = new Date()
                     .toISOString()
                     .replace(/[:.]/g, "-")
                     .replace("T", "_")
                     .slice(0, 19);
-                const stub = currentJobId || componentId || "workspace";
+                const stub = effectiveJobId || componentId || "workspace";
                 const a = document.createElement("a");
                 a.href = url;
                 a.download = `code-workspace-${stub}-${stamp}.zip`;

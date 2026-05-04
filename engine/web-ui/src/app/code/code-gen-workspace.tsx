@@ -184,6 +184,7 @@ export default function CodeGenWorkspace({
   const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(new Set());
   const [actionError, setActionError] = useState<string>("");
   const [previewText, setPreviewText] = useState<string>("");
+  const [autoConfirm, setAutoConfirm] = useState<boolean>(false);
   const [wasRestoredFromPersistence, setWasRestoredFromPersistence] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const lastResultJobIdRef = useRef<string | null>(null);
@@ -412,6 +413,7 @@ export default function CodeGenWorkspace({
         selectedMetrics,
         userEntityList: pageEntities,
         previewOnly: false,
+        autoConfirm,
       });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Generate failed.");
@@ -559,6 +561,20 @@ export default function CodeGenWorkspace({
         >
           {workflow.primaryActionLabel}
         </button>
+
+        <label
+          className="flex cursor-pointer items-center gap-1.5 text-xs text-neutral-400 select-none"
+          title="Skip the dependency review gate and run all stages end-to-end automatically"
+        >
+          <input
+            type="checkbox"
+            checked={autoConfirm}
+            onChange={(e) => setAutoConfirm(e.target.checked)}
+            disabled={workflow.isRunning}
+            className="accent-sky-500"
+          />
+          Auto-run
+        </label>
 
         <button
           type="button"

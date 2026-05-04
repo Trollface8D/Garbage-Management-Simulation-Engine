@@ -164,6 +164,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
     selected_metrics = list(payload.get("selectedMetrics") or [])
     user_entity_list = list(payload.get("userEntityList") or [])
     preview_only = bool(payload.get("previewOnly", False))
+    auto_confirm = bool(payload.get("autoConfirm", False))
     if not selected_metrics:
         return JSONResponse(
             {"error": "selectedMetrics is required — pick at least one metric to track."},
@@ -187,6 +188,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         user_entity_list=user_entity_list,
         model_name=resolved_model,
         use_env_model_overrides=use_env_model_overrides,
+        auto_confirm=auto_confirm,
     )
 
     inputs = {
@@ -196,6 +198,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         "selectedPolicies": selected_policies,
         "selectedMetrics": selected_metrics,
         "userEntityList": user_entity_list,
+        "autoConfirm": auto_confirm,
     }
     if not preview_only:
         _spawn_worker(
@@ -415,6 +418,7 @@ def resume_code_gen_job(job_id: str):
         "selectedPolicies": manifest.get("selectedPolicies") or [],
         "selectedMetrics": manifest.get("selectedMetrics") or [],
         "userEntityList": manifest.get("userEntityList") or [],
+        "autoConfirm": bool(manifest.get("autoConfirm", False)),
     }
 
     with JOBS_LOCK:
@@ -693,3 +697,47 @@ def get_code_gen_checkpoint(job_id: str, stage: str):
         "preview": summarized["preview"],
         "tokenUsage": _code_gen_stage_token_usage(job, stage),
     }
+
+
+@router.get("/code_gen/jobs/{job_id}/interaction_log")
+def get_interaction_log(
+    job_id: str,
+    stage: str | None = None,
+    offset: int = 0,
+    limit: int = 100,
+):
+    """Return parsed entries from interaction_log.jsonl for auditing prompts/responses.
+
+    Query params:
+      stage  — filter to a specific pipeline stage (optional)
+      offset — skip first N entries (pagination)
+      limit  — max entries returned (default 100, max 1000)
+    """
+    import json as _json
+
+    log_path = checkpoints.job_dir(job_id) / "interaction_log.jsonl"
+    if not log_path.exists():
+        return {"jobId": job_id, "entries": [], "total": 0}
+
+    limit = min(max(1, limit), 1000)
+    entries: list[dict[str, Any]] = []
+    total = 0
+    try:
+        with log_path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = _json.loads(line)
+                except _json.JSONDecodeError:
+                    continue
+                if stage and entry.get("stage") != stage:
+                    continue
+                total += 1
+                if total > offset and len(entries) < limit:
+                    entries.append(entry)
+    except OSError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    return {"jobId": job_id, "entries": entries, "total": total, "offset": offset, "limit": limit}

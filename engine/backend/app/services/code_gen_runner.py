@@ -10,8 +10,10 @@ status / SSE infrastructure can be reused without modification.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import time
 from typing import Any, Callable
 
 from ...infra.gemini_client import GeminiCancelledError, GeminiGateway
@@ -28,6 +30,34 @@ from ..services.job_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _append_interaction_log(
+    job_id: str,
+    stage: str,
+    prompt: str,
+    response: str,
+    usage_snapshot: dict[str, int],
+    *,
+    iter_id: str | None = None,
+) -> None:
+    """Append one prompt/response record to <job_dir>/interaction_log.jsonl."""
+    try:
+        log_path = checkpoints.job_dir(job_id) / "interaction_log.jsonl"
+        entry = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "stage": stage,
+            "iter_id": iter_id,
+            "prompt_chars": len(prompt),
+            "response_chars": len(response),
+            "prompt": prompt,
+            "response": response,
+            "usage": dict(usage_snapshot),
+        }
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        logger.warning("[code_gen][interaction_log] write failed jobId=%s stage=%s error=%s", job_id, stage, exc)
 
 
 StageFn = Callable[["StageContext"], dict[str, Any]]
@@ -116,6 +146,8 @@ def _generate_json(
     stage: str,
     prompt: str,
     schema: dict[str, Any] | None = None,
+    *,
+    iter_id: str | None = None,
 ) -> Any:
     """Run a JSON-schema-constrained Gemini call with cancel + retry surfacing."""
     gateway = ctx.gateway()
@@ -131,6 +163,7 @@ def _generate_json(
         )
     except GeminiCancelledError as exc:
         raise JobCancelledError(str(exc)) from exc
+    _append_interaction_log(ctx.job_id, stage, prompt, raw or "", dict(ctx.usage), iter_id=iter_id)
     return GeminiGateway.parse_json_relaxed(raw)
 
 
@@ -140,6 +173,7 @@ def _generate_text(
     prompt: str,
     *,
     cached_content: str | None = None,
+    iter_id: str | None = None,
 ) -> str:
     """Run a free-form Gemini call returning raw text (for code generation)."""
     gateway = ctx.gateway()
@@ -155,6 +189,7 @@ def _generate_text(
         )
     except GeminiCancelledError as exc:
         raise JobCancelledError(str(exc)) from exc
+    _append_interaction_log(ctx.job_id, stage, prompt, raw or "", dict(ctx.usage), iter_id=iter_id)
     return prompts.strip_code_fences(raw)
 
 
@@ -473,6 +508,7 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
                 "state2_code_entity_object",
                 prompt,
                 cached_content=cache_name,
+                iter_id=entity_id,
             )
             validation_errors = prompts.validate_entity_protocol(
                 code,
@@ -648,7 +684,7 @@ def _stage_state4_code_policy(ctx: StageContext) -> dict[str, Any]:
                 policies_accumulator=policies_blob,
                 retry_error=retry_error,
             )
-            code = _generate_text(ctx, "state4_code_policy", prompt)
+            code = _generate_text(ctx, "state4_code_policy", prompt, iter_id=rule_id)
             ctx.raise_if_cancelled()
             errors = prompts.validate_policy_protocol(code)
             if not errors:
@@ -912,8 +948,12 @@ def run_code_gen_worker(
                 continue
 
             if stage in CONFIRMATION_GATES and stage not in job.confirmed_stages:
-                _wait_for_confirmation(ctx, stage)
-                ctx.raise_if_cancelled()
+                if ctx.inputs.get("autoConfirm"):
+                    logger.info("[code_gen] autoConfirm: skipping gate jobId=%s stage=%s", job.job_id, stage)
+                    job.confirmed_stages = list(job.confirmed_stages or []) + [stage]
+                else:
+                    _wait_for_confirmation(ctx, stage)
+                    ctx.raise_if_cancelled()
 
             ctx.emit_stage_message(stage, f"{stage}: starting")
             touch_activity(job)
