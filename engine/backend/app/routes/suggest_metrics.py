@@ -236,8 +236,11 @@ that realistically track their behavior using concepts from these patterns."""
 @router.post(
     "/code_gen/suggest_metrics",
     response_model=MetricSuggestionResponse,
+    deprecated=True,
 )
 def suggest_metrics(payload: MetricSuggestionRequest) -> MetricSuggestionResponse:
+    """Deprecated: metric suggestion is now handled by the state1d_metrics_draft pipeline stage.
+    Kept as a utility for testing / experimenting outside a job context."""
     entity_names = [e.name.strip() for e in payload.entities if e.name.strip()]
     if not entity_names:
         raise HTTPException(

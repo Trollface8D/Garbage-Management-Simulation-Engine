@@ -291,6 +291,21 @@ export async function updateCodeGenJobPolicies(
   }
 }
 
+export async function updateCodeGenJobMetrics(
+  jobId: string,
+  selectedMetrics: SuggestedMetric[],
+): Promise<void> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/metrics`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ selectedMetrics }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+}
+
 export async function fetchCodeGenResult(jobId: string): Promise<unknown> {
   const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/result`, { cache: "no-store" });
   return jsonOrThrow<unknown>(response);

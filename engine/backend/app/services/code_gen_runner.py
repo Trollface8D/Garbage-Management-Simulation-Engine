@@ -211,8 +211,8 @@ def _resume_skip_completed(job: JobRecord) -> set[str]:
     return completed
 
 
-# Stages that require explicit user confirmation before the worker proceeds.
-CONFIRMATION_GATES: frozenset[str] = frozenset({"state1c_entity_dependencies"})
+# Stages that require explicit user confirmation AFTER they complete (before pipeline advances).
+POST_RUN_CONFIRMATION_GATES: frozenset[str] = frozenset({"state1b_policy_outline", "state1d_metrics_draft"})
 
 
 def _wait_for_confirmation(ctx: "StageContext", stage: str) -> None:
@@ -382,6 +382,65 @@ def _stage_state1c_entity_dependencies(ctx: StageContext) -> dict[str, Any]:
     }
 
 
+def _stage_state1d_metrics_draft(ctx: StageContext) -> dict[str, Any]:
+    ctx.raise_if_cancelled()
+    state1 = ctx.stage_payload("state1_entity_list") or {}
+    entities = state1.get("entities") or []
+    state1b = ctx.stage_payload("state1b_policy_outline") or {}
+    policy_outline = state1b.get("policies") or []
+    state1c = ctx.stage_payload("state1c_entity_dependencies") or {}
+    dependency_edges = state1c.get("edges") or []
+
+    prompt, schema = prompts.build_state1d_metrics_draft_prompt(
+        entities=entities,
+        policy_outline=policy_outline,
+        dependency_edges=dependency_edges,
+    )
+    parsed = _generate_json(ctx, "state1d_metrics_draft", prompt, schema)
+    if not isinstance(parsed, dict):
+        parsed = {"metrics": []}
+    metrics = parsed.get("metrics") or []
+    if not isinstance(metrics, list):
+        metrics = []
+    valid_ids = {str(e.get("id") or "") for e in entities if isinstance(e, dict)}
+    cleaned: list[dict[str, Any]] = []
+    for m in metrics:
+        if not isinstance(m, dict):
+            continue
+        name = str(m.get("name") or "").strip()
+        if not name:
+            continue
+        entity_id = str(m.get("entity_id") or "").strip()
+        if entity_id and entity_id not in valid_ids:
+            logger.warning(
+                "[code_gen][state1d] dropping metric %r: entity_id %r not in entity list",
+                name,
+                entity_id,
+            )
+            continue
+        cleaned.append({
+            "name": name,
+            "label": str(m.get("label") or name),
+            "unit": str(m.get("unit") or ""),
+            "agg": str(m.get("agg") or "sum"),
+            "viz": str(m.get("viz") or "line"),
+            "chart_group": m.get("chart_group"),
+            "grounding": str(m.get("grounding") or "domain_inference"),
+            "entities": [str(e) for e in (m.get("entities") or []) if isinstance(e, str)],
+            "entity_id": entity_id,
+            "expected_variable": str(m.get("expected_variable") or ""),
+            "chart_type": str(m.get("chart_type") or m.get("viz") or "line"),
+            "how_to_interpret": str(m.get("how_to_interpret") or ""),
+            "required_attrs": [
+                dep for dep in (m.get("required_attrs") or [])
+                if isinstance(dep, dict) and dep.get("entity") and dep.get("attr")
+            ],
+            "sampling_event": str(m.get("sampling_event") or "tick"),
+            "rationale": str(m.get("rationale") or ""),
+        })
+    return {"stage": "state1d_metrics_draft", "metrics": cleaned, "metricCount": len(cleaned)}
+
+
 # ---------------------------------------------------------------------------
 # Stage 2 / 3 / 4 / validation / finalize (Phase 3)
 # ---------------------------------------------------------------------------
@@ -431,12 +490,11 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
         order = [eid for eid in order if eid in user_filter]
 
     causal_data = str(ctx.inputs.get("causalData") or "")
-    
-    # Extract selected metrics for entity prompt guidance
-    selected_metrics = ctx.inputs.get("selectedMetrics") or []
-    if not isinstance(selected_metrics, list):
-        selected_metrics = []
-    
+
+    # Read confirmed metrics from state1d checkpoint (Section 8)
+    state1d = ctx.stage_payload("state1d_metrics_draft") or {}
+    selected_metrics = list(state1d.get("metrics") or [])
+
     iteration_summaries: list[dict[str, Any]] = []
     accumulator_files: list[tuple[str, str]] = []
 
@@ -586,13 +644,63 @@ def _stage_state2v_validate_protocol(ctx: StageContext) -> dict[str, Any]:
     return {"stage": "state2v_validate_protocol", "iterations": len(iterations), "failures": []}
 
 
+def _build_map_artifact(map_graph: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize map_graph into map.json format with pre-computed neighbors."""
+    if not isinstance(map_graph, dict):
+        return {"nodes": [], "edges": []}
+    vertices = map_graph.get("vertices") or map_graph.get("nodes") or []
+    edges = map_graph.get("edges") or []
+    # Build adjacency from edges
+    adjacency: dict[str, list[str]] = {}
+    for edge in edges:
+        if not isinstance(edge, dict):
+            continue
+        src = str(edge.get("source") or edge.get("from") or "").strip()
+        tgt = str(edge.get("target") or edge.get("to") or "").strip()
+        if src and tgt:
+            adjacency.setdefault(src, []).append(tgt)
+    nodes = []
+    for v in vertices:
+        if not isinstance(v, dict):
+            continue
+        node_id = str(v.get("id") or "").strip()
+        node = dict(v)
+        node["neighbors"] = adjacency.get(node_id, [])
+        nodes.append(node)
+    normalized_edges = []
+    for edge in edges:
+        if not isinstance(edge, dict):
+            continue
+        normalized_edges.append({
+            "id": str(edge.get("id") or ""),
+            "source": str(edge.get("source") or edge.get("from") or ""),
+            "target": str(edge.get("target") or edge.get("to") or ""),
+            "label": str(edge.get("label") or ""),
+            "weight": edge.get("weight", 1.0),
+        })
+    return {"nodes": nodes, "edges": normalized_edges}
+
+
 def _stage_state3_code_environment(ctx: StageContext) -> dict[str, Any]:
     ctx.raise_if_cancelled()
-    causal_data = str(ctx.inputs.get("causalData") or "")
-    map_node_json = ctx.inputs.get("mapNodeJson")
+    map_graph = ctx.inputs.get("mapGraph")
+    state1b = ctx.stage_payload("state1b_policy_outline") or {}
+    policy_outline = list(state1b.get("policies") or [])
     entities_blob = checkpoints.concat_iterations_with_delimiters(
         ctx.job_id, "state2_code_entity_object"
     )
+
+    # Write map.json artifact before LLM call so environment.py can load it at runtime
+    map_json_data = _build_map_artifact(map_graph if isinstance(map_graph, dict) else None)
+    try:
+        artifact_base = checkpoints.artifact_root(ctx.job_id)
+        artifact_base.mkdir(parents=True, exist_ok=True)
+        import json as _json
+        (artifact_base / "map.json").write_text(
+            _json.dumps(map_json_data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception as _exc:
+        logger.warning("[code_gen][state3] failed to write map.json artifact: %s", _exc)
 
     retry_error: str | None = None
     code = ""
@@ -600,9 +708,9 @@ def _stage_state3_code_environment(ctx: StageContext) -> dict[str, Any]:
     for attempt in range(2):
         ctx.raise_if_cancelled()
         prompt = prompts.build_state3_environment_prompt(
-            causal_data=causal_data,
             entities_blob=entities_blob,
-            map_node_json=map_node_json if isinstance(map_node_json, dict) else None,
+            policy_outline=policy_outline,
+            map_graph=map_graph if isinstance(map_graph, dict) else None,
             retry_error=retry_error,
         )
         code = _generate_text(ctx, "state3_code_environment", prompt)
@@ -630,7 +738,8 @@ def _stage_state3_code_environment(ctx: StageContext) -> dict[str, Any]:
         "filename": "environment.py",
         "code": code,
         "validation": {"errors": errors},
-        "mapAvailable": isinstance(map_node_json, dict) and bool(map_node_json),
+        "mapAvailable": isinstance(map_graph, dict) and bool(map_graph),
+        "mapArtifactWritten": True,
     }
 
 
@@ -656,6 +765,7 @@ def _stage_state4_code_policy(ctx: StageContext) -> dict[str, Any]:
         ctx.job_id, "state2_code_entity_object"
     )
     causal_data = str(ctx.inputs.get("causalData") or "")
+    map_graph = ctx.inputs.get("mapGraph")
     iteration_summaries: list[dict[str, Any]] = []
 
     for index, rule in enumerate(policies):
@@ -691,6 +801,7 @@ def _stage_state4_code_policy(ctx: StageContext) -> dict[str, Any]:
                 entities_blob=entities_blob,
                 environment_code=environment_code,
                 policies_accumulator=policies_blob,
+                map_graph=map_graph if isinstance(map_graph, dict) else None,
                 retry_error=retry_error,
             )
             code = _generate_text(ctx, "state4_code_policy", prompt, iter_id=rule_id)
@@ -753,10 +864,7 @@ def _stage_state4v_validate_policy(ctx: StageContext) -> dict[str, Any]:
 
 def _get_template_dir() -> Path:
     """Get the path to the template directory."""
-    return (
-        Path(__file__).resolve().parents[4]
-        / "Experiment/code_generation/entity_design/entity/gemini_3_pro_entity/template"
-    )
+    return Path(__file__).resolve().parent / "templates"
 
 
 def _copy_template_files(artifact_base: Path) -> list[dict[str, str]]:
@@ -1008,9 +1116,10 @@ def _stage_finalize_bundle(ctx: StageContext) -> dict[str, Any]:
     # downstream BI consumes the same chart_group / viz hints.
     from . import codegen_runtime_assets as _runtime_assets
 
-    selected_metrics_raw = ctx.inputs.get("selectedMetrics") or []
+    # Read confirmed metrics from state1d checkpoint (Section 13a)
+    state1d = ctx.stage_payload("state1d_metrics_draft") or {}
     selected_metrics: list[dict[str, Any]] = [
-        m for m in selected_metrics_raw if isinstance(m, dict)
+        m for m in (state1d.get("metrics") or []) if isinstance(m, dict)
     ]
 
     (base / "reporter.py").write_text(_runtime_assets.REPORTER_PY, encoding="utf-8")
@@ -1040,6 +1149,21 @@ def _stage_finalize_bundle(ctx: StageContext) -> dict[str, Any]:
     )
     manifest_files.append({"path": "pbi/theme.json", "kind": "pbi"})
 
+    # Write verification_report.json from state5_policy_verify if available
+    state5 = ctx.stage_payload("state5_policy_verify") or {}
+    if state5 and not state5.get("skipped"):
+        import json as _json_v
+        verification_report = {
+            "policyCount": state5.get("policyCount") or 0,
+            "fixedCount": state5.get("fixedCount") or 0,
+            "failedCount": state5.get("failedCount") or 0,
+            "results": state5.get("results") or [],
+        }
+        (base / "verification_report.json").write_text(
+            _json_v.dumps(verification_report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        manifest_files.append({"path": "verification_report.json", "kind": "verification"})
+
     manifest = {
         "pipeline": "code_gen",
         "jobId": ctx.job_id,
@@ -1054,6 +1178,151 @@ def _stage_finalize_bundle(ctx: StageContext) -> dict[str, Any]:
         encoding="utf-8",
     )
     return {"stage": "finalize_bundle", "fileCount": len(manifest_files), "files": manifest_files}
+
+
+# ---------------------------------------------------------------------------
+# Section 12 — Policy self-verification
+# ---------------------------------------------------------------------------
+
+_MAP_ACCESSOR_API_SUMMARY = """\
+env.get_nodes() -> list[dict]          # all map nodes
+env.get_node(node_id) -> dict | None   # single node by id
+env.get_edges() -> list[dict]          # all map edges
+env.get_neighbors(node_id) -> list[str]  # neighbor node ids
+env.get_node_types() -> list[str]      # distinct node types"""
+
+
+def _load_entity_code_index(ctx: StageContext) -> dict[str, str]:
+    """Return {entity_id: python_code} from state2 iterations."""
+    iterations = checkpoints.list_iterations(ctx.job_id, "state2_code_entity_object")
+    result: dict[str, str] = {}
+    for entry in iterations:
+        payload = checkpoints.load_iteration(ctx.job_id, "state2_code_entity_object", entry["iterId"])
+        if isinstance(payload, dict) and payload.get("code"):
+            eid = str(payload.get("entityId") or entry["iterId"])
+            result[eid] = str(payload["code"])
+    return result
+
+
+def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
+    """LLM-as-Judge: review each generated policy, fix bugs, max 2 retries per policy."""
+    ctx.raise_if_cancelled()
+
+    state4_iterations = checkpoints.list_iterations(ctx.job_id, "state4_code_policy")
+    if not state4_iterations:
+        return {"stage": "state5_policy_verify", "skipped": True, "reason": "no state4 iterations found"}
+
+    state1b = ctx.stage_payload("state1b_policy_outline") or {}
+    policy_outlines = state1b.get("policies") or []
+    rule_contracts: dict[str, dict[str, Any]] = {
+        str(p.get("rule_id") or ""): p
+        for p in policy_outlines
+        if isinstance(p, dict) and p.get("rule_id")
+    }
+
+    entity_code_index = _load_entity_code_index(ctx)
+    map_graph = ctx.inputs.get("mapGraph")
+    map_accessor_api = _MAP_ACCESSOR_API_SUMMARY if isinstance(map_graph, dict) and map_graph else ""
+
+    verification_results: list[dict[str, Any]] = []
+    fixed_count = 0
+    failed_count = 0
+
+    for entry in state4_iterations:
+        ctx.raise_if_cancelled()
+        rule_id = str(entry["iterId"])
+        payload = checkpoints.load_iteration(ctx.job_id, "state4_code_policy", rule_id)
+        if not isinstance(payload, dict) or not payload.get("code"):
+            verification_results.append({"rule_id": rule_id, "skipped": True, "reason": "no code"})
+            continue
+
+        rule_contract = rule_contracts.get(rule_id, {"rule_id": rule_id})
+        current_code = str(payload["code"])
+        attempts: list[dict[str, Any]] = []
+        final_code = current_code
+        passed = True
+
+        ctx.emit_stage_message(
+            "state5_policy_verify",
+            f"state5: judging {rule_id} ({state4_iterations.index(entry) + 1}/{len(state4_iterations)})",
+        )
+
+        for attempt_num in range(3):  # pass 1 + max 2 fix retries
+            ctx.raise_if_cancelled()
+            judge_prompt = prompts.build_policy_judge_pass1_prompt(
+                policy_code=current_code,
+                rule_contract=rule_contract,
+                entity_code_index=entity_code_index,
+                map_accessor_api=map_accessor_api,
+            )
+            judge_result = _generate_json(
+                ctx, "state5_policy_verify", judge_prompt, prompts.JUDGE_PASS1_SCHEMA,
+                iter_id=f"{rule_id}_pass1_attempt{attempt_num + 1}",
+            )
+            issues: list[dict[str, Any]] = []
+            if isinstance(judge_result, dict):
+                issues = [i for i in (judge_result.get("issues") or []) if isinstance(i, dict)]
+
+            attempt_record: dict[str, Any] = {"attempt": attempt_num + 1, "issues": issues}
+
+            if not issues:
+                attempt_record["status"] = "pass"
+                attempts.append(attempt_record)
+                break
+
+            if attempt_num < 2:
+                fix_prompt = prompts.build_policy_judge_pass2_prompt(
+                    policy_code=current_code,
+                    rule_contract=rule_contract,
+                    entity_code_index=entity_code_index,
+                    map_accessor_api=map_accessor_api,
+                    issues=issues,
+                )
+                fixed_code = _generate_text(
+                    ctx, "state5_policy_verify", fix_prompt,
+                    iter_id=f"{rule_id}_fix_attempt{attempt_num + 1}",
+                )
+                if fixed_code.strip():
+                    current_code = fixed_code
+                    final_code = fixed_code
+                attempt_record["status"] = "fixed"
+                attempts.append(attempt_record)
+            else:
+                attempt_record["status"] = "fail"
+                attempts.append(attempt_record)
+                passed = False
+
+        if len(attempts) > 1 and passed:
+            fixed_count += 1
+            # Persist the fixed code back to the state4 iteration.
+            updated_payload = dict(payload)
+            updated_payload["code"] = final_code
+            updated_payload["verifiedFixed"] = True
+            checkpoints.save_iteration(ctx.job_id, "state4_code_policy", rule_id, updated_payload)
+            try:
+                policies_dir = checkpoints.artifact_root(ctx.job_id) / "policies"
+                policies_dir.mkdir(parents=True, exist_ok=True)
+                filename = str(payload.get("filename") or f"{rule_id}.py")
+                (policies_dir / filename).write_text(final_code, encoding="utf-8")
+            except Exception as _exc:
+                logger.warning("[code_gen][state5] failed to write fixed artifact %s: %s", rule_id, _exc)
+        elif not passed:
+            failed_count += 1
+
+        verification_results.append({
+            "rule_id": rule_id,
+            "passed": passed,
+            "attempts": len(attempts),
+            "fix_history": attempts,
+        })
+
+    return {
+        "stage": "state5_policy_verify",
+        "policyCount": len(state4_iterations),
+        "fixedCount": fixed_count,
+        "failedCount": failed_count,
+        "results": verification_results,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1080,11 +1349,13 @@ STAGE_REGISTRY: dict[str, StageFn] = {
 STAGE_REGISTRY["state1_entity_list"] = _stage_state1_entity_list
 STAGE_REGISTRY["state1b_policy_outline"] = _stage_state1b_policy_outline
 STAGE_REGISTRY["state1c_entity_dependencies"] = _stage_state1c_entity_dependencies
+STAGE_REGISTRY["state1d_metrics_draft"] = _stage_state1d_metrics_draft
 STAGE_REGISTRY["state2_code_entity_object"] = _stage_state2_code_entity_object
 STAGE_REGISTRY["state2v_validate_protocol"] = _stage_state2v_validate_protocol
 STAGE_REGISTRY["state3_code_environment"] = _stage_state3_code_environment
 STAGE_REGISTRY["state4_code_policy"] = _stage_state4_code_policy
 STAGE_REGISTRY["state4v_validate_policy"] = _stage_state4v_validate_policy
+STAGE_REGISTRY["state5_policy_verify"] = _stage_state5_policy_verify
 STAGE_REGISTRY["finalize_bundle"] = _stage_finalize_bundle
 
 
@@ -1159,16 +1430,16 @@ def run_code_gen_worker(
                     job.job_id,
                     stage,
                 )
+                # Resume path: if the post-run gate for this stage was never confirmed
+                # (e.g. server restart while awaiting), re-enter the gate here.
+                if stage in POST_RUN_CONFIRMATION_GATES and stage not in job.confirmed_stages:
+                    if ctx.inputs.get("autoConfirm"):
+                        job.confirmed_stages = list(job.confirmed_stages or []) + [stage]
+                    else:
+                        _wait_for_confirmation(ctx, stage)
+                        ctx.raise_if_cancelled()
                 ctx.emit_stage_message(stage, f"{stage}: skipped (already completed)")
                 continue
-
-            if stage in CONFIRMATION_GATES and stage not in job.confirmed_stages:
-                if ctx.inputs.get("autoConfirm"):
-                    logger.info("[code_gen] autoConfirm: skipping gate jobId=%s stage=%s", job.job_id, stage)
-                    job.confirmed_stages = list(job.confirmed_stages or []) + [stage]
-                else:
-                    _wait_for_confirmation(ctx, stage)
-                    ctx.raise_if_cancelled()
 
             ctx.emit_stage_message(stage, f"{stage}: starting")
             touch_activity(job)
@@ -1194,6 +1465,15 @@ def run_code_gen_worker(
             )
             ctx.emit_stage_message(stage, f"{stage}: done", token_usage=usage_snapshot)
             final_stage_payload = payload
+
+            # Post-run gate: stage completed, pause for user review before advancing.
+            if stage in POST_RUN_CONFIRMATION_GATES and stage not in job.confirmed_stages:
+                if ctx.inputs.get("autoConfirm"):
+                    logger.info("[code_gen] autoConfirm: skipping post-run gate jobId=%s stage=%s", job.job_id, stage)
+                    job.confirmed_stages = list(job.confirmed_stages or []) + [stage]
+                else:
+                    _wait_for_confirmation(ctx, stage)
+                    ctx.raise_if_cancelled()
 
         result = {
             "pipeline": "code_gen",

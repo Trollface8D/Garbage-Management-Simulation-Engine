@@ -156,20 +156,41 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         )
     api_key = resolve_api_key()
 
-    map_node_json = payload.get("mapNodeJson")
-    if map_node_json is not None and not isinstance(map_node_json, dict):
-        return JSONResponse({"error": "mapNodeJson must be an object or null."}, status_code=400)
+    # Section 9b / 11: resolve mapGraph from mapExtractJobId
+    map_graph: dict[str, Any] | None = None
+    map_extract_job_id = str(payload.get("mapExtractJobId") or "").strip()
+    if map_extract_job_id:
+        from ..services import map_extract_checkpoints as _map_checkpoints
+        finalize_path = _map_checkpoints.job_dir(map_extract_job_id) / "finalize_graph.json"
+        if not finalize_path.exists():
+            return JSONResponse(
+                {"error": "mapExtractJobId references a job with no finalized graph"},
+                status_code=422,
+            )
+        try:
+            finalize_data = json.loads(finalize_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return JSONResponse({"error": f"Failed to read finalize_graph.json: {exc}"}, status_code=422)
+        map_graph = finalize_data.get("graph") or {}
+        vertices = map_graph.get("vertices") or map_graph.get("nodes") or []
+        edges = map_graph.get("edges") or []
+        if not vertices or not edges:
+            return JSONResponse(
+                {"error": "mapExtractJobId references a job with no finalized graph"},
+                status_code=422,
+            )
+    else:
+        # Legacy: accept inline mapNodeJson for backward compat
+        map_node_json = payload.get("mapNodeJson")
+        if map_node_json is not None and not isinstance(map_node_json, dict):
+            return JSONResponse({"error": "mapNodeJson must be an object or null."}, status_code=400)
+        map_graph = map_node_json if isinstance(map_node_json, dict) else None
+
     selected_entities = list(payload.get("selectedEntities") or [])
     selected_policies = list(payload.get("selectedPolicies") or [])
-    selected_metrics = list(payload.get("selectedMetrics") or [])
     user_entity_list = list(payload.get("userEntityList") or [])
     preview_only = bool(payload.get("previewOnly", False))
     auto_confirm = bool(payload.get("autoConfirm", False))
-    if not selected_metrics:
-        return JSONResponse(
-            {"error": "selectedMetrics is required — pick at least one metric to track."},
-            status_code=400,
-        )
 
     now = utc_now_iso()
     job_id = f"code_gen-{uuid4().hex}"
@@ -181,22 +202,27 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
     checkpoints.save_inputs(
         job_id,
         causal_data=causal_data,
-        map_node_json=map_node_json,
+        map_node_json=map_graph,
         selected_entities=selected_entities,
         selected_policies=selected_policies,
-        selected_metrics=selected_metrics,
         user_entity_list=user_entity_list,
         model_name=resolved_model,
         use_env_model_overrides=use_env_model_overrides,
         auto_confirm=auto_confirm,
     )
+    # Persist mapGraph separately for state3 and state4
+    if map_graph:
+        manifest_path = checkpoints.job_dir(job_id) / "inputs.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["mapGraph"] = map_graph
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
     inputs = {
         "causalData": causal_data,
-        "mapNodeJson": map_node_json,
+        "mapNodeJson": map_graph,
+        "mapGraph": map_graph,
         "selectedEntities": selected_entities,
         "selectedPolicies": selected_policies,
-        "selectedMetrics": selected_metrics,
         "userEntityList": user_entity_list,
         "autoConfirm": auto_confirm,
     }
@@ -210,11 +236,10 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         )
 
     logger.info(
-        "[code_gen] job queued jobId=%s entityCount=%s policyCount=%s metricCount=%s previewOnly=%s",
+        "[code_gen] job queued jobId=%s entityCount=%s policyCount=%s previewOnly=%s",
         job_id,
         len(selected_entities),
         len(selected_policies),
-        len(selected_metrics),
         preview_only,
     )
     return {
@@ -366,6 +391,25 @@ def update_job_policies(job_id: str, payload: dict[str, Any] = Body(default_fact
     return {"jobId": job_id, "selectedPolicies": selected_policies}
 
 
+@router.patch("/code_gen/jobs/{job_id}/metrics")
+def update_job_metrics(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
+    """Overwrite selectedMetrics in the saved inputs manifest.
+
+    Body: ``{"selectedMetrics": [...]}``
+    Call during the state1d_metrics_draft confirmation gate to persist
+    user-curated metric selection before confirming.
+    """
+    selected_metrics = list(payload.get("selectedMetrics") or [])
+    try:
+        checkpoints.update_selected_metrics(job_id, selected_metrics)
+    except FileNotFoundError:
+        return JSONResponse(
+            {"error": f"No inputs manifest for job '{job_id}'."},
+            status_code=404,
+        )
+    return {"jobId": job_id, "selectedMetrics": selected_metrics}
+
+
 @router.post("/code_gen/jobs/{job_id}/resume")
 def resume_code_gen_job(job_id: str):
     """Re-spawn the worker for an existing job from where it left off.
@@ -413,10 +457,10 @@ def resume_code_gen_job(job_id: str):
     use_env_model_overrides = bool(manifest.get("useEnvModelOverrides", True))
     inputs = {
         "causalData": manifest.get("causalData") or "",
-        "mapNodeJson": manifest.get("mapNodeJson"),
+        "mapNodeJson": manifest.get("mapGraph") or manifest.get("mapNodeJson"),
+        "mapGraph": manifest.get("mapGraph") or manifest.get("mapNodeJson"),
         "selectedEntities": manifest.get("selectedEntities") or [],
         "selectedPolicies": manifest.get("selectedPolicies") or [],
-        "selectedMetrics": manifest.get("selectedMetrics") or [],
         "userEntityList": manifest.get("userEntityList") or [],
         "autoConfirm": bool(manifest.get("autoConfirm", False)),
     }
@@ -517,10 +561,10 @@ def preview_entities(job_id: str):
 
     inputs = {
         "causalData": manifest.get("causalData") or "",
-        "mapNodeJson": manifest.get("mapNodeJson"),
+        "mapNodeJson": manifest.get("mapGraph") or manifest.get("mapNodeJson"),
+        "mapGraph": manifest.get("mapGraph") or manifest.get("mapNodeJson"),
         "selectedEntities": manifest.get("selectedEntities") or [],
         "selectedPolicies": manifest.get("selectedPolicies") or [],
-        "selectedMetrics": manifest.get("selectedMetrics") or [],
         "userEntityList": manifest.get("userEntityList") or [],
     }
     model_name = str(manifest.get("modelName") or DEFAULT_MODEL_NAME)
@@ -615,7 +659,7 @@ def list_code_gen_checkpoints(job_id: str):
     }
 
 
-def _summarize_code_gen_stage(stage: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _summarize_code_gen_stage(stage: str, payload: dict[str, Any], *, job_id: str = "") -> dict[str, Any]:
     """Compact summary + bounded preview for the stage-log dropdown."""
     summary: dict[str, Any] = {}
     preview: Any = None
@@ -632,6 +676,20 @@ def _summarize_code_gen_stage(stage: str, payload: dict[str, Any]) -> dict[str, 
             edges = payload.get("edges") or []
             summary["edgeCount"] = len(edges)
             preview = {"edges": edges[:12], "order": payload.get("order") or []}
+        elif stage == "state1d_metrics_draft":
+            metrics = payload.get("metrics") or []
+            summary["metricCount"] = len(metrics)
+            entity_ids = list({str(m.get("entity_id") or "") for m in metrics if m.get("entity_id")})
+            summary["entityCount"] = len(entity_ids)
+            # Build metric_contracts preview using runtime assets
+            from ..services import codegen_runtime_assets as _ra
+            metric_contracts = _ra.build_metric_contracts(
+                [m for m in metrics if isinstance(m, dict)], job_id=job_id or ""
+            )
+            preview = {
+                "metrics": metrics[:20],
+                "metric_contracts": metric_contracts,
+            }
         elif stage == "state2_code_entity_object":
             iterations = payload.get("iterations") or []
             summary["iterationCount"] = payload.get("iterationCount") or len(iterations)
@@ -655,6 +713,21 @@ def _summarize_code_gen_stage(stage: str, payload: dict[str, Any]) -> dict[str, 
             summary["iterationCount"] = payload.get("iterations") or 0
             summary["failureCount"] = len(failures)
             preview = {"failures": failures[:12]}
+        elif stage == "state5_policy_verify":
+            summary["policyCount"] = payload.get("policyCount") or 0
+            summary["fixedCount"] = payload.get("fixedCount") or 0
+            summary["failedCount"] = payload.get("failedCount") or 0
+            results = payload.get("results") or []
+            preview = {
+                "results": [
+                    {
+                        "rule_id": r.get("rule_id"),
+                        "passed": r.get("passed"),
+                        "attempts": r.get("attempts"),
+                    }
+                    for r in results[:24]
+                ]
+            }
         elif stage == "finalize_bundle":
             files = payload.get("files") or []
             summary["fileCount"] = len(files)
@@ -689,7 +762,7 @@ def get_code_gen_checkpoint(job_id: str, stage: str):
         return JSONResponse({"error": f"No checkpoint for stage '{stage}'."}, status_code=404)
     with JOBS_LOCK:
         job = JOBS.get(job_id)
-    summarized = _summarize_code_gen_stage(stage, payload)
+    summarized = _summarize_code_gen_stage(stage, payload, job_id=job_id)
     return {
         "jobId": job_id,
         "stage": stage,
