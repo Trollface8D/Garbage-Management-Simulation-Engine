@@ -7,6 +7,9 @@ export type UsedItem = {
   title: string;
   project: string;
   lastEdited: string;
+  isFullyExplicit?: boolean;
+  hasImplicit?: boolean;
+  implicitCount?: number;
 };
 
 type UsedItemsSectionProps = {
@@ -76,6 +79,9 @@ export default function UsedItemsSection({
                 selected={isSelected}
                 onSelect={handleSelect}
                 onRename={onRename ? (newTitle) => onRename(item.id, newTitle) : undefined}
+                isFullyExplicit={item.isFullyExplicit}
+                hasImplicit={item.hasImplicit}
+                implicitCount={item.implicitCount}
               />
             ) : (
               <MapUsedCard

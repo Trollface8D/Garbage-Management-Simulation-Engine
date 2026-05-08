@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { CausalCard } from "@/app/components/causal-card";
 import {
   categoryPath,
   isPolicyTestingComponent,
@@ -17,38 +18,9 @@ import {
   loadProjects,
   softDeleteComponent,
   trackRecentArtifact,
+  loadCausalArtifactsForItem,
+  loadCausalSourceItems,
 } from "@/lib/pm-storage";
-
-function FileThumbPlaceholder() {
-  return (
-    <div className="relative h-40 w-full overflow-hidden rounded-t-xl border-b border-neutral-700 bg-neutral-800 p-3">
-      <div className="mb-2 h-3 w-24 rounded bg-neutral-600/80" />
-      <div className="grid h-[calc(100%-1.25rem)] grid-cols-3 gap-2">
-        <div className="rounded bg-neutral-700/90 p-2">
-          <div className="mb-1 h-1.5 w-8 rounded bg-neutral-500" />
-          <div className="h-1.5 w-12 rounded bg-neutral-500" />
-        </div>
-        <div className="rounded bg-neutral-700/90 p-2">
-          <div className="mb-1 h-1.5 w-9 rounded bg-neutral-500" />
-          <div className="mb-1 h-1.5 w-11 rounded bg-neutral-500" />
-          <div className="h-1.5 w-8 rounded bg-neutral-500" />
-        </div>
-        <div className="rounded bg-neutral-700/90 p-2">
-          <div className="mb-1 h-1.5 w-10 rounded bg-neutral-500" />
-          <div className="h-6 w-full rounded bg-neutral-600/80" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FileTypeIcon() {
-  return (
-    <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-sky-600/20 text-xs font-semibold text-sky-300">
-      F
-    </span>
-  );
-}
 
 function AddCard({
   title,
@@ -63,12 +35,12 @@ function AddCard({
     <button
       type="button"
       onClick={onClick}
-      className="group overflow-hidden rounded-xl border border-dashed border-neutral-600 bg-neutral-900/40 text-left shadow-[0_0_0_1px_rgba(255,255,255,0.01)] transition duration-200 hover:scale-[1.02] hover:border-sky-500"
+      className="group flex h-full flex-col overflow-hidden rounded-xl border border-dashed border-neutral-600 bg-neutral-900/40 text-left shadow-[0_0_0_1px_rgba(255,255,255,0.01)] transition duration-200 hover:scale-[1.02] hover:border-sky-500"
     >
-      <div className="relative flex h-40 w-full items-center justify-center overflow-hidden rounded-t-xl border-b border-neutral-700 bg-neutral-800/80 p-3">
+      <div className="relative flex min-h-40 flex-1 w-full items-center justify-center overflow-hidden rounded-t-xl border-b border-neutral-700 bg-neutral-800/80 p-3">
         <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-sky-500 text-2xl text-white">+</span>
       </div>
-      <div className="bg-neutral-900 px-4 py-3">
+      <div className="bg-neutral-900 px-4 py-6">
         <p className="text-sm font-semibold text-neutral-100">{title}</p>
         <p className="mt-1 text-xs text-neutral-400">{subtitle}</p>
       </div>
@@ -98,6 +70,9 @@ export default function ProjectDashboardPage() {
   const [activeFilter, setActiveFilter] = useState<Category>("Causal");
   const [components, setComponents] = useState<SimulationComponent[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [causalExplicitStatusByComponentId, setCausalExplicitStatusByComponentId] = useState<
+    Record<string, { isFullyExplicit: boolean; hasImplicit: boolean; implicitCount: number }>
+  >({});
 
   useEffect(() => {
     const loadData = async () => {
@@ -116,6 +91,54 @@ export default function ProjectDashboardPage() {
 
     void loadData();
   }, []);
+
+  useEffect(() => {
+    const loadCausalStatus = async () => {
+      const causalComponents = components.filter(
+        (component) =>
+          component.category === "Causal" && isProjectScopedComponent(component) && component.projectId === projectId
+      );
+
+      const statusMap: Record<string, { isFullyExplicit: boolean; hasImplicit: boolean; implicitCount: number }> = {};
+
+      for (const causalComponent of causalComponents) {
+        try {
+          const sources = await loadCausalSourceItems(projectId, causalComponent.id);
+          let allExplicit = true;
+          let implicitCount = 0;
+          let hasClassData = false;
+
+          for (const source of sources) {
+            const artifacts = await loadCausalArtifactsForItem(source.id);
+            for (const record of artifacts?.raw_extraction || []) {
+              for (const classItem of record.classes || []) {
+                hasClassData = true;
+                const explicitType = (classItem.explicit_type || "").trim().toUpperCase();
+                if (explicitType !== "E") {
+                  allExplicit = false;
+                }
+                if (explicitType === "I") {
+                  implicitCount += 1;
+                }
+              }
+            }
+          }
+
+          statusMap[causalComponent.id] = {
+            isFullyExplicit: allExplicit && hasClassData,
+            hasImplicit: implicitCount > 0,
+            implicitCount,
+          };
+        } catch {
+          statusMap[causalComponent.id] = { isFullyExplicit: false, hasImplicit: false, implicitCount: 0 };
+        }
+      }
+
+      setCausalExplicitStatusByComponentId(statusMap);
+    };
+
+    void loadCausalStatus();
+  }, [components, projectId]);
 
   const project = useMemo(
     () => projects.find((candidateProject) => candidateProject.id === projectId),
@@ -347,33 +370,29 @@ export default function ProjectDashboardPage() {
                     href: targetHref,
                   });
                 }}
-                className="group overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900/60 shadow-[0_0_0_1px_rgba(255,255,255,0.01)] transition duration-200 hover:scale-[1.02] hover:border-sky-500 hover:shadow-[0_0_0_2px_rgba(14,165,233,0.35)]"
+                className="block"
               >
-                <FileThumbPlaceholder />
-
-                <div className="flex items-end justify-between gap-3 bg-neutral-900 px-4 py-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <FileTypeIcon />
-                      <p className="truncate text-sm font-semibold text-neutral-100">{component.title}</p>
-                    </div>
-                    <p className="mt-1 text-xs text-neutral-400">Edited {component.lastEdited}</p>
-                    <p className="mt-1 text-xs text-neutral-500">{metaText}</p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void handleSoftDeleteArtifact(component.id);
-                    }}
-                    className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-red-500/70 hover:text-red-200"
-                    aria-label={`Delete ${component.title}`}
-                  >
-                    Delete
-                  </button>
-                </div>
+                <CausalCard
+                  title={component.title}
+                  lastEdited={component.lastEdited}
+                  metaText={metaText}
+                  onDelete={() => void handleSoftDeleteArtifact(component.id)}
+                  isFullyExplicit={
+                    component.category === "Causal"
+                      ? causalExplicitStatusByComponentId[component.id]?.isFullyExplicit
+                      : false
+                  }
+                  hasImplicit={
+                    component.category === "Causal"
+                      ? causalExplicitStatusByComponentId[component.id]?.hasImplicit
+                      : false
+                  }
+                  implicitCount={
+                    component.category === "Causal"
+                      ? causalExplicitStatusByComponentId[component.id]?.implicitCount
+                      : 0
+                  }
+                />
               </Link>
             );
           })}

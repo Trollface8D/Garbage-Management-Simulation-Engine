@@ -21,6 +21,9 @@ import {
     categoryPath,
     findComponentById as findSeedComponentById,
     findProjectById as findSeedProjectById,
+    isPolicyTestingComponent,
+    isProjectScopedComponent,
+    type Category,
     type SimulationComponent,
     type SimulationProject,
 } from "@/lib/simulation-components";
@@ -58,7 +61,7 @@ import { type MapGraphPayload } from "@/lib/map-types";
 
 
 type CausalComponentRef = { projectId: string; componentId: string };
-type UsedItem = { id: string; title: string; project: string; lastEdited: string };
+type UsedItem = { id: string; title: string; project: string; lastEdited: string; implicitCount?: number };
 type ImportedMapWorkspaceSnapshot = {
     graph: MapGraphPayload;
     jobId: string;
@@ -157,6 +160,9 @@ export default function CodePage() {
     const [manualMetricName, setManualMetricName] = useState<string>("");
     const [manualMetricError, setManualMetricError] = useState<string>("");
     const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([]);
+    const [causalExplicitStatusByComponentId, setCausalExplicitStatusByComponentId] = useState<
+        Record<string, { isFullyExplicit: boolean; hasImplicit: boolean; implicitCount: number }>
+    >({});
 
     // Custom hooks for state management
     const entityHook = useEntityExtraction();
@@ -306,8 +312,17 @@ export default function CodePage() {
         () =>
             components
                 .filter((component) => component.category === "Causal")
-                .map((component) => toUsedItem(component, projectNameById)),
-        [components, projectNameById],
+                .map((component) => {
+                    const baseItem = toUsedItem(component, projectNameById);
+                    const status = causalExplicitStatusByComponentId[component.id];
+                    return {
+                        ...baseItem,
+                        isFullyExplicit: status?.isFullyExplicit,
+                        hasImplicit: status?.hasImplicit,
+                        implicitCount: status?.implicitCount,
+                    };
+                }),
+        [components, projectNameById, causalExplicitStatusByComponentId],
     );
 
     const mapItems = useMemo(
@@ -426,6 +441,69 @@ export default function CodePage() {
         manualPolicies,
         persistSnapshot,
     ]);
+
+    useEffect(() => {
+        // Load causal artifacts to determine explicit/implicit status for each component
+        const loadCausalStatus = async () => {
+            const causalComponents = components.filter((comp) => comp.category === "Causal");
+            const statusByComponentId: Record<
+                string,
+                { isFullyExplicit: boolean; hasImplicit: boolean; implicitCount: number }
+            > = {};
+
+            for (const component of causalComponents) {
+                try {
+                    // Only process project-scoped causal components
+                    if (!isProjectScopedComponent(component)) {
+                        statusByComponentId[component.id] = {
+                            isFullyExplicit: false,
+                            hasImplicit: false,
+                            implicitCount: 0,
+                        };
+                        continue;
+                    }
+
+                    const sources = await loadCausalSourceItems(component.projectId, component.id);
+                    let allExplicit = true;
+                    let implicitCount = 0;
+                    let hasClassData = false;
+
+                    for (const source of sources) {
+                        const artifacts = await loadCausalArtifactsForItem(source.id);
+                        for (const record of artifacts.raw_extraction || []) {
+                            for (const classItem of record.classes || []) {
+                                hasClassData = true;
+                                const explicitType = (classItem.explicit_type || "").trim().toUpperCase();
+                                if (explicitType !== "E") {
+                                    allExplicit = false;
+                                }
+                                if (explicitType === "I") {
+                                    implicitCount += 1;
+                                }
+                            }
+                        }
+                    }
+
+                    statusByComponentId[component.id] = {
+                        isFullyExplicit: allExplicit && hasClassData,
+                        hasImplicit: implicitCount > 0,
+                        implicitCount,
+                    };
+                } catch {
+                    // If loading fails, just mark as neither explicit nor implicit
+                    statusByComponentId[component.id] = {
+                        isFullyExplicit: false,
+                        hasImplicit: false,
+                        implicitCount: 0,
+                    };
+                }
+            }
+
+            setCausalExplicitStatusByComponentId(statusByComponentId);
+        };
+
+        void loadCausalStatus();
+    }, [components]);
 
     useEffect(() => {
         if (!isExtracted || wordCloudWords.length === 0) {
