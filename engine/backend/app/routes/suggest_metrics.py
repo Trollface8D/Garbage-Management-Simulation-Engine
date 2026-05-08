@@ -108,20 +108,40 @@ Entity names:
 
 {causal_block}
 
+{environment_guidance}
+
 Hard rules:
 1. Every metric must be derivable from observable state / events of one
    or more of the listed entities. Do NOT propose metrics that require
    concepts not represented above.
-2. Each metric must declare the concrete entity attributes it samples in
-   ``required_attrs`` (entity + attr pairs). The Reporter the codegen
-   pipeline emits will read exactly these. If you can't name attributes
-   that almost certainly exist on a normal implementation of the entity,
-   drop the metric.
+
+2. ATTRIBUTE NAMING — IMPORTANT:
+   Each metric must declare the entity attributes it reads in ``required_attrs``
+   (entity + attr pairs). These are GUIDANCE NAMES representing the semantic concept
+   (e.g., "waste_received_kg", "vehicle_capacity", "queue_length"), NOT the exact
+   Python attribute name that will appear in code.
+
+   The code generation pizpeline will ensure the generated entity classes expose
+   numeric state attributes that match these concepts. If you cannot name a
+   semantic concept for the required data, drop the metric.
+
+   Good examples of attribute guidance:
+   - "queue_length" (entities will expose a queue or count)
+   - "current_load" (entities will track load/inventory state)
+   - "total_capacity" (entities will have a capacity threshold)
+   - "processing_rate" (entities will compute throughput)
+   - "active_count" (environment will track entity lifecycles)
+
 3. Prefer metrics that surface bottlenecks, utilization, throughput,
    waiting / queue length, ratios, and equity / fairness across entity
    instances. Mix domain-specific (e.g. waste_collected_kg) with
    universal (e.g. queue length, count).
-4. Produce 5 to 10 metrics. Quality > quantity.
+
+4. Quality over quantity. Generate as many or as few metrics as are
+   appropriate for these entities — do NOT artificially pad or limit.
+   Focus on metrics that a domain expert would monitor to understand
+   system behavior. If the entities naturally support 3 metrics, suggest
+   3. If they support 12, suggest 12.
 
 Field rules:
 - ``name`` must be a snake_case Python identifier; ``label`` is the
@@ -145,15 +165,21 @@ Field rules:
 - ``entities`` lists which input entity names this metric reads from;
   do not invent new names.
 - ``required_attrs`` is a list of {{"entity": "<name>", "attr": "<attr>"}}
-  pairs naming the attributes the Reporter samples. Use realistic
-  attribute names like ``capacity``, ``current_load``, ``status``,
-  ``queue_length`` — the entity-code stage will be told to expose them.
+  pairs. Use CONCEPT-BASED SEMANTIC NAMES for attr (not implementation details).
+  Examples:
+    * "queue_length" (not "pending_jobs_buffer_list_size")
+    * "total_processed" (not "completion_counter")
+    * "current_utilization" (not "used_slots_v2")
+    * "error_rate" (not "fail_pct_computed")
+  The generated entity code will expose numeric state attributes matching
+  these concepts. If you cannot think of a semantic concept, drop that attr.
 - ``sampling_event`` is when the Reporter takes a sample. One of:
   "tick" (every simulation tick — use for time-series),
   "policy_fired" (when a policy rule executes),
   "entity_created" / "entity_destroyed" (lifecycle counts).
   Default to "tick" for almost all metrics.
-- ``rationale`` is one sentence about why a domain reader cares.
+- ``rationale`` is one sentence about why a domain reader cares — what
+  behavior or system property does this metric reveal?
 
 Return ONLY a JSON object of this exact shape (no prose, no markdown, no
 code fences):
@@ -170,10 +196,10 @@ code fences):
       "entities": ["truck", "bin"],
       "required_attrs": [
         {{"entity": "truck", "attr": "current_load"}},
-        {{"entity": "truck", "attr": "capacity"}}
+        {{"entity": "truck", "attr": "total_capacity"}}
       ],
       "sampling_event": "tick",
-      "rationale": "..."
+      "rationale": "Tracks utilization pressure; guides dispatch decisions and resource allocation."
     }}
   ]
 }}
@@ -187,6 +213,24 @@ def _format_causal_block(text: str | None) -> str:
     if len(cleaned) > MAX_CAUSAL_CHARS:
         cleaned = cleaned[:MAX_CAUSAL_CHARS] + "\n…[truncated]"
     return f"Causal context (excerpt):\n{cleaned}\n"
+
+
+def _format_environment_guidance(entity_names: list[str]) -> str:
+    """Provide better guidance on what entity state typically looks like."""
+    entity_list = ", ".join(entity_names[:5]) + (", ..." if len(entity_names) > 5 else "")
+    return f"""Entity state context:
+
+Generated entity classes will expose numeric state attributes. Examples of
+common state patterns you can reference:
+
+- Counters: total_processed, items_received, completed_tasks, failed_attempts
+- Quantities: current_inventory, queue_length, active_count, available_capacity
+- Measurements: current_load, temperature, efficiency_ratio, wait_time
+- Rates: throughput_per_hour, utilization_rate, error_rate, completion_rate
+- Lifecycle: created_at, destroyed_count, entity_lifetime
+
+For the entities in this simulation ({entity_list}), propose metrics
+that realistically track their behavior using concepts from these patterns."""
 
 
 @router.post(
@@ -213,6 +257,7 @@ def suggest_metrics(payload: MetricSuggestionRequest) -> MetricSuggestionRespons
     prompt = _PROMPT_TEMPLATE.format(
         entity_lines=entity_lines,
         causal_block=_format_causal_block(payload.causalText),
+        environment_guidance=_format_environment_guidance(entity_names),
     )
 
     try:

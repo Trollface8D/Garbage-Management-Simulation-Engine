@@ -431,6 +431,12 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
         order = [eid for eid in order if eid in user_filter]
 
     causal_data = str(ctx.inputs.get("causalData") or "")
+    
+    # Extract selected metrics for entity prompt guidance
+    selected_metrics = ctx.inputs.get("selectedMetrics") or []
+    if not isinstance(selected_metrics, list):
+        selected_metrics = []
+    
     iteration_summaries: list[dict[str, Any]] = []
     accumulator_files: list[tuple[str, str]] = []
 
@@ -502,6 +508,7 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
                 accumulator_blob=accumulator_blob,
                 interface_digest=digest_collected,
                 policy_outline=policy_outline,
+                selected_metrics=selected_metrics,
                 retry_error=retry_error,
                 omit_cached_context=cache_name is not None,
             )

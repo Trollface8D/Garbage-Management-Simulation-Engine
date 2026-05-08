@@ -468,6 +468,7 @@ def build_state2_entity_prompt(
     accumulator_blob: str,
     interface_digest: dict[str, Any],
     policy_outline: list[dict[str, Any]],
+    selected_metrics: list[dict[str, Any]] | None = None,
     retry_error: str | None = None,
     omit_cached_context: bool = False,
 ) -> str:
@@ -477,6 +478,10 @@ def build_state2_entity_prompt(
     :func:`build_state2_cached_context` is left out — the caller is
     expected to pass the cache name via ``cached_content`` in the request
     so Gemini stitches them back together upstream.
+    
+    When ``selected_metrics`` is provided, builds a guidance section that
+    instructs the entity to expose numeric state attributes matching metric
+    requirements.
     """
     base = (_stage("state2_code_entity_object").get("prompt") or "")
     base = base.replace("{entity_id}", entity_id)
@@ -501,6 +506,34 @@ def build_state2_entity_prompt(
         if retry_error
         else ""
     )
+    
+    # Build metric guidance section for this entity
+    metric_guidance_section = ""
+    if selected_metrics:
+        entity_metrics = [
+            m for m in selected_metrics
+            if isinstance(m, dict) and entity_id in (m.get("entities") or [])
+        ]
+        if entity_metrics:
+            attr_list = []
+            for m in entity_metrics:
+                for attr_dep in (m.get("required_attrs") or []):
+                    if isinstance(attr_dep, dict) and attr_dep.get("entity") == entity_id:
+                        attr_name = str(attr_dep.get("attr") or "").strip()
+                        if attr_name:
+                            attr_list.append(attr_name)
+            if attr_list:
+                metric_guidance_section = (
+                    f"\\n\\nMETRIC ATTRIBUTES — This entity MUST expose these numeric state attributes:\\n"
+                    f"Required attributes for metrics: {', '.join(sorted(set(attr_list)))}\\n"
+                    f"Ensure each attribute is:\\n"
+                    f"1. Initialized in __init__ (typically to 0 or appropriate default)\\n"
+                    f"2. Updated meaningfully in the step(self, dt, env) method\\n"
+                    f"3. Numeric (int or float)\\n"
+                    f"4. Named exactly as specified above (no transformation, no suffix)\\n"
+                    f"The simulation's metric reporter will sample these attributes each tick."
+                )
+    
     sections: list[str] = [base, class_name_instruction]
     if not omit_cached_context:
         sections.extend(build_state2_cached_context(causal_data=causal_data))
@@ -513,6 +546,8 @@ def build_state2_entity_prompt(
             accumulator_section,
         ]
     )
+    if metric_guidance_section:
+        sections.append(metric_guidance_section)
     if omit_cached_context:
         sections.append(
             "(Stable causal data + policy boilerplate are provided via the request's cached_content.)"
