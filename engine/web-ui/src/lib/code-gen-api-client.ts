@@ -124,6 +124,12 @@ export type CodeGenCreateRequest = {
    * preview_entities call doesn't race a worker that's already mid-State 1.
    */
   previewOnly?: boolean;
+  /**
+   * When true the pipeline skips all user-confirmation gates and runs all
+   * stages end-to-end automatically. Saves the flag to inputs.json so it
+   * persists across server restarts and resume calls.
+   */
+  autoConfirm?: boolean;
 };
 
 async function parseError(response: Response): Promise<string> {
@@ -278,6 +284,21 @@ export async function updateCodeGenJobPolicies(
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ selectedPolicies }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+}
+
+export async function updateCodeGenJobMetrics(
+  jobId: string,
+  selectedMetrics: SuggestedMetric[],
+): Promise<void> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/metrics`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ selectedMetrics }),
     cache: "no-store",
   });
   if (!response.ok) {
@@ -441,6 +462,32 @@ export async function importWorkspaceArchive(
     restoredArtifactCount?: number;
     restoredCheckpointCount?: number;
   }>(response);
+}
+
+export type InteractionLogEntry = {
+  ts: string;
+  stage: string;
+  iter_id: string | null;
+  prompt_chars: number;
+  response_chars: number;
+  prompt: string;
+  response: string;
+  usage: Record<string, number>;
+};
+
+export async function fetchInteractionLog(
+  jobId: string,
+  opts?: { stage?: string; offset?: number; limit?: number },
+): Promise<{ entries: InteractionLogEntry[]; total: number; offset: number; limit: number }> {
+  const url = new URL(
+    `${BASE}/jobs/${encodeURIComponent(jobId)}/interaction_log`,
+    typeof window !== "undefined" ? window.location.origin : "http://localhost",
+  );
+  if (opts?.stage) url.searchParams.set("stage", opts.stage);
+  if (opts?.offset != null) url.searchParams.set("offset", String(opts.offset));
+  if (opts?.limit != null) url.searchParams.set("limit", String(opts.limit));
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  return jsonOrThrow<{ entries: InteractionLogEntry[]; total: number; offset: number; limit: number }>(response);
 }
 
 export async function groupEntitiesWithGemini(

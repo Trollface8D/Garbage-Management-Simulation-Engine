@@ -7,8 +7,10 @@ import {
   fetchCodeGenCheckpoints,
   fetchCodeGenStatus,
   rollbackCodeGenJob,
+  updateCodeGenJobMetrics,
   type CodeGenCheckpointDetail,
   type CodeGenPolicyOutline,
+  type SuggestedMetric,
 } from "@/lib/code-gen-api-client";
 
 type StageEntry = {
@@ -33,6 +35,12 @@ const STAGE_ENTRIES: StageEntry[] = [
     key: "state1c_entity_dependencies",
     label: "Dependencies",
     description: "Inter-entity dependency edges used to order codegen.",
+  },
+  {
+    key: "state1d_metrics_draft",
+    label: "Metrics Draft",
+    description:
+      "Proposed simulation metrics — select which ones to track and expose in the generated code.",
   },
   {
     key: "state2_code_entity_object",
@@ -60,6 +68,11 @@ const STAGE_ENTRIES: StageEntry[] = [
     description: "Static checks for the generated policy modules.",
   },
   {
+    key: "state5_policy_verify",
+    label: "Policy self-check",
+    description: "LLM-as-Judge reviews each policy for bugs and applies fixes (max 2 retries).",
+  },
+  {
     key: "finalize_bundle",
     label: "Finalize",
     description: "Bundle artifacts (entity_list, manifest, code) for download.",
@@ -83,8 +96,11 @@ function stageStatus(
   awaitingConfirmationStage?: string | null,
 ): StageStatus {
   // Gate is on state1c but confirmation UX lives on state1b (the policy review stage).
-  // Show awaiting_confirmation on state1b so the user knows to act there.
   if (awaitingConfirmationStage === "state1c_entity_dependencies" && stageKey === "state1b_policy_outline") {
+    return "awaiting_confirmation";
+  }
+  // Post-run gate on state1d: confirmation UX lives on state1d itself.
+  if (awaitingConfirmationStage === "state1d_metrics_draft" && stageKey === "state1d_metrics_draft") {
     return "awaiting_confirmation";
   }
   if (completed.has(stageKey)) return "done";
@@ -374,6 +390,8 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
   useEffect(() => {
     if (awaitingConfirmationStage === "state1c_entity_dependencies") {
       setExpandedStage("state1b_policy_outline");
+    } else if (awaitingConfirmationStage === "state1d_metrics_draft") {
+      setExpandedStage("state1d_metrics_draft");
     }
   }, [awaitingConfirmationStage]);
 
@@ -419,14 +437,15 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
             {STAGE_ENTRIES.map((entry, index) => {
               const baseStatus = stageStatus(entry.key, shortCurrentStage, completedSet, jobStatus, awaitingConfirmationStage);
               const isPolicyCheckpointLoading =
-                entry.key === "state1b_policy_outline" &&
+                (entry.key === "state1b_policy_outline" || entry.key === "state1d_metrics_draft") &&
                 expandedStage === entry.key &&
                 completedSet.has(entry.key) &&
                 !stageDetails[entry.key];
+              const isCheckpointLoading =
+                (entry.key === "state1b_policy_outline" && detailLoading === entry.key && baseStatus === "done") ||
+                isPolicyCheckpointLoading;
               const status =
-                baseStatus !== "awaiting_confirmation" &&
-                ((entry.key === "state1b_policy_outline" && detailLoading === entry.key && baseStatus === "done") ||
-                  isPolicyCheckpointLoading)
+                baseStatus !== "awaiting_confirmation" && isCheckpointLoading
                   ? "running"
                   : baseStatus;
               const dot = statusDot(status);
@@ -507,7 +526,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                         </div>
                       ) : null}
 
-                      {(status === "done" || (status === "awaiting_confirmation" && entry.key === "state1b_policy_outline")) ? (
+                      {(status === "done" || (status === "awaiting_confirmation" && (entry.key === "state1b_policy_outline" || entry.key === "state1d_metrics_draft"))) ? (
                         entry.key === "state1b_policy_outline" ? (
                           <PolicyConfirmBlock
                             detail={stageDetails[entry.key]}
@@ -552,6 +571,19 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                             confirmReady={policyConfirmReady}
                             isRunning={isActive}
                             isGated={!!awaitingConfirmationStage}
+                            actionPending={actionPending}
+                          />
+                        ) : entry.key === "state1d_metrics_draft" ? (
+                          <MetricsDraftConfirmBlock
+                            detail={stageDetails[entry.key]}
+                            loading={detailLoading === entry.key}
+                            error={detailLoading === entry.key ? "" : detailError}
+                            jobId={jobId}
+                            onConfirm={
+                              awaitingConfirmationStage === "state1d_metrics_draft"
+                                ? () => onConfirmStage?.("state1d_metrics_draft")
+                                : undefined
+                            }
                             actionPending={actionPending}
                           />
                         ) : (
@@ -658,6 +690,171 @@ function StageDetailBlock({
           {trimmedPreview}
         </pre>
       </details>
+    </div>
+  );
+}
+
+function MetricsDraftConfirmBlock({
+  detail,
+  loading,
+  error,
+  jobId,
+  onConfirm,
+  actionPending,
+}: {
+  detail: CodeGenCheckpointDetail | undefined;
+  loading: boolean;
+  error: string;
+  jobId: string | null;
+  onConfirm?: () => void;
+  actionPending: boolean;
+}) {
+  const previewMetrics: SuggestedMetric[] = useMemo(() => {
+    try {
+      const raw = detail?.preview as { metrics?: unknown } | null | undefined;
+      if (!raw || !Array.isArray(raw.metrics)) return [];
+      return raw.metrics as SuggestedMetric[];
+    } catch {
+      return [];
+    }
+  }, [detail]);
+
+  const [selectedNames, setSelectedNames] = useState<Set<string>>(
+    () => new Set<string>(),
+  );
+  const [confirmError, setConfirmError] = useState<string>("");
+  const [confirming, setConfirming] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (previewMetrics.length > 0 && !initialized) {
+      setSelectedNames(new Set(previewMetrics.map((m) => m.name)));
+      setInitialized(true);
+    }
+  }, [previewMetrics, initialized]);
+
+  const handleConfirm = useCallback(async () => {
+    if (!jobId || !onConfirm) return;
+    setConfirming(true);
+    setConfirmError("");
+    try {
+      const selected = previewMetrics.filter((m) => selectedNames.has(m.name));
+      await updateCodeGenJobMetrics(jobId, selected);
+      onConfirm();
+    } catch (err) {
+      setConfirmError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setConfirming(false);
+    }
+  }, [jobId, onConfirm, previewMetrics, selectedNames]);
+
+  if (loading) {
+    return <p className="text-[11px] text-neutral-500">Loading checkpoint…</p>;
+  }
+  if (error) {
+    return <p className="wrap-break-word text-[11px] text-red-300">Failed to load: {error}</p>;
+  }
+
+  const token = detail?.tokenUsage || undefined;
+  const metricContractsJson = (() => {
+    try {
+      const raw = detail?.preview as { metric_contracts?: unknown } | null | undefined;
+      if (!raw?.metric_contracts) return null;
+      const s = JSON.stringify(raw.metric_contracts, null, 2);
+      return s.length > 4000 ? `${s.slice(0, 4000)}\n/* … truncated */` : s;
+    } catch {
+      return null;
+    }
+  })();
+
+  return (
+    <div className="space-y-2 rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
+      {token ? (
+        <div className="text-[10px] text-neutral-400">
+          tokens: in {String(token.promptTokens ?? 0)} / out {String(token.outputTokens ?? 0)} /
+          total {String(token.totalTokens ?? 0)} · calls {String(token.callCount ?? 0)}
+        </div>
+      ) : (
+        <div className="text-[10px] text-neutral-500">No token usage recorded for this stage.</div>
+      )}
+
+      {!detail ? (
+        <p className="text-[11px] text-neutral-500">Metric checkpoint not loaded yet.</p>
+      ) : null}
+
+      {previewMetrics.length > 0 ? (
+        <div>
+          <p className="mb-1 text-[11px] font-semibold text-neutral-300">
+            Metrics ({previewMetrics.length}) — select to include in codegen
+          </p>
+          <ul className="max-h-72 overflow-y-auto">
+            {previewMetrics.map((metric) => (
+              <li key={metric.name}>
+                <label className="flex flex-col gap-0.5 border-b border-neutral-800/70 px-1 py-2 text-sm last:border-b-0">
+                  <span className="flex items-center gap-2 text-neutral-100">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      checked={selectedNames.has(metric.name)}
+                      onChange={() =>
+                        setSelectedNames((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(metric.name)) next.delete(metric.name);
+                          else next.add(metric.name);
+                          return next;
+                        })
+                      }
+                      disabled={actionPending || confirming}
+                    />
+                    <span className="font-semibold">{metric.label}</span>
+                    {metric.unit ? (
+                      <span className="text-[11px] text-neutral-400">({metric.unit})</span>
+                    ) : null}
+                  </span>
+                  <span className="ml-6 text-xs text-neutral-400">
+                    {metric.name} · {metric.agg} · {metric.viz}
+                    {metric.grounding ? ` · ${metric.grounding}` : ""}
+                  </span>
+                  {metric.rationale ? (
+                    <span className="ml-6 mt-0.5 text-[11px] text-neutral-500">{metric.rationale}</span>
+                  ) : null}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {metricContractsJson ? (
+        <details className="rounded border border-neutral-800 bg-neutral-900/60">
+          <summary className="cursor-pointer px-2 py-1 text-[11px] text-neutral-300 hover:text-neutral-100">
+            Metric contracts preview
+          </summary>
+          <pre className="max-h-60 overflow-auto whitespace-pre-wrap wrap-break-word px-2 py-1 text-[10px] text-neutral-300">
+            {metricContractsJson}
+          </pre>
+        </details>
+      ) : null}
+
+      {confirmError ? (
+        <p className="text-[11px] text-red-300">Confirm failed: {confirmError}</p>
+      ) : null}
+
+      {onConfirm ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-700/50 bg-emerald-500/5 p-3">
+          <p className="text-xs text-emerald-100">
+            {selectedNames.size} of {previewMetrics.length} metrics selected. Review and confirm to proceed.
+          </p>
+          <button
+            type="button"
+            onClick={() => { void handleConfirm(); }}
+            disabled={actionPending || confirming}
+            className="rounded-md border border-emerald-600 bg-emerald-500/15 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {confirming ? "Confirming…" : "Confirm metrics & proceed"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

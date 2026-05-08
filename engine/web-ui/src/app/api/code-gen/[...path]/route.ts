@@ -54,3 +54,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ path: stri
 export async function DELETE(request: Request, ctx: { params: Promise<{ path: string[] }> }) {
   return proxyJson(request, ctx, "DELETE");
 }
+
+export async function PATCH(request: Request, ctx: { params: Promise<{ path: string[] }> }) {
+  return proxyJson(request, ctx, "PATCH");
+}

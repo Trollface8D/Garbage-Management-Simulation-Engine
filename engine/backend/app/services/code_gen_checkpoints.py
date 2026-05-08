@@ -39,11 +39,13 @@ STAGE_ORDER: tuple[str, ...] = (
     "state1_entity_list",
     "state1b_policy_outline",
     "state1c_entity_dependencies",
+    "state1d_metrics_draft",
     "state2_code_entity_object",
     "state2v_validate_protocol",
     "state3_code_environment",
     "state4_code_policy",
     "state4v_validate_policy",
+    "state5_policy_verify",
     "finalize_bundle",
 )
 
@@ -378,6 +380,7 @@ def save_inputs(
     extra_files: Iterable[dict[str, Any]] = (),
     model_name: str,
     use_env_model_overrides: bool,
+    auto_confirm: bool = False,
 ) -> None:
     """Persist inputs needed to re-run the pipeline without re-upload."""
     base = ensure_job_dir(job_id)
@@ -409,6 +412,7 @@ def save_inputs(
         "userEntityList": list(user_entity_list or []),
         "modelName": model_name,
         "useEnvModelOverrides": bool(use_env_model_overrides),
+        "autoConfirm": bool(auto_confirm),
         "extraFiles": extra_manifest,
     }
     (base / "inputs.json").write_text(
@@ -470,6 +474,22 @@ def update_selected_policies(job_id: str, selected_policies: list[dict[str, Any]
         "[code_gen][checkpoint] policies updated jobId=%s count=%s",
         job_id,
         len(selected_policies),
+    )
+
+
+def update_selected_metrics(job_id: str, selected_metrics: list[dict[str, Any]]) -> None:
+    """Overwrite only the selectedMetrics field in the existing inputs manifest."""
+    base = job_dir(job_id)
+    manifest_path = base / "inputs.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"No inputs manifest for job '{job_id}'")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["selectedMetrics"] = selected_metrics
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info(
+        "[code_gen][checkpoint] metrics updated jobId=%s count=%s",
+        job_id,
+        len(selected_metrics),
     )
 
 

@@ -121,6 +121,8 @@ type Props = {
   onPolicyIdsChange: (ids: Set<string>) => void;
   manualPolicies: CodeGenPolicyOutline[];
   onManualPoliciesChange: (policies: CodeGenPolicyOutline[]) => void;
+  /** Externally-supplied jobId from workspace import; triggers adoptJobId when it changes. */
+  importedJobId?: string | null;
 };
 
 function loadMapGraphForComponent(componentId: string): MapGraphPayload | null {
@@ -176,6 +178,7 @@ export default function CodeGenWorkspace({
   onPolicyIdsChange,
   manualPolicies,
   onManualPoliciesChange,
+  importedJobId,
 }: Props) {
   const job = useCodeGenJob(componentId);
   const [causalChoices, setCausalChoices] = useState<CausalChoice[]>([]);
@@ -184,9 +187,21 @@ export default function CodeGenWorkspace({
   const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(new Set());
   const [actionError, setActionError] = useState<string>("");
   const [previewText, setPreviewText] = useState<string>("");
+  const [autoConfirm, setAutoConfirm] = useState<boolean>(false);
   const [wasRestoredFromPersistence, setWasRestoredFromPersistence] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const lastResultJobIdRef = useRef<string | null>(null);
+  const prevImportedJobIdRef = useRef<string | null>(null);
+
+  // When the page signals a new imported jobId, adopt it so the stage log and
+  // simulation viewer reflect the restored job without a full page reload.
+  useEffect(() => {
+    if (!importedJobId || importedJobId === prevImportedJobIdRef.current) return;
+    prevImportedJobIdRef.current = importedJobId;
+    void job.adoptJobId(importedJobId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importedJobId]);
+
 
   const pageEntityIdsSignature = pageEntities.map((entity) => entity.id).join("\u0000");
 
@@ -412,6 +427,7 @@ export default function CodeGenWorkspace({
         selectedMetrics,
         userEntityList: pageEntities,
         previewOnly: false,
+        autoConfirm,
       });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Generate failed.");
@@ -559,6 +575,20 @@ export default function CodeGenWorkspace({
         >
           {workflow.primaryActionLabel}
         </button>
+
+        <label
+          className="flex cursor-pointer items-center gap-1.5 text-xs text-neutral-400 select-none"
+          title="Skip the dependency review gate and run all stages end-to-end automatically"
+        >
+          <input
+            type="checkbox"
+            checked={autoConfirm}
+            onChange={(e) => setAutoConfirm(e.target.checked)}
+            disabled={workflow.isRunning}
+            className="accent-sky-500"
+          />
+          Auto-run
+        </label>
 
         <button
           type="button"
