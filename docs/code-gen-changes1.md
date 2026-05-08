@@ -51,7 +51,7 @@ Diagram reference: `docs/image.png` (flow image shared in session)
 
 ## Section 3 — Confirmation Preview: Code View of Metrics
 
-**What:** When the pipeline halts at the `metrics_draft` confirmation gate, the frontend preview panel should display the **metric contracts code** (the `metric_contracts.json` payload that would be generated) rather than raw JSON metric objects.
+**What:** When the pipeline halts at the `state1d_metrics_draft` confirmation gate, the frontend preview panel should display the **metric contracts code** (the `metric_contracts.json` payload that would be generated) rather than raw JSON metric objects.
 
 **Why:** User's request — "preview should be the code that move from old suggest metric section". The `metric_contracts.json` format (built by `codegen_runtime_assets.build_metric_contracts()`) shows what the Reporter will actually sample, which is more actionable than the raw LLM suggestion.
 
@@ -74,13 +74,12 @@ Diagram reference: `docs/image.png` (flow image shared in session)
 
 ## Section 4 — `selectedMetrics` No Longer Required at Job Creation
 
-**What:** Make `selectedMetrics` optional in `POST /code_gen/jobs`. If absent, the pipeline generates metrics in `state1d_metrics_draft`. If provided (legacy / auto-confirm flows), skip the draft stage entirely and use provided values.
+**What:** Remove `selectedMetrics` in `POST /code_gen/jobs`. The pipeline generates metrics in `state1d_metrics_draft` instead.
 
-**Why:** Previously the frontend had to call `/code_gen/suggest_metrics` first, then let user pick, then POST the job with `selectedMetrics`. With the pipeline stage, this pre-step moves inside the pipeline.
+**Why:** Previously the frontend had to call `/code_gen/suggest_metrics` first, then let user pick, then POST the job with `selectedMetrics`. With the pipeline stage, this pre-step moves inside the pipeline (state1d_metrics_draft).
 
 **Files touched:**
-- `engine/backend/app/routes/code_gen.py` — remove the 400 guard that rejects requests without `selectedMetrics`; treat empty list as "let pipeline decide"
-- `engine/backend/app/services/code_gen_runner.py` — in `_stage_state1d_metrics_draft`, check `ctx.inputs.get("selectedMetrics")`: if non-empty list provided, skip Gemini call, write those directly as checkpoint, mark stage completed, skip confirmation gate
+- `engine/backend/app/routes/code_gen.py` — remove the 400 guard that rejects requests without `selectedMetrics`; as it moved to state1d_metrics_draft.
 
 ---
 
@@ -88,7 +87,7 @@ Diagram reference: `docs/image.png` (flow image shared in session)
 
 **What:** When `job.status === "awaiting_confirmation"` and `job.awaiting_confirmation_stage === "state1d_metrics_draft"`, show a metrics review panel (edit/toggle metrics) with a Confirm button.
 
-**Why:** Maps to same UX pattern as `state1c_entity_dependencies` confirmation, but content is metric list + code preview instead of dependency graph.
+**Why:** Maps to same UX pattern as `state1b_policies_outline` confirmation, but content is metric list + code preview instead of policies checkboxes.
 
 **Files touched:**
 - `engine/web-ui/src/app/code/page.tsx` — add branch handling `awaiting_confirmation_stage === "state1d_metrics_draft"`, fetch checkpoint preview, render metric toggle list + formatted contract code
