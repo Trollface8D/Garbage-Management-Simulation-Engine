@@ -1754,7 +1754,7 @@ def _to_graph(
 def run_map_extract_worker(
     *,
     job: JobRecord,
-    api_key: str,
+    api_key: str | None,
     model_name: str,
     use_env_model_overrides: bool,
     component_id: str,

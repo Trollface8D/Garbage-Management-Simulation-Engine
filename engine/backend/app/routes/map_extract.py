@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Body, File, Form, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-from ...infra.io_utils import resolve_api_key
+from ...infra.io_utils import is_auth_available, resolve_api_key
 from ...infra.paths import DEFAULT_MODEL_NAME
 from ..models.job_models import JobRecord
 from ..services import map_extract_checkpoints as checkpoints
@@ -166,15 +166,13 @@ async def create_map_extract_job(
         support_descriptors,
     )
 
-    api_key = resolve_api_key()
-    if not api_key:
-        logger.error("[map_extract] request rejected: missing API key")
+    if not is_auth_available():
+        logger.error("[map_extract] request rejected: no auth configured")
         return JSONResponse(
-            {
-                "error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY in your environment.",
-            },
+            {"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."},
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     component_id = componentId.strip()
     if not component_id:
@@ -677,12 +675,12 @@ def resume_map_extract_job(job_id: str):
             status_code=409,
         )
 
-    api_key = resolve_api_key()
-    if not api_key:
+    if not is_auth_available():
         return JSONResponse(
-            {"error": "API key is required. Set GEMINI_API_KEY, API_KEY, or GOOGLE_API_KEY."},
+            {"error": "No auth configured. Set GOOGLE_APPLICATION_CREDENTIALS or GEMINI_API_KEY."},
             status_code=500,
         )
+    api_key = resolve_api_key()
 
     now = utc_now_iso()
     with JOBS_LOCK:

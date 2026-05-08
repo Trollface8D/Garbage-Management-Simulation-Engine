@@ -313,18 +313,19 @@ export default function ProjectDashboardPage() {
           {filteredComponents.map((component) => {
             const isQueryNavigationCategory =
               component.category === "PolicyTesting";
+            const componentProjectId = isProjectScopedComponent(component) ? component.projectId : projectId;
             const targetPath = isQueryNavigationCategory
               ? {
                   pathname: `/${categoryPath[component.category]}`,
                   query: {
                     componentId: component.id,
                     title: component.title,
-                    projectId: isProjectScopedComponent(component) ? component.projectId : projectId,
+                    projectId: componentProjectId,
                   },
                 }
               : `/${categoryPath[component.category]}/${component.id}`;
             const targetHref = isQueryNavigationCategory
-              ? `/${categoryPath[component.category]}?componentId=${encodeURIComponent(component.id)}&title=${encodeURIComponent(component.title)}&projectId=${encodeURIComponent(isProjectScopedComponent(component) ? component.projectId : projectId)}`
+              ? `/${categoryPath[component.category]}?componentId=${encodeURIComponent(component.id)}&title=${encodeURIComponent(component.title)}&projectId=${encodeURIComponent(componentProjectId)}`
               : `/${categoryPath[component.category]}/${component.id}`;
 
             const metaText = isPolicyTestingComponent(component)

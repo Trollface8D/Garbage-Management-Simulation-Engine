@@ -23,7 +23,7 @@ from ..models.job_models import JobRecord
 def run_job_worker(
     job: JobRecord,
     *,
-    api_key: str,
+    api_key: str | None,
     input_mode: str,
     file_mode: str,
     input_text: str,

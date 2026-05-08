@@ -21,6 +21,7 @@ import {
   migrateLegacyData,
   restoreComponent,
   restoreProject,
+  updateComponentTitle,
   saveCausalArtifacts,
   saveFollowUpAnswers,
   saveFollowUpQuestions,
@@ -63,7 +64,8 @@ type PMAction =
   | "save-text-chunks"
   | "save-causal-artifacts"
   | "save-follow-up-questions"
-  | "save-follow-up-answers";
+  | "save-follow-up-answers"
+  | "rename-component";
 
 type PMActionRequest = {
   action: PMAction;
@@ -272,6 +274,15 @@ export async function POST(request: Request) {
         return badRequest("componentId is required.");
       }
       return NextResponse.json({ ok: hardDeleteComponent(componentId) });
+    }
+
+    case "rename-component": {
+      const componentId = asString(payload, "componentId").trim();
+      const newTitle = asString(payload, "newTitle").trim();
+      if (!componentId || !newTitle) {
+        return badRequest("componentId and newTitle are required.");
+      }
+      return NextResponse.json({ ok: updateComponentTitle(componentId, newTitle) });
     }
 
     case "track-recent": {

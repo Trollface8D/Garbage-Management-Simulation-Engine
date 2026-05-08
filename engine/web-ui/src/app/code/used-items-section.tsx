@@ -15,6 +15,9 @@ type UsedItemsSectionProps = {
   items: UsedItem[];
   onDelete: (componentId: string) => void;
   onCreate: (category: "Causal" | "Map") => void;
+  selectedIds?: ReadonlySet<string>;
+  onToggleSelect?: (id: string) => void;
+  onRename?: (id: string, newTitle: string) => void;
 };
 
 export default function UsedItemsSection({
@@ -23,6 +26,9 @@ export default function UsedItemsSection({
   items,
   onDelete,
   onCreate,
+  selectedIds,
+  onToggleSelect,
+  onRename,
 }: UsedItemsSectionProps) {
   const isCausal = category === "Causal";
   const actionLabel = isCausal ? "Create Causal Extraction" : "Create Map Extraction";
@@ -32,7 +38,9 @@ export default function UsedItemsSection({
 
   return (
     <div>
-      <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">{title}</h2>
+      <h2 className="mb-4 text-xl font-bold text-neutral-100 md:text-2xl">{title} <span className="text-red-400" aria-label="required">
+                        *
+                    </span></h2>
       {items.length === 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <button
@@ -53,14 +61,21 @@ export default function UsedItemsSection({
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {items.map((item) =>
-            isCausal ? (
+          {items.map((item) => {
+            const isSelected = selectedIds?.has(item.id) ?? false;
+            const handleSelect = onToggleSelect
+              ? () => onToggleSelect(item.id)
+              : undefined;
+            return isCausal ? (
               <CausalUsedCard
                 key={item.id}
                 title={item.title}
                 project={item.project}
                 lastEdited={item.lastEdited}
                 onDelete={() => onDelete(item.id)}
+                selected={isSelected}
+                onSelect={handleSelect}
+                onRename={onRename ? (newTitle) => onRename(item.id, newTitle) : undefined}
               />
             ) : (
               <MapUsedCard
@@ -69,9 +84,12 @@ export default function UsedItemsSection({
                 project={item.project}
                 lastEdited={item.lastEdited}
                 onDelete={() => onDelete(item.id)}
+                selected={isSelected}
+                onSelect={handleSelect}
+                onRename={onRename ? (newTitle) => onRename(item.id, newTitle) : undefined}
               />
-            ),
-          )}
+            );
+          })}
         </div>
       )}
     </div>

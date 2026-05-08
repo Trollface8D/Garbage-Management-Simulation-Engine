@@ -33,3 +33,4 @@ build/
 resources/
 /.DS_Store
 data/
+.claude/

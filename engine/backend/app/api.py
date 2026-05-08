@@ -5,15 +5,20 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import (
+    code_gen_router,
     compat_router,
     codegen_analytics_router,
     extract_router,
+    group_entities_router,
     health_router,
     jobs_artifacts_router,
     jobs_create_router,
     jobs_query_router,
     jobs_stream_router,
     map_extract_router,
+    simulate_router,
+    suggest_metrics_router,
+    workspace_archive_router,
 )
 
 
@@ -57,11 +62,16 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(codegen_analytics_router)
     app.include_router(extract_router)
+    app.include_router(group_entities_router)
     app.include_router(jobs_create_router)
     app.include_router(jobs_query_router)
     app.include_router(jobs_stream_router)
     app.include_router(jobs_artifacts_router)
     app.include_router(map_extract_router)
+    app.include_router(code_gen_router)
+    app.include_router(simulate_router)
+    app.include_router(suggest_metrics_router)
+    app.include_router(workspace_archive_router)
     app.include_router(compat_router)
     return app
 

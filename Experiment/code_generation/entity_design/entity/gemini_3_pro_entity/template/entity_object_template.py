@@ -38,6 +38,28 @@ class entity_object(ABC):
         self.state = "Idle"
         self._policies: List['Policy'] = []  # Policies attached to this entity_object
     
+    # ==================== REQUIRED TIMESTEP METHOD ====================
+    
+    def step(self, dt: float, env: Optional['SimulationEnvironment'] = None):
+        """
+        [REQUIRED] Execute one timestep of simulation for this entity.
+        
+        This method is MANDATORY on every entity, regardless of whether it is active or passive.
+        
+        For ACTIVE entities: Implement the full cycle — perceive(), decide_action(), act().
+        For PASSIVE entities: This may be a no-op (pass), but the method signature MUST be present.
+        For HYBRID entities: Implement according to the entity's specific behavior requirements.
+        
+        Args:
+            dt: Time delta (duration of this timestep in simulation time units)
+            env: The simulation environment (optional for some entity types)
+        """
+        raise NotImplementedError(
+            f"entity_object '{self.entity_object_id}' does not implement step(dt, env). "
+            "This method is REQUIRED on all entities. "
+            "For passive entities, use 'pass' as the implementation."
+        )
+    
     # ==================== POLICY MANAGEMENT ====================
     
     def add_policy(self, policy: 'Policy'):
