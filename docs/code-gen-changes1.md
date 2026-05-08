@@ -125,13 +125,13 @@ Decision deferred — mark as deprecated in docstring for now; do not remove.
 
 ---
 
-## Section 8 — State2: Read Metrics from `state1d` Checkpoint (not job inputs)
+## Section 8 — State2: Read Metrics from `state1d` Checkpoint as Reference *(corrected 2026-05-08)*
 
-**What:** Change `_stage_state2_code_entity_object` to read confirmed metrics from the `state1d_metrics_draft` checkpoint instead of `ctx.inputs.get("selectedMetrics")`.
+**What:** Change `_stage_state2_code_entity_object` to read confirmed metrics from `state1d_metrics_draft` checkpoint. Metrics are passed to the LLM as **reference contracts** — the generated entity code must expose the required measurement attrs via `on_query()`.
 
-**Why:** After Section 1–6 land, `selectedMetrics` no longer exists in job inputs. State2 must read the user-confirmed metric list from the pipeline checkpoint.
+**Why:** After Sections 1–6 land, `selectedMetrics` is gone from job inputs. State2 reads the user-confirmed metric list from the pipeline checkpoint. More importantly, the metrics define *what the simulation will measure* — entity code must be written with those measurement points in mind from the start, not retrofitted later.
 
-**Current code (`code_gen_runner.py` line 436):**
+**Current code (`code_gen_runner.py` ~line 436):**
 ```python
 selected_metrics = ctx.inputs.get("selectedMetrics") or []
 ```
@@ -142,10 +142,11 @@ state1d = ctx.stage_payload("state1d_metrics_draft") or {}
 selected_metrics = list(state1d.get("metrics") or [])
 ```
 
-**Files touched:**
-- `engine/backend/app/services/code_gen_runner.py` — change lines 436-438 in `_stage_state2_code_entity_object`
+**Prompt impact (required — not currently done):** `build_state2_entity_object_prompt()` must receive `selected_metrics` and inject a metric reference section telling the LLM which attrs each entity must expose. See Section 13b for prompt details.
 
-**State2 prompt must also pass metric context to LLM (currently missing — see Section 13).**
+**Files touched:**
+- `engine/backend/app/services/code_gen_runner.py` — replace `selectedMetrics` read with `state1d` checkpoint read; pass `selected_metrics` to prompt builder
+- `engine/backend/app/services/code_gen_prompts.py` — `build_state2_entity_object_prompt()` signature gets `selected_metrics: list[dict]` param (see Section 13b)
 
 ---
 
@@ -268,22 +269,31 @@ class SimulationEnvironment:
 **Files touched:**
 - `engine/backend/app/services/templates/environment_template.py` — add fields + `_load_map()` + accessor methods (after template relocation — see Section 9f)
 
-### 9e — Prompt changes for state3
+### 9e — Prompt changes for state3 *(corrected 2026-05-08)*
 
-**What:** Update `build_state3_environment_prompt()` to pass both nodes and edges, and instruct the LLM to load map from file (not hardcode).
+**What:** Update `build_state3_environment_prompt()` to accept graph + entity + policy outline only. **Drop `causal_data` entirely** — causal triples are not needed for environment generation; the map graph and entity/policy structure are sufficient.
+
+**Why dropped:** Environment code models spatial layout and entity containers, not causal mechanisms. Causal triples are state1 inputs; by state3 their content is already encoded in the entity definitions and policy outline. Passing causal text bloats the prompt and the LLM tends to produce causal-narrative comments instead of structural code.
 
 **Files touched — `code_gen_prompts.py`:**
-- Signature change:
+- Signature change (remove `causal_data`, add `policy_outline`):
   ```python
   def build_state3_environment_prompt(
       *,
-      causal_data: str,
       entities_blob: str,
-      map_graph: dict[str, Any] | None,   # replaces map_node_json
+      policy_outline: list[dict[str, Any]],   # from state1b_policy_outline checkpoint
+      map_graph: dict[str, Any] | None,        # replaces map_node_json
       retry_error: str | None = None,
   ) -> str:
   ```
-- Map section now shows both vertices + edges sample:
+- Remove the `"Causal data:\n" + (causal_data or "").strip()` line from `_assemble([...])`.
+- Add policy outline section (replaces causal context):
+  ```
+  Policy outline (entity behaviours this environment must support):
+  <policy_outline as compact JSON — rule_id, trigger, target_entity_id, target_method per rule>
+  Use this to understand what entity methods get called and what map traversal the policies expect.
+  ```
+- Map section shows both vertices + edges sample:
   ```
   Map graph (nodes + edges) — ALREADY WRITTEN as map.json artifact in artifacts dir.
   DO NOT hardcode this data. Call self._load_map() via super().__init__() — it loads automatically.
@@ -297,7 +307,12 @@ class SimulationEnvironment:
     env.get_neighbors(node_id) → list of neighbor node IDs
     env.get_node_types() → list of type strings
   ```
-- Remove `codegen_fallback_map_policy` runtime section (no longer needed — map is always required)
+- Remove `codegen_fallback_map_policy` runtime section (no longer needed — map is always required).
+
+**Files touched — `code_gen_runner.py` (`_stage_state3_code_environment`):**
+- Remove `causal_data = str(ctx.inputs.get("causalData") or "")` read.
+- Add `state1b = ctx.stage_payload("state1b_policy_outline") or {}; policy_outline = state1b.get("policies") or []`
+- Pass `policy_outline=policy_outline` to `build_state3_environment_prompt()`; remove `causal_data=` arg.
 
 ### 9f — Template relocation (new — answered 2026-05-08)
 
@@ -375,45 +390,53 @@ Map accessor API (call these on the `env` parameter, do NOT hardcode node IDs):
 
 ---
 
-## Section 12 — Policy Self-Verification (new — 2026-05-08)
+## Section 12 — Policy Self-Verification *(corrected 2026-05-08)*
 
-**What:** After state4 generates policy code, add a verification stage `state5_policy_verify` that uses LLM-as-Judge (same pattern as `Experiment/code_generation/entity_design/enitiy_code_verification/llm_judge.ipynb`) to audit policy code and trigger auto-fix.
+**What:** After state4 generates policy code, add verification stage `state5_policy_verify` using LLM-as-Judge to audit policy code and trigger auto-fix.
 
-**Why:** Policy code is the most likely place for integration failures — wrong entity method names, missing policy application logic, type mismatches when policies interact with entity state. The judge notebook already proves this pattern works for entities; applying it to policies catches errors before the user runs the simulation.
+**Why:** Policy code is the most likely place for integration failures — wrong entity method names, missing policy application logic, type mismatches when policies interact with entity state. The judge notebook (`Experiment/.../llm_judge.ipynb`) proves this pattern works for entities; applying to policies catches errors before simulation runs.
 
-**Two-pass judge design:**
+---
 
-**Pass 1 — Per-policy contract audit:**
-- Input per policy: policy code + its rule contract (`rule_id`, `trigger`, `target_entity_id`, `target_method`) + target entity code + causal triples relevant to that entity
-- Judge checks:
-  1. Does `apply()` correctly call `target_method` on the entity? (method name, args)
-  2. Does the trigger logic match the causal claim?
-  3. Are entity attrs accessed by correct name (matching `on_query()` contract)?
-  4. Does policy respect the map accessor API instead of hardcoding node IDs?
-- Output: `policy_score` 0–3, `verdict` pass/warn/fail, `issues[]`, `fix_suggestions[]`
+### Correction 4 — Entity Code Must Be Wired Into Pass 1
 
-**Pass 2 — Cross-policy interface check:**
-- Only for policy pairs that both target the same entity (potential conflict or ordering dependency)
-- Judge checks: are there attribute name collisions, ordering assumptions, or conflicting state mutations?
-- Output: `compatible` bool, `conflict_issues[]`
+**Problem:** Pass 1 judge compares policy `apply()` calls against target entity methods. Entity code is NOT passed as input currently — the plan listed it but didn't specify the data path, making Pass 1 impossible without a live codebase lookup.
 
-**Auto-fix loop:**
-- Policies with `verdict != pass`: automatically re-queued to state4 with `retry_error` populated from `fix_suggestions`
-- Max 2 auto-retries per policy; after that, mark as `warn` and continue (user reviews in UI)
+**Fix — entity code loading in `_stage_state5_policy_verify`:**
 
-**Stage placement:** After `state4_code_policy` iterations complete (all policies generated), before `finalize_bundle`.
+Each policy's rule contract has `target_entity_id`. For each policy, load the corresponding entity's generated code from the `state2_code_entity_object` checkpoint:
 
-**Files touched (new):**
-- `engine/backend/app/services/code_gen_checkpoints.py` — add `"state5_policy_verify"` to `STAGE_ORDER`
-- `engine/backend/app/services/code_gen_runner.py` — add `_stage_state5_policy_verify(ctx)`:
-  - Build policy index (policy code + rule contract + target entity code + causal triples)
-  - Pass 1: call Gemini per policy with judge prompt + JSON schema output
-  - Pass 2: cross-policy pairs targeting same entity
-  - Auto-retry failed policies via state4 runner
-- `engine/backend/app/services/code_gen_prompts.py` — add `build_policy_judge_pass1_prompt()` and `build_policy_judge_pass2_prompt()`
-- `engine/backend/app/routes/code_gen.py` — add summary branch for `state5_policy_verify` in `_summarize_code_gen_stage()`
+```python
+def _load_entity_code_index(ctx: StageContext) -> dict[str, str]:
+    """Returns {entity_id: python_code_str} from state2 checkpoints."""
+    state2_payloads = ctx.stage_payloads_all("state2_code_entity_object") or []
+    return {p["entity_id"]: p.get("code", "") for p in state2_payloads if p.get("entity_id")}
+```
 
-**Judge prompt schema (Pass 1):**
+Then per-policy in Pass 1:
+```python
+entity_code = entity_code_index.get(rule["target_entity_id"], "")
+# entity_code is passed to build_policy_judge_pass1_prompt()
+```
+
+**`build_policy_judge_pass1_prompt()` signature:**
+```python
+def build_policy_judge_pass1_prompt(
+    *,
+    policy_code: str,
+    rule_contract: dict[str, Any],   # rule_id, trigger, target_entity_id, target_method
+    entity_code: str,                # generated code from state2 checkpoint — REQUIRED
+    map_accessor_api: str,           # short accessor docstring from Section 10
+) -> str:
+```
+
+**Pass 1 judge checks:**
+1. Does `apply()` correctly call `target_method` on the entity? (method name, args)
+2. Does trigger logic match the rule contract trigger?
+3. Are entity attrs accessed by correct name (matching `on_query()` contract from entity code)?
+4. Does policy use map accessor API instead of hardcoding node IDs?
+
+**Output schema (Pass 1):**
 ```json
 {
   "policy": "string",
@@ -425,6 +448,73 @@ Map accessor API (call these on the `env` parameter, do NOT hardcode node IDs):
   "summary": "string"
 }
 ```
+
+---
+
+**Pass 2 — Cross-policy interface check:**
+- Only for policy pairs that both target the same entity (potential conflict or ordering dependency)
+- Judge checks: attribute name collisions, ordering assumptions, conflicting state mutations
+- Output: `compatible` bool, `conflict_issues[]`
+
+---
+
+### Correction 3 — Track Validation/Fix Loop Count Per Policy
+
+**What:** Track how many validation+fix attempts each policy file went through. Save counts in stage metadata and include in workspace export.
+
+**Per-policy tracking object (built in runner, saved to stage payload):**
+```python
+# built during the auto-fix loop, one entry per policy:
+policy_verification_meta = {
+    rule_id: {
+        "attempts": int,          # number of judge+fix cycles run (1 = no retry needed)
+        "final_verdict": str,     # "pass" | "warn" | "fail"
+        "final_score": int,       # 0–3
+        "fix_history": [          # one entry per retry
+            {"attempt": 1, "verdict": "fail", "fix_suggestions": [...]}
+        ]
+    }
+}
+```
+
+**Stage payload shape saved to `state5_policy_verify.json`:**
+```json
+{
+  "passed": ["rule_id_1", ...],
+  "warned": ["rule_id_2", ...],
+  "failed": [],
+  "policy_verification_meta": { "<rule_id>": { "attempts": 2, "final_verdict": "pass", ... } },
+  "pass2_results": [...]
+}
+```
+
+**Workspace export (`finalize_bundle`):** Include `policy_verification_meta` in the bundle manifest. When workspace zip is exported, write `verification_report.json` alongside other artifacts:
+```json
+{
+  "generated_at": "ISO timestamp",
+  "policies": {
+    "<rule_id>": { "attempts": 2, "final_verdict": "pass", "final_score": 3 }
+  }
+}
+```
+
+**Files touched (additions to runner):**
+- `_stage_state5_policy_verify`: maintain `attempts` counter per policy inside auto-fix loop; append to `fix_history`; write `policy_verification_meta` into stage payload
+- `_stage_finalize_bundle`: read `state5_policy_verify` payload; write `verification_report.json` into artifact dir
+
+---
+
+**Auto-fix loop (unchanged):**
+- Policies with `verdict != pass`: re-queue to state4 with `retry_error` from `fix_suggestions`
+- Max 2 auto-retries per policy; after that mark as `warn`, continue
+
+**Stage placement:** After all `state4_code_policy` iterations, before `finalize_bundle`.
+
+**Files touched (full list):**
+- `engine/backend/app/services/code_gen_checkpoints.py` — add `"state5_policy_verify"` to `STAGE_ORDER`
+- `engine/backend/app/services/code_gen_runner.py` — add `_stage_state5_policy_verify(ctx)` + `_load_entity_code_index(ctx)` helper
+- `engine/backend/app/services/code_gen_prompts.py` — add `build_policy_judge_pass1_prompt()` and `build_policy_judge_pass2_prompt()`
+- `engine/backend/app/routes/code_gen.py` — add summary branch for `state5_policy_verify` in `_summarize_code_gen_stage()`
 
 ---
 
@@ -460,22 +550,40 @@ state1d = ctx.stage_payload("state1d_metrics_draft") or {}
 selected_metrics_raw = list(state1d.get("metrics") or [])
 ```
 
-### 13b — Add `on_query()` metric context to State2 prompt
+### 13b — State2 Prompt: Metrics as Simulation Reference *(corrected 2026-05-08)*
+
+**Context:** `state1d_metrics_draft` defines what the simulation will measure. State2 generates entity class code. The entity code must track state variables that correspond to those metrics from day one — otherwise the Reporter will find nothing to sample.
 
 **File:** `engine/backend/app/services/code_gen_prompts.py` — `build_state2_entity_object_prompt()`
 
-Add `selected_metrics: list[dict]` param. Build a section that lists which metrics reference this entity and what attrs `on_query()` must return:
-```
-Metric Reporter contracts — this entity MUST expose these attrs via on_query(metric_name):
-  Metric "waste_collection_rate": required_attrs = [total_collected, collection_timestamp]
-  Metric "bin_overflow_events": required_attrs = [overflow_count, current_load]
+Add `selected_metrics: list[dict]` param. Filter to metrics where `entity_id` matches the entity being generated. Build two sub-sections:
 
-on_query() base signature (from entity_object_template.py):
+**Sub-section A — Reference metrics (simulation measurement context):**
+```
+Reference metrics for this simulation — your entity attributes MUST support these measurements:
+  Metric "waste_collection_rate" (chart: line, entity: GarbageTruck)
+    expected_variable: "waste collected per time step"
+    → This entity should track: total_collected, collection_timestamp
+  Metric "bin_overflow_events" (chart: bar, entity: WasteBin)
+    expected_variable: "overflow count"
+    → This entity should track: overflow_count, current_load
+These metrics tell you what state this entity needs to maintain internally.
+```
+
+**Sub-section B — on_query() contract:**
+```
+Metric Reporter contracts — implement on_query() to expose these attrs:
   def on_query(self, metric_name: str) -> dict:
-      return {}  # override and return dict with required attrs
+      # Must return dict with the exact keys the metric expects.
+      # Example for metric "waste_collection_rate":
+      #   return {"total_collected": self.total_collected, "collection_timestamp": self.last_tick}
+
+on_query() base signature already defined in entity_object_template.py — override it.
 ```
 
-Pass `selected_metrics` from `_stage_state2_code_entity_object` (reads from `state1d` checkpoint per Section 8).
+**Prompt ordering:** Insert both sub-sections after the entity contract section, before the output format instruction.
+
+**Pass `selected_metrics` from** `_stage_state2_code_entity_object` (reads from `state1d` checkpoint per Section 8). Filter by `entity_id == current_entity.entity_id` before passing to prompt.
 
 ---
 
@@ -491,3 +599,10 @@ Pass `selected_metrics` from `_stage_state2_code_entity_object` (reads from `sta
 8. Template location → copy all templates to `engine/backend/app/services/templates/`; update `_TEMPLATE_DIR` in prompts.py and runner.py
 9. Map fallback → none; map is required; validate at Generate button and POST endpoint
 10. Policy self-verification → new `state5_policy_verify` stage; two-pass LLM judge + auto-retry
+
+## Corrections Applied (2026-05-08 second sync)
+
+11. `build_state3_environment_prompt` — drop `causal_data`; accept `policy_outline` (from `state1b`) instead. Section 9e rewritten. Runner must load state1b checkpoint, not causal data string.
+12. State2 metrics input — `state1d_metrics_draft` feeds state2 as simulation measurement reference (not just `on_query()` wiring). Prompt gets both a "reference metrics" context block AND the `on_query()` contract block. Section 8 and 13b updated.
+13. `state5_policy_verify` fix-loop tracking — per-policy `attempts` counter + `fix_history` saved in stage payload; `verification_report.json` written to artifact dir during `finalize_bundle`. Section 12 updated.
+14. Pass 1 entity code wiring — entity code loaded from `state2_code_entity_object` checkpoint via `_load_entity_code_index(ctx)`; keyed by `entity_id` matching `rule.target_entity_id`. Pass 1 impossible without this. Section 12 updated.
