@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo } from "react";
+import { memo, useId, useMemo } from "react";
 
 type ModelPickerProps = {
   value: string;
@@ -25,7 +25,7 @@ function dedupeModelNames(names: string[]): string[] {
   return Array.from(new Set(names.filter(Boolean)));
 }
 
-export default function ModelPicker({
+const ModelPicker = memo(function ModelPicker({
   value,
   onChange,
   label = "model",
@@ -75,4 +75,6 @@ export default function ModelPicker({
       </datalist>
     </div>
   );
-}
+});
+
+export default ModelPicker;

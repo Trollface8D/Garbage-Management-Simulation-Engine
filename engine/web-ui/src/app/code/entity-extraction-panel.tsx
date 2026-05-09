@@ -21,6 +21,80 @@ const ReactWordcloud = dynamic(
     { ssr: false },
 ) as unknown as ComponentType<WordCloudProps>;
 
+type WordCloudPanelProps = {
+    isExtracted: boolean;
+    words: WordCloudWord[];
+    options: WordCloudProps["options"];
+};
+
+const WordCloudPanel = memo(function WordCloudPanel({
+    isExtracted,
+    words,
+    options,
+}: WordCloudPanelProps) {
+    const wordCloudHostRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!isExtracted || words.length === 0) {
+            return;
+        }
+
+        const recenterWordCloud = () => {
+            const host = wordCloudHostRef.current;
+            if (!host) return;
+
+            const svgs = host.querySelectorAll("svg");
+            if (svgs.length === 0) return;
+
+            const svg = svgs[0];
+            const box = svg.getBBox?.();
+            if (!box) return;
+
+            const viewBox = `${box.x} ${box.y} ${box.width} ${box.height}`;
+            svg.setAttribute("viewBox", viewBox);
+            svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+        };
+
+        const frameId = window.requestAnimationFrame(() => {
+            recenterWordCloud();
+        });
+
+        const timeoutId = window.setTimeout(recenterWordCloud, 620);
+
+        return () => {
+            window.cancelAnimationFrame(frameId);
+            window.clearTimeout(timeoutId);
+        };
+    }, [isExtracted, words]);
+
+    return (
+        <div className="flex min-h-150 items-stretch justify-center rounded-lg border border-neutral-700 bg-linear-to-br from-neutral-900 to-neutral-800 p-4">
+            <div className="flex w-full flex-col rounded-lg border border-neutral-700 bg-neutral-950/70 p-3">
+                {words.length > 0 ? (
+                    <div
+                        aria-label="Generated entity word cloud"
+                        className="flex w-full flex-1 items-center justify-center"
+                    >
+                        <div ref={wordCloudHostRef} className="h-full w-full">
+                            <ReactWordcloud
+                                minSize={[200, 200]}
+                                options={options}
+                                words={words}
+                            />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex flex-1 items-center justify-center text-center">
+                        <p className="text-sm font-semibold text-neutral-300">
+                            Select at least one entity to render the word cloud.
+                        </p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+});
+
 export type GeneratedEntity = {
     id: string;
     name: string;
@@ -80,8 +154,6 @@ const EntityExtractionPanel = memo(function EntityExtractionPanel({
     onToggleCollapse,
     onModelChange,
 }: EntityExtractionPanelProps) {
-    const wordCloudHostRef = useRef<HTMLDivElement | null>(null);
-
     const selectedEntities = useMemo(
         () => entities.filter((entity) => entity.selected),
         [entities],
@@ -113,39 +185,6 @@ const EntityExtractionPanel = memo(function EntityExtractionPanel({
     );
 
     const totalEntityCount = useMemo(() => selectedEntities.length, [selectedEntities]);
-
-    useEffect(() => {
-        if (!isExtracted || wordCloudWords.length === 0) {
-            return;
-        }
-
-        const recenterWordCloud = () => {
-            const host = wordCloudHostRef.current;
-            if (!host) return;
-
-            const svgs = host.querySelectorAll("svg");
-            if (svgs.length === 0) return;
-
-            const svg = svgs[0];
-            const box = svg.getBBox?.();
-            if (!box) return;
-
-            const viewBox = `${box.x} ${box.y} ${box.width} ${box.height}`;
-            svg.setAttribute("viewBox", viewBox);
-            svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-        };
-
-        const frameId = window.requestAnimationFrame(() => {
-            recenterWordCloud();
-        });
-
-        const timeoutId = window.setTimeout(recenterWordCloud, 620);
-
-        return () => {
-            window.cancelAnimationFrame(frameId);
-            window.clearTimeout(timeoutId);
-        };
-    }, [isExtracted, wordCloudWords]);
 
     return (
         <div>
@@ -277,30 +316,11 @@ const EntityExtractionPanel = memo(function EntityExtractionPanel({
                     </div>
                 ) : (
                     <div className="grid min-h-180 gap-4 lg:grid-cols-2">
-                        <div className="flex min-h-150 items-stretch justify-center rounded-lg border border-neutral-700 bg-linear-to-br from-neutral-900 to-neutral-800 p-4">
-                            <div className="flex w-full flex-col rounded-lg border border-neutral-700 bg-neutral-950/70 p-3">
-                                {wordCloudWords.length > 0 ? (
-                                    <div
-                                        aria-label="Generated entity word cloud"
-                                        className="flex w-full flex-1 items-center justify-center"
-                                    >
-                                        <div ref={wordCloudHostRef} className="h-full w-full">
-                                            <ReactWordcloud
-                                                minSize={[200, 200]}
-                                                options={wordCloudOptions}
-                                                words={wordCloudWords}
-                                            />
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-1 items-center justify-center text-center">
-                                        <p className="text-sm font-semibold text-neutral-300">
-                                            Select at least one entity to render the word cloud.
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        <WordCloudPanel
+                            isExtracted={isExtracted}
+                            words={wordCloudWords}
+                            options={wordCloudOptions}
+                        />
 
                         <div className="flex flex-col rounded-lg border border-neutral-700 bg-neutral-900/70 p-4">
                             <p className="text-sm font-semibold text-neutral-100">

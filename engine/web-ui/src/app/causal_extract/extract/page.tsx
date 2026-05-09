@@ -452,7 +452,9 @@ function CausalExtractPageContent() {
     setExtractStatus("");
 
     const existingPayload = displayPayloadMap[chunkId] ?? null;
-    if (existingPayload) {
+    const hasSavedExtraction = Boolean(chunkExtractionMap[chunkId]);
+    const isFollowUp = existingPayload?.sourceKind === "follow_up";
+    if (existingPayload && (hasSavedExtraction || isFollowUp)) {
       setIsExtracted(true);
       setExtractionData(existingPayload);
       return;
@@ -686,12 +688,37 @@ function CausalExtractPageContent() {
 
         {extractStatus ? <p className="mb-3 text-xs text-emerald-300">{extractStatus}</p> : null}
 
-        <section className="grid gap-5 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 backdrop-blur-sm md:grid-cols-[280px_1fr] md:p-6">
-          <aside className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-4">
+        <section className="grid gap-5 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 backdrop-blur-sm md:grid-cols-[280px_1fr] md:items-start md:p-6">
+          <aside className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-4 md:sticky md:top-6 md:h-[calc(100vh-6rem)] md:overflow-y-auto">
             <h2 className="text-lg font-bold text-neutral-100">Chunk list</h2>
             <p className="mt-1 text-xs text-neutral-400">Select a single chunk or use view all mode.</p>
             <p className="mt-2 text-xs text-neutral-500">{chunkLoadStatus}</p>
             <p className="mt-1 text-xs text-emerald-300">{extractStatus}</p>
+
+            <div className="mt-4 rounded-md border border-neutral-700 bg-neutral-900 p-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleActivateViewAll}
+                  disabled={chunkOptions.length === 0 || isExtractingAll}
+                  className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+                    viewAllMode
+                      ? "bg-sky-950/40 text-sky-200"
+                      : "bg-neutral-800 text-neutral-200 hover:bg-neutral-700"
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  view all
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExtractAll}
+                  disabled={chunkOptions.length === 0 || isExtracting || isExtractingAll}
+                  className="rounded-md bg-sky-900/40 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isExtractingAll ? "Extracting all..." : "Extract all"}
+                </button>
+              </div>
+            </div>
 
             <div className="mt-4 space-y-2">
               {displayChunkOptions.map((chunk) => {
@@ -738,30 +765,6 @@ function CausalExtractPageContent() {
               )}
             </div>
 
-            <div className="mt-4 rounded-md border border-neutral-700 bg-neutral-900 p-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleActivateViewAll}
-                  disabled={chunkOptions.length === 0 || isExtractingAll}
-                  className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-                    viewAllMode
-                      ? "bg-sky-950/40 text-sky-200"
-                      : "bg-neutral-800 text-neutral-200 hover:bg-neutral-700"
-                  } disabled:cursor-not-allowed disabled:opacity-60`}
-                >
-                  view all
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExtractAll}
-                  disabled={chunkOptions.length === 0 || isExtracting || isExtractingAll}
-                  className="rounded-md bg-sky-900/40 px-3 py-2 text-sm font-semibold text-sky-200 transition hover:bg-sky-900/60 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isExtractingAll ? "Extracting all..." : "Extract all"}
-                </button>
-              </div>
-            </div>
           </aside>
 
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-5">
