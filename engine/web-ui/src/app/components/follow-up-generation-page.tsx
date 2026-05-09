@@ -341,6 +341,8 @@ function CausalCard({
   isGeneratingForCausal,
   onDeleteForCausal,
   isDeletingForCausal,
+  onMarkExplicitForCausal,
+  isMarkingExplicitForCausal,
   answers,
   filterAnswers,
   onAnswerChange,
@@ -365,6 +367,8 @@ function CausalCard({
   isGeneratingForCausal: boolean;
   onDeleteForCausal: () => void;
   isDeletingForCausal: boolean;
+  onMarkExplicitForCausal: () => void;
+  isMarkingExplicitForCausal: boolean;
   answers: Record<string, string>;
   filterAnswers: Record<string, string>;
   onAnswerChange: (question: string, answer: string) => void;
@@ -421,6 +425,14 @@ function CausalCard({
             className="inline-flex items-center rounded-md border border-rose-600 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
           >
             {isDeletingForCausal ? "Deleting..." : "Delete"}
+          </button>
+          <button
+            type="button"
+            onClick={onMarkExplicitForCausal}
+            disabled={isMarkingExplicitForCausal}
+            className="inline-flex items-center rounded-md border border-amber-500/70 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-amber-200 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+          >
+            {isMarkingExplicitForCausal ? "Updating..." : "Marked as Explicit"}
           </button>
           <button
             type="button"
@@ -777,6 +789,7 @@ export default function FollowUpGenerationPage({
     () => toDerivedExtractionMap(initialFollowUpRecords),
   );
   const [deletingSources, setDeletingSources] = useState<Set<string>>(() => new Set());
+  const [markingExplicitSources, setMarkingExplicitSources] = useState<Set<string>>(() => new Set());
 
   const answersBySourceRef = useRef<Record<string, Record<string, string>>>(answersBySource);
   const questionIdsBySourceRef = useRef<Record<string, Record<string, string>>>(questionIdsBySource);
@@ -1468,6 +1481,65 @@ export default function FollowUpGenerationPage({
     }
   };
 
+  const handleMarkExplicit = async (causal: CausalItem) => {
+    setMarkingExplicitSources((previous) => {
+      const next = new Set(previous);
+      next.add(causal.source_text);
+      return next;
+    });
+    setGenerationStatus("");
+
+    try {
+      const itemId = ensureExperimentItemId();
+      const artifacts = await loadCausalArtifactsForItem(itemId);
+
+      let updated = false;
+      const updatedRawExtraction = artifacts.raw_extraction.map((payload) => {
+        const nextClasses = (payload.classes ?? []).map((classItem) => {
+          if (!updated && doesClassMatchCausal(classItem, causal)) {
+            updated = true;
+            return {
+              ...classItem,
+              explicit_type: "E",
+            };
+          }
+
+          return classItem;
+        });
+
+        return {
+          ...payload,
+          classes: nextClasses,
+        };
+      });
+
+      if (!updated) {
+        setGenerationStatus("Unable to find this causal class in the database.");
+        return;
+      }
+
+      await saveCausalArtifactsForItem({
+        experimentItemId: itemId,
+        rawExtraction: updatedRawExtraction,
+        followUp: artifacts.follow_up,
+      });
+
+      setGenerationStatus("Marked causal class as explicit. Reloading...");
+      if (typeof window !== "undefined") {
+        window.location.reload();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to mark causal as explicit.";
+      setGenerationStatus(message);
+    } finally {
+      setMarkingExplicitSources((previous) => {
+        const next = new Set(previous);
+        next.delete(causal.source_text);
+        return next;
+      });
+    }
+  };
+
   const handleSubmitGroup = async (sourceText: string, questions: string[]) => {
     if (questions.length === 0) {
       setGroupSubmitStatus((previous) => ({
@@ -1758,10 +1830,11 @@ export default function FollowUpGenerationPage({
               const sourceFilterAnswers = filterBasisAnswersBySource[causal.source_text] ?? {};
               const sourceAnsweredCount = sourceQuestions.filter((question) => (sourceFilterAnswers[question] ?? "").trim().length > 0).length;
               const sourceUnansweredCount = sourceQuestions.length - sourceAnsweredCount;
+              const uniqueKey = `${causal.source_text}__${causal.pattern_type}__${causal.sentence_type}__${index}`;
 
               return (
                 <CausalCard
-                  key={causal.source_text}
+                  key={uniqueKey}
                   causal={causal}
                   index={index}
                   generatedQuestions={sourceQuestions}
@@ -1771,6 +1844,8 @@ export default function FollowUpGenerationPage({
                   isGeneratingForCausal={generatingSources.has(causal.source_text)}
                   onDeleteForCausal={() => void handleDeleteCausal(causal)}
                   isDeletingForCausal={deletingSources.has(causal.source_text)}
+                  onMarkExplicitForCausal={() => void handleMarkExplicit(causal)}
+                  isMarkingExplicitForCausal={markingExplicitSources.has(causal.source_text)}
                   answers={sourceAnswers}
                   filterAnswers={sourceFilterAnswers}
                   onAnswerChange={(question, answer) => handleAnswerChange(causal.source_text, question, answer)}
