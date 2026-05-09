@@ -100,6 +100,7 @@ class GeminiGateway:
         prompt: str,
         *,
         parts: list[Part] | None = None,
+        tools: list[Any] | None = None,
         response_json: bool,
         response_schema: dict[str, Any] | None = None,
         usage_collector: dict[str, int] | None = None,
@@ -135,6 +136,8 @@ class GeminiGateway:
             "thinking_config": ThinkingConfig(thinking_budget=thinking_budget),
             "temperature": 0.2,
         }
+        if tools:
+            config_kwargs["tools"] = tools
         if response_json:
             config_kwargs["response_mime_type"] = "application/json"
             if response_schema is not None:
