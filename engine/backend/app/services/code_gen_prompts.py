@@ -129,8 +129,10 @@ STATE1_ENTITY_LIST_SCHEMA_TEXT = (
     "  ]\n"
     "}\n"
     "Field rules:\n"
-    "- id: normalized snake_case identifier derived from label.\n"
-    "- label: exact surface form as it appears in causal data.\n"
+    "- id: ASCII English snake_case identifier for this concept. If the label contains"
+    " non-ASCII characters (e.g. Thai), translate the concept to English and use that"
+    " as the id (e.g. label='ขยะ' → id='waste', label='รถขยะ' → id='garbage_truck').\n"
+    "- label: exact surface form as it appears in causal data — preserve original language.\n"
     '- type: one of ["actor", "resource", "environment", "policy"].\n'
     "- frequency: integer count of occurrences across all causal data.\n"
     "Do NOT emit a 'priority' field — ranking is done by the caller, not the model."
@@ -604,7 +606,7 @@ def build_state2_entity_prompt(
     """
     base = (_stage("state2_code_entity_object").get("prompt") or "")
     base = base.replace("{entity_id}", entity_id)
-    class_name = entity_label_to_class_name(entity_obj.get("label") or entity_id)
+    class_name = entity_label_to_class_name(entity_id or entity_obj.get("label") or entity_id)
     class_name_instruction = (
         f"The Python class name for this entity MUST be `{class_name}`. "
         "Use this exact name — not the entity id, not a numeric variant."
