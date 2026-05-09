@@ -41,7 +41,7 @@ export function PMSidebar() {
   const [recentCount, setRecentCount] = useState(0);
   const [trashCount, setTrashCount] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
     const saved = window.localStorage.getItem(THEME_STORAGE_KEY);

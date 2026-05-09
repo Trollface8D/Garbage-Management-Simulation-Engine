@@ -11,7 +11,11 @@
       "Bash(git apply *)",
       "Bash(rtk grep *)",
       "Bash(rtk find *)",
-      "Bash(rtk ls *)"
+      "Bash(rtk ls *)",
+      "Bash(rtk diff *)",
+      "Bash(rtk git *)",
+      "Bash(git checkout *)",
+      "Bash(python3 *)"
     ]
   }
 }

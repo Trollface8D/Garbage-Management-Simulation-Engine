@@ -507,7 +507,9 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                         <p className="wrap-break-word text-neutral-300">{progressMsg}</p>
                       ) : null}
 
-                      {status === "awaiting_confirmation" && entry.key === awaitingConfirmationStage ? (
+                      {status === "awaiting_confirmation" &&
+                      entry.key === awaitingConfirmationStage &&
+                      entry.key !== "state1d_metrics_draft" ? (
                         <div className="rounded-md border border-yellow-700/60 bg-yellow-500/10 p-3 space-y-2">
                           <p className="text-xs font-semibold text-yellow-200">
                             Waiting for confirmation before running {entry.label}
@@ -540,6 +542,12 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                                 else next.add(id);
                                 return next;
                               });
+                            }}
+                            onSelectAllPolicies={(ids) => {
+                              setDraftSelectedPolicyIds(new Set(ids));
+                            }}
+                            onDeselectAllPolicies={() => {
+                              setDraftSelectedPolicyIds(new Set());
                             }}
                             manualPolicies={draftManualPolicies}
                             onAddManualPolicy={(policy) => {
@@ -784,9 +792,29 @@ function MetricsDraftConfirmBlock({
 
       {previewMetrics.length > 0 ? (
         <div>
-          <p className="mb-1 text-[11px] font-semibold text-neutral-300">
-            Metrics ({previewMetrics.length}) — select to include in codegen
-          </p>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold text-neutral-300">
+              Metrics ({previewMetrics.length}) — select to include in codegen
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setSelectedNames(new Set(previewMetrics.map((m) => m.name)))}
+                disabled={actionPending || confirming || previewMetrics.length === 0}
+                className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] font-semibold text-neutral-300 transition hover:border-sky-500 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedNames(new Set())}
+                disabled={actionPending || confirming || selectedNames.size === 0}
+                className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] font-semibold text-neutral-300 transition hover:border-red-500 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Deselect all
+              </button>
+            </div>
+          </div>
           <ul className="max-h-72 overflow-y-auto">
             {previewMetrics.map((metric) => (
               <li key={metric.name}>
@@ -865,6 +893,8 @@ function PolicyConfirmBlock({
   error,
   selectedPolicyIds,
   onTogglePolicy,
+  onSelectAllPolicies,
+  onDeselectAllPolicies,
   manualPolicies,
   onAddManualPolicy,
   onRemoveManualPolicy,
@@ -880,6 +910,8 @@ function PolicyConfirmBlock({
   error: string;
   selectedPolicyIds?: Set<string>;
   onTogglePolicy?: (id: string) => void;
+  onSelectAllPolicies?: (ids: string[]) => void;
+  onDeselectAllPolicies?: () => void;
   manualPolicies?: CodeGenPolicyOutline[];
   onAddManualPolicy?: (policy: CodeGenPolicyOutline) => void;
   onRemoveManualPolicy?: (rule_id: string) => void;
@@ -982,9 +1014,29 @@ function PolicyConfirmBlock({
       ) : null}
 
       <div>
-        <p className="mb-1 text-[11px] font-semibold text-neutral-300">
-          Policies ({combinedPolicies.length}) — select to include
-        </p>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold text-neutral-300">
+            Policies ({combinedPolicies.length}) — select to include
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onSelectAllPolicies?.(combinedPolicies.map((p) => p.rule_id))}
+              disabled={actionPending || combinedPolicies.length === 0}
+              className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] font-semibold text-neutral-300 transition hover:border-sky-500 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={() => onDeselectAllPolicies?.()}
+              disabled={actionPending || (selectedPolicyIds?.size ?? 0) === 0}
+              className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] font-semibold text-neutral-300 transition hover:border-red-500 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Deselect all
+            </button>
+          </div>
+        </div>
         <ul className="max-h-72 overflow-y-auto">
           {combinedPolicies.map((policy) => (
             <li key={policy.rule_id}>

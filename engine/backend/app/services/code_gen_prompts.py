@@ -129,8 +129,10 @@ STATE1_ENTITY_LIST_SCHEMA_TEXT = (
     "  ]\n"
     "}\n"
     "Field rules:\n"
-    "- id: normalized snake_case identifier derived from label.\n"
-    "- label: exact surface form as it appears in causal data.\n"
+    "- id: ASCII English snake_case identifier for this concept. If the label contains"
+    " non-ASCII characters (e.g. Thai), translate the concept to English and use that"
+    " as the id (e.g. label='ขยะ' → id='waste', label='รถขยะ' → id='garbage_truck').\n"
+    "- label: exact surface form as it appears in causal data — preserve original language.\n"
     '- type: one of ["actor", "resource", "environment", "policy"].\n'
     "- frequency: integer count of occurrences across all causal data.\n"
     "Do NOT emit a 'priority' field — ranking is done by the caller, not the model."
@@ -261,20 +263,23 @@ def build_state1b_policy_outline_prompt(
     """
     entities_json = json.dumps({"entities": entities or []}, ensure_ascii=False)
     instructions = (
-        "Extract every enforcement rule that the current system ALREADY applies, as evidenced by "
-        "the causal data. Each rule must describe an existing causal mechanism — a condition the "
-        "system currently responds to and an action it currently takes. "
+        "Extract EVERY causal mechanism that the system exhibits, as evidenced by the causal data. "
+        "A causal mechanism is any condition-action pair — a condition the system currently responds "
+        "to and the action it currently takes. Include all types: enforcement rules, state "
+        "transitions, feedback responses, resource reactions, overflow/underflow handlers, and any "
+        "other behavior the causal data shows. Do NOT limit the number of policies — emit one entry "
+        "per distinct causal mechanism, however many that is. "
         "Do NOT propose improvements, corrections, or new behaviors. "
         "Describe the system as-is: what condition already triggers it, which entity already "
         "handles it, and what method that entity already performs. "
-        "For each rule, output one row: the observed trigger, the target entity (or 'environment'), "
-        "and a method name that reads as the entity's own behavior (not a policy label)."
+        "For each mechanism, output one entry: the observed trigger, the target entity "
+        "(or 'environment'), and a method name that reads as the entity's own behavior "
+        "(not a policy label)."
     )
     prompt = _assemble(
         [
             instructions,
             STATE1B_POLICY_OUTLINE_SCHEMA_TEXT,
-            _runtime("compact_output_policy"),
             "Entity list (output of State 1):\n" + entities_json,
             "Causal data:\n" + (causal_data or "").strip(),
         ]
@@ -601,7 +606,7 @@ def build_state2_entity_prompt(
     """
     base = (_stage("state2_code_entity_object").get("prompt") or "")
     base = base.replace("{entity_id}", entity_id)
-    class_name = entity_label_to_class_name(entity_obj.get("label") or entity_id)
+    class_name = entity_label_to_class_name(entity_id or entity_obj.get("label") or entity_id)
     class_name_instruction = (
         f"The Python class name for this entity MUST be `{class_name}`. "
         "Use this exact name — not the entity id, not a numeric variant."
