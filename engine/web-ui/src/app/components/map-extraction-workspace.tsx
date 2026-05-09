@@ -1866,27 +1866,6 @@ export default function MapExtractionWorkspace({
                 job: {jobId}
               </span>
             ) : null}
-            <button
-              type="button"
-              onClick={() => setIsLeftPanelCollapsed((prev) => !prev)}
-              aria-label={isLeftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={isLeftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              className="inline-flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-2 text-xs text-neutral-300 transition hover:border-sky-500"
-            >
-              {isLeftPanelCollapsed ? "⟩ Left" : "⟨ Left"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setRightPanelUserToggled(true);
-                setIsRightPanelCollapsed((prev) => !prev);
-              }}
-              aria-label={isRightPanelCollapsed ? "Expand stage log" : "Collapse stage log"}
-              title={isRightPanelCollapsed ? "Expand stage log" : "Collapse stage log"}
-              className="inline-flex items-center gap-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-2 text-xs text-neutral-300 transition hover:border-sky-500"
-            >
-              {isRightPanelCollapsed ? "⟨ Log" : "⟩ Log"}
-            </button>
           </div>
         </header>
 
@@ -1916,6 +1895,21 @@ export default function MapExtractionWorkspace({
               </div>
             ) : (
             <>
+            <div className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/60 px-3 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                files · inspector
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsLeftPanelCollapsed(true)}
+                aria-label="Collapse sidebar"
+                title="Collapse sidebar"
+                className="inline-flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-[11px] text-neutral-300 transition hover:border-sky-500"
+              >
+                ⟨
+                <span className="hidden sm:inline">Collapse</span>
+              </button>
+            </div>
             <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
               <button
                 type="button"
@@ -2283,6 +2277,26 @@ export default function MapExtractionWorkspace({
           </section>
 
           <aside className="flex min-w-0 flex-col gap-3">
+            {!isRightPanelCollapsed ? (
+              <div className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/60 px-3 py-2">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                  stage log
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRightPanelUserToggled(true);
+                    setIsRightPanelCollapsed(true);
+                  }}
+                  aria-label="Collapse stage log"
+                  title="Collapse stage log"
+                  className="inline-flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-[11px] text-neutral-300 transition hover:border-sky-500"
+                >
+                  ⟩
+                  <span className="hidden sm:inline">Collapse</span>
+                </button>
+              </div>
+            ) : null}
             {!isRightPanelCollapsed ? (
               <article className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
                 <button
