@@ -667,15 +667,15 @@ def _summarize_code_gen_stage(stage: str, payload: dict[str, Any], *, job_id: st
         if stage == "state1_entity_list":
             entities = payload.get("entities") or []
             summary["entityCount"] = len(entities)
-            preview = {"entities": entities[:8]}
+            preview = {"entities": entities}
         elif stage == "state1b_policy_outline":
             policies = payload.get("policies") or []
             summary["policyCount"] = len(policies)
-            preview = {"policies": policies[:12]}
+            preview = {"policies": policies}
         elif stage == "state1c_entity_dependencies":
             edges = payload.get("edges") or []
             summary["edgeCount"] = len(edges)
-            preview = {"edges": edges[:12], "order": payload.get("order") or []}
+            preview = {"edges": edges, "order": payload.get("order") or []}
         elif stage == "state1d_metrics_draft":
             metrics = payload.get("metrics") or []
             summary["metricCount"] = len(metrics)
@@ -687,32 +687,32 @@ def _summarize_code_gen_stage(stage: str, payload: dict[str, Any], *, job_id: st
                 [m for m in metrics if isinstance(m, dict)], job_id=job_id or ""
             )
             preview = {
-                "metrics": metrics[:20],
+                "metrics": metrics,
                 "metric_contracts": metric_contracts,
             }
         elif stage == "state2_code_entity_object":
             iterations = payload.get("iterations") or []
             summary["iterationCount"] = payload.get("iterationCount") or len(iterations)
-            preview = {"iterations": [{"iterId": it.get("iterId"), "filename": it.get("filename"), "validationErrors": (it.get("validation") or {}).get("errors") or []} for it in iterations[:12]]}
+            preview = {"iterations": [{"iterId": it.get("iterId"), "filename": it.get("filename"), "validationErrors": (it.get("validation") or {}).get("errors") or []} for it in iterations]}
         elif stage == "state2v_validate_protocol":
             failures = payload.get("failures") or []
             summary["iterationCount"] = payload.get("iterations") or 0
             summary["failureCount"] = len(failures)
-            preview = {"failures": failures[:12]}
+            preview = {"failures": failures}
         elif stage == "state3_code_environment":
             validation_errors = (payload.get("validation") or {}).get("errors") or []
             summary["hasCode"] = bool(payload.get("code"))
             summary["validationErrorCount"] = len(validation_errors)
-            preview = {"filename": payload.get("filename"), "mapAvailable": payload.get("mapAvailable"), "validationErrors": validation_errors[:12]}
+            preview = {"filename": payload.get("filename"), "mapAvailable": payload.get("mapAvailable"), "validationErrors": validation_errors}
         elif stage == "state4_code_policy":
             iterations = payload.get("iterations") or []
             summary["iterationCount"] = payload.get("iterationCount") or len(iterations)
-            preview = {"iterations": [{"iterId": it.get("iterId"), "filename": it.get("filename")} for it in iterations[:12]]}
+            preview = {"iterations": [{"iterId": it.get("iterId"), "filename": it.get("filename")} for it in iterations]}
         elif stage == "state4v_validate_policy":
             failures = payload.get("failures") or []
             summary["iterationCount"] = payload.get("iterations") or 0
             summary["failureCount"] = len(failures)
-            preview = {"failures": failures[:12]}
+            preview = {"failures": failures}
         elif stage == "state5_policy_verify":
             summary["policyCount"] = payload.get("policyCount") or 0
             summary["fixedCount"] = payload.get("fixedCount") or 0
@@ -725,13 +725,13 @@ def _summarize_code_gen_stage(stage: str, payload: dict[str, Any], *, job_id: st
                         "passed": r.get("passed"),
                         "attempts": r.get("attempts"),
                     }
-                    for r in results[:24]
+                    for r in results
                 ]
             }
         elif stage == "finalize_bundle":
             files = payload.get("files") or []
             summary["fileCount"] = len(files)
-            preview = {"files": [{"path": f.get("path"), "kind": f.get("kind")} for f in files[:24]]}
+            preview = {"files": [{"path": f.get("path"), "kind": f.get("kind")} for f in files]}
         else:
             preview = payload
     except Exception:  # noqa: BLE001 — summary is best-effort.
