@@ -44,7 +44,9 @@ Because behaviour lives in policies, an entity is correct when:
 1. Load `state1b_policy_outline.json` → list of `{rule_id, target_entity_id, target_method, ...}`.
 2. For each entity, collect all outlines where `target_entity_id == eid`.
 3. Load the corresponding policy file (`artifacts/policies/<rule_id>.py`).
-4. Include up to **5 most relevant policy files** in the Pass 1 prompt so the judge can cross-check method names and signatures.
+4. Include up to **5 most relevant policy files** in the Pass 1 prompt via `build_policy_section(eid)` so the judge can cross-check method names and signatures.
+
+> **Implementation note:** `entity_policies` (dict of eid → policy code list) and `build_policy_section` are defined in the prompt-builder cell alongside `build_pass1_prompt`. The judge is explicitly instructed to score on interface completeness against policy calls, **not** on whether the entity self-drives behaviour.
 
 ### Scoring rubric (behavior_score 0–3)
 
@@ -87,6 +89,8 @@ score = word_overlap(reason, policy_label) + 2 * (policy.target_entity_id in {fr
 ```
 
 Top-scoring policies (score ≥ 3) are loaded. Up to 3 policies per edge are included in the prompt.
+
+> **Implementation note:** `find_policies_for_edge(edge)` is called inside `build_pass2_prompt`. The resulting policy code is injected as a **"Mediating Policy"** section. The judge system prompt explicitly states that entities do **not** call each other directly — the policy mediates all interactions — so the judge evaluates the three-way contract rather than a direct entity-to-entity call.
 
 ### What the Pass 2 judge checks
 
@@ -131,7 +135,16 @@ Each entity receives only the causal triples relevant to it. Matching uses two t
 ## Limitations
 
 - **Gemini as judge is not deterministic** — same entity may receive different scores across runs; treat results as indicative, not ground truth.
-- **Policy matching is fuzzy** — if a policy filename diverges significantly from the edge reason text, it may be missed. Verify `find_policies_for_edge` output before interpreting Pass 2 verdicts.
+- **Policy matching is fuzzy** — if a policy filename diverges significantly from the edge reason text, it may be missed. Verify `find_policies_for_edge` output (printed at notebook startup) before interpreting Pass 2 verdicts.
 - **Metric contract fuzzy matching** — contracts reference entities by informal names; mismatches cause missed or spurious attr checks.
 - **Pass 2 only covers flagged edges** — interface bugs in entities that both scored 3 will not be caught unless `PASS2_SCORE_THRESHOLD = 3`.
 - **Policy code is not exhaustive** — some behaviour is implemented directly in `environment.py` hooks; these are not included in the judge prompts.
+
+## Known Issues Fixed
+
+| Issue | Symptom | Fix |
+|---|---|---|
+| Pass 1 used wrong rubric | Entities scored 0–1 even when interface was correct, because judge evaluated self-driven behaviour instead of interface completeness | `PASS1_SYSTEM` updated to interface-completeness rubric; added `build_policy_section` to prompt |
+| Pass 1 missing policy context | Judge could not verify method names/signatures without seeing policy code | `build_policy_section(eid)` now injected into every Pass 1 prompt |
+| Pass 2 missing mediating policy | Judge saw two entity files with no connecting policy; marked all edges incompatible | `find_policies_for_edge(edge)` now called in `build_pass2_prompt`; result injected as "Mediating Policy" section |
+| Pass 2 wrong task framing | Prompt asked "does FROM call TO correctly?" — impossible in this architecture | Prompt reframed to three-way contract: policy ↔ FROM ↔ TO |
