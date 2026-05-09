@@ -600,6 +600,23 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
 
     user_filter = _selected_entity_filter(ctx)
     if user_filter:
+        # selectedEntities uses pre-translation IDs; remap to state1 translated IDs via label.
+        label_to_new_id: dict[str, str] = {
+            str(e.get("label") or ""): str(e.get("id") or "")
+            for e in entities if isinstance(e, dict) and e.get("label") and e.get("id")
+        }
+        user_list_raw = list(ctx.inputs.get("userEntityList") or [])
+        old_to_new: dict[str, str] = {}
+        for entry in user_list_raw:
+            if not isinstance(entry, dict):
+                continue
+            old_id = str(entry.get("id") or "").strip()
+            label = str(entry.get("label") or "").strip()
+            new_id = label_to_new_id.get(label, "")
+            if old_id and new_id and old_id != new_id:
+                old_to_new[old_id] = new_id
+        if old_to_new:
+            user_filter = {old_to_new.get(eid, eid) for eid in user_filter}
         order = [eid for eid in order if eid in user_filter]
 
     causal_data = str(ctx.inputs.get("causalData") or "")

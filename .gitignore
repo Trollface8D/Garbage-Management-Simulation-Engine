@@ -34,3 +34,6 @@ resources/
 /.DS_Store
 data/
 .claude/
+code-workspace*/
+code-workspace*.zip
+judge_output/
