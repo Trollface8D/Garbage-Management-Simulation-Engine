@@ -261,20 +261,23 @@ def build_state1b_policy_outline_prompt(
     """
     entities_json = json.dumps({"entities": entities or []}, ensure_ascii=False)
     instructions = (
-        "Extract every enforcement rule that the current system ALREADY applies, as evidenced by "
-        "the causal data. Each rule must describe an existing causal mechanism — a condition the "
-        "system currently responds to and an action it currently takes. "
+        "Extract EVERY causal mechanism that the system exhibits, as evidenced by the causal data. "
+        "A causal mechanism is any condition-action pair — a condition the system currently responds "
+        "to and the action it currently takes. Include all types: enforcement rules, state "
+        "transitions, feedback responses, resource reactions, overflow/underflow handlers, and any "
+        "other behavior the causal data shows. Do NOT limit the number of policies — emit one entry "
+        "per distinct causal mechanism, however many that is. "
         "Do NOT propose improvements, corrections, or new behaviors. "
         "Describe the system as-is: what condition already triggers it, which entity already "
         "handles it, and what method that entity already performs. "
-        "For each rule, output one row: the observed trigger, the target entity (or 'environment'), "
-        "and a method name that reads as the entity's own behavior (not a policy label)."
+        "For each mechanism, output one entry: the observed trigger, the target entity "
+        "(or 'environment'), and a method name that reads as the entity's own behavior "
+        "(not a policy label)."
     )
     prompt = _assemble(
         [
             instructions,
             STATE1B_POLICY_OUTLINE_SCHEMA_TEXT,
-            _runtime("compact_output_policy"),
             "Entity list (output of State 1):\n" + entities_json,
             "Causal data:\n" + (causal_data or "").strip(),
         ]

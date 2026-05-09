@@ -10,6 +10,7 @@ status / SSE infrastructure can be reused without modification.
 
 from __future__ import annotations
 
+import difflib
 import json
 import logging
 import os
@@ -300,11 +301,35 @@ def _stage_state1_entity_list(ctx: StageContext) -> dict[str, Any]:
     }
 
 
+def _filter_causal_sp(causal_data: str) -> str:
+    """Remove classes with sentence_type == 'SP' (suggested policy) from causal JSON string."""
+    raw = causal_data.strip()
+    comment = ""
+    if raw.startswith("#"):
+        nl = raw.find("\n")
+        if nl != -1:
+            comment = raw[: nl + 1]
+            raw = raw[nl + 1 :]
+    try:
+        chunks = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return causal_data
+    if not isinstance(chunks, list):
+        return causal_data
+    for chunk in chunks:
+        if isinstance(chunk, dict) and isinstance(chunk.get("classes"), list):
+            chunk["classes"] = [
+                c for c in chunk["classes"]
+                if not (isinstance(c, dict) and c.get("sentence_type") == "SP")
+            ]
+    return comment + json.dumps(chunks, ensure_ascii=False)
+
+
 def _stage_state1b_policy_outline(ctx: StageContext) -> dict[str, Any]:
     ctx.raise_if_cancelled()
     state1 = ctx.stage_payload("state1_entity_list") or {}
     entities = state1.get("entities") or []
-    causal_data = str(ctx.inputs.get("causalData") or "")
+    causal_data = _filter_causal_sp(str(ctx.inputs.get("causalData") or ""))
     prompt, schema = prompts.build_state1b_policy_outline_prompt(causal_data, entities)
     parsed = _generate_json(ctx, "state1b_policy_outline", prompt, schema)
     if not isinstance(parsed, dict):
@@ -314,6 +339,7 @@ def _stage_state1b_policy_outline(ctx: StageContext) -> dict[str, Any]:
         policies = []
     valid_ids = {str(e.get("id") or "") for e in entities if isinstance(e, dict)}
     valid_ids.add("environment")
+    valid_ids_list = sorted(valid_ids)
     cleaned: list[dict[str, Any]] = []
     seen_rule_ids: set[str] = set()
     for entry in policies:
@@ -325,12 +351,22 @@ def _stage_state1b_policy_outline(ctx: StageContext) -> dict[str, Any]:
         if not rule_id or not target or not method or rule_id in seen_rule_ids:
             continue
         if target not in valid_ids:
-            logger.warning(
-                "[code_gen][state1b] dropping rule %r: target_entity_id %r not in entity list",
-                rule_id,
-                target,
-            )
-            continue
+            closest = difflib.get_close_matches(target, valid_ids_list, n=1, cutoff=0.5)
+            if closest:
+                logger.warning(
+                    "[code_gen][state1b] rule %r: target_entity_id %r not in entity list — corrected to %r",
+                    rule_id,
+                    target,
+                    closest[0],
+                )
+                target = closest[0]
+            else:
+                logger.warning(
+                    "[code_gen][state1b] dropping rule %r: target_entity_id %r not in entity list and no close match",
+                    rule_id,
+                    target,
+                )
+                continue
         seen_rule_ids.add(rule_id)
         cleaned.append(
             {
