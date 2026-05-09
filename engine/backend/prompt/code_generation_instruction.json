@@ -11,7 +11,11 @@
 
     "codegen_entity_object_output_hint": "Output raw Python class code only. Do NOT include markdown fences (```python), module-level imports unrelated to the class, file headers, comments explaining the task, or any prose. One class per response. Use the class name specified in the prompt exactly.",
 
-    "codegen_environment_output_hint": "Output raw Python class code only. No markdown fences, no prose. The environment class must import and reference all provided entity classes by name. Do not redefine entity logic — only integrate it.",
+    "codegen_environment_output_hint": "Output raw Python class code only. No markdown fences, no prose. The environment class receives entity instances at runtime via the constructor — do NOT import entity modules. Do not redefine entity logic — only integrate it.",
+
+    "codegen_entity_constructor_defaults_policy": "CONSTRUCTOR DEFAULT VALUES RULE:\nAll __init__ parameters beyond entity_object_id MUST have default values.\nThe runner instantiates every entity as EntityClass(entity_object_id) with no other\narguments. If required args are missing, the entity is silently dropped from the\nsimulation.\n\nWRONG (breaks instantiation):\n  def __init__(self, entity_object_id: str, capacity: float):\n  def __init__(self, entity_object_id: str, event_type: str, duration: float):\n\nCORRECT (always works):\n  def __init__(self, entity_object_id: str, capacity: float = 100.0):\n  def __init__(self, entity_object_id: str, event_type: str = \"general\", duration: float = 3600.0):\n\nEvery domain-specific parameter (capacity, route, rate, type, schedule, etc.) MUST\nhave a sensible numeric or string default. This is a hard contract.",
+
+    "codegen_environment_entity_access_policy": "ENTITY CLASS ACCESS RULE IN ENVIRONMENT:\nEntity classes are loaded dynamically via importlib at runtime. They CANNOT be\nimported by name into environment.py — any such import will either be ignored\n(inside TYPE_CHECKING blocks) or raise ImportError.\n\nDO NOT write:\n  from entities.entity_truck import Entity_Truck          # fails at runtime\n  if TYPE_CHECKING: from ... import Entity_Truck          # valid only for annotations\n  if isinstance(entity, Entity_Truck): ...               # NameError at runtime\n\nDO write:\n  if type(entity).__name__ == \"Entity_TrashTruck\": ...   # safe runtime check\n  if hasattr(entity, \"capacity\"): ...                    # duck-typing, preferred\n\nTYPE_CHECKING imports are valid ONLY for type annotations in method signatures\nand docstrings — NEVER use them in runtime if/elif/isinstance logic.",
 
     "codegen_policy_output_hint": "Output raw Python class code only. No markdown fences, no prose. The policy class must reference entity and environment classes by name. Do not redefine entity or environment logic — only implement behavior change rules.",
 
@@ -56,12 +60,13 @@
     "input_dependencies": ["causal_data", "entity_list_json", "already_generated_entities", "selected_template", "selected_metrics"],
     "output_schema_ref": "codegen_entity_object_output_hint",
     "note": "Generate one entity class per call. Caller is responsible for iterating over entity_list_json sorted by priority and passing already_generated_entities from prior iterations. Output file MUST be named entity_{entity_id}_{order}.py where entity_id is snake_case from State 1 and order is the zero-based iteration index. CRITICAL: Expose numeric state attributes with names matching the semantic concepts in selected_metrics.required_attrs (e.g., if metric references 'current_load', expose a self.current_load attribute that is numeric and updated in step()).",
-    "prompt": "Using the provided causal data, the selected template, and the metric requirements, generate the Python class for the entity with id '{entity_id}'.\n\nREQUIREMENT: This entity MUST expose numeric state attributes for metrics tracking.\nIf the metric list includes references to this entity (e.g., 'truck' entity referenced in\nmetric.required_attrs), map each semantic concept name to a concrete attribute.\n\nExamples of mapping concept → attribute:\n- metric concept 'current_load' → self.current_load = 0.0 (numeric)\n- metric concept 'queue_length' → self.queue_length = 0 (integer count)\n- metric concept 'total_processed' → self.total_processed = 0 (counter)\n\nThese attributes MUST be:\n1. Numeric (int or float)\n2. Updated in the step(self, dt, env) method as state evolves\n3. Named exactly as the metric guidance specifies (not transformed, not suffixed)\n\nFollow the entity naming convention strictly: the class name MUST be 'Entity_{EntityIdInPascalCase}'\nderived from the entity id. All entities MUST include a step(self, dt, env) method (may be pass\nfor passive entities). Define all attributes and methods implied by the causal data.\nUse already_generated_entities for interface consistency only — do not repeat their code.\nApply the template routing policy to confirm the correct template is in use.",
+    "prompt": "Using the provided causal data, the selected template, and the metric requirements, generate the Python class for the entity with id '{entity_id}'.\n\nREQUIREMENT: This entity MUST expose numeric state attributes for metrics tracking.\nIf the metric list includes references to this entity (e.g., 'truck' entity referenced in\nmetric.required_attrs), map each semantic concept name to a concrete attribute.\n\nExamples of mapping concept → attribute:\n- metric concept 'current_load' → self.current_load = 0.0 (numeric)\n- metric concept 'queue_length' → self.queue_length = 0 (integer count)\n- metric concept 'total_processed' → self.total_processed = 0 (counter)\n\nThese attributes MUST be:\n1. Numeric (int or float)\n2. Updated in the step(self, dt, env) method as state evolves\n3. Named exactly as the metric guidance specifies (not transformed, not suffixed)\n\nFollow the entity naming convention strictly: the class name MUST be 'Entity_{EntityIdInPascalCase}'\nderived from the entity id. All entities MUST include a step(self, dt, env) method (may be pass\nfor passive entities). Define all attributes and methods implied by the causal data.\nUse already_generated_entities for interface consistency only — do not repeat their code.\nApply the template routing policy to confirm the correct template is in use.\nApply the constructor defaults policy: every __init__ parameter beyond entity_object_id MUST have a default value.",
     "assembled_prompt_parts": [
       "state2_code_entity_object.prompt",
       "codegen_metric_attribute_exposure",
       "codegen_entity_naming_convention",
       "codegen_entity_step_method_requirement",
+      "codegen_entity_constructor_defaults_policy",
       "codegen_template_routing_policy",
       "codegen_accumulation_policy",
       "codegen_entity_object_output_hint",
@@ -74,11 +79,12 @@
     "input_dependencies": ["code_entity_list", "extracted_node_json", "causal_data"],
     "output_schema_ref": "codegen_environment_output_hint",
     "note": "extracted_node_json must conform to the map_extract node schema. If unavailable, apply codegen_fallback_map_policy.",
-    "prompt": "Using the provided entity classes, extracted map node JSON, and causal data, generate the Environment Python class. Use node id, label, type, and coordinate fields from extracted_node_json to define spatial zones, entry points, and entity placement. Import and reference all entity classes by name. Do not re-implement entity logic.",
+    "prompt": "Using the provided entity classes, extracted map node JSON, and causal data, generate the Environment Python class. Use node id, label, type, and coordinate fields from extracted_node_json to define spatial zones, entry points, and entity placement. Do NOT import entity modules — entity instances are passed via the constructor at runtime. Use type(entity).__name__ or duck-typing (hasattr) to branch on entity type. Do not re-implement entity logic.",
     "assembled_prompt_parts": [
       "state3_code_environment.prompt",
       "codegen_map_input_policy",
       "codegen_fallback_map_policy",
+      "codegen_environment_entity_access_policy",
       "codegen_environment_output_hint",
       "compact_output_policy"
     ]
