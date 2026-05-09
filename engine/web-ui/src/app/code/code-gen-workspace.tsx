@@ -426,6 +426,7 @@ export default function CodeGenWorkspace({
         selectedPolicies: selectedPolicyPayload,
         selectedMetrics,
         userEntityList: pageEntities,
+        model: model.trim() || undefined,
         previewOnly: false,
         autoConfirm,
       });
