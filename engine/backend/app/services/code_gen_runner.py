@@ -261,24 +261,82 @@ def _wait_for_confirmation(ctx: "StageContext", stage: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+_TRANSLATE_IDS_PROMPT = """You are given a list of entity labels that may contain non-ASCII text (e.g. Thai).
+For each label, return an ASCII English snake_case identifier that best represents the concept.
+Translate non-ASCII labels to English. For already-ASCII labels, just normalise to snake_case.
+
+Input labels (JSON array of strings):
+{labels_json}
+
+Return ONLY a JSON object mapping each input label to its English snake_case id:
+{{"<original label>": "<english_snake_case_id>", ...}}
+
+Examples:
+- "ขยะ" -> "waste"
+- "รถขยะ" -> "garbage_truck"
+- "คนขับรถ" -> "driver"
+- "waste separation" -> "waste_separation"
+"""
+
+def _needs_translation(label: str) -> bool:
+    return bool(re.search(r'[^\x00-\x7F]', label))
+
+
+def _translate_entity_ids(
+    ctx: StageContext,
+    labels: list[str],
+) -> dict[str, str]:
+    """Call Gemini once to get English snake_case ids for any non-ASCII labels."""
+    non_ascii = [l for l in labels if _needs_translation(l)]
+    if not non_ascii:
+        return {}
+    prompt = _TRANSLATE_IDS_PROMPT.format(labels_json=json.dumps(non_ascii, ensure_ascii=False))
+    ctx.emit_stage_message("state1_entity_list", f"Translating {len(non_ascii)} non-ASCII entity label(s) to English ids…")
+    try:
+        result = _generate_json(ctx, "state1_translate_ids", prompt, None)
+    except Exception as exc:
+        logger.warning("[code_gen][state1] translation call failed: %s — falling back to slugs", exc)
+        return {}
+    if not isinstance(result, dict):
+        return {}
+    out: dict[str, str] = {}
+    for label, eng_id in result.items():
+        if not isinstance(eng_id, str):
+            continue
+        slug = eng_id.strip().lower()
+        slug = re.sub(r'[^a-z0-9]+', '_', slug).strip('_')
+        if slug:
+            out[label] = slug
+    return out
+
+
 def _stage_state1_entity_list(ctx: StageContext) -> dict[str, Any]:
     ctx.raise_if_cancelled()
     user_list = list(ctx.inputs.get("userEntityList") or [])
     if user_list:
         # User-curated list is source of truth — skip Gemini extraction.
+        # Non-ASCII labels (e.g. Thai) need their ids translated to English.
+        raw_labels = [str(entry.get("label") or entry.get("id") or "") for entry in user_list if isinstance(entry, dict)]
+        translations = _translate_entity_ids(ctx, raw_labels)
+
         cleaned: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
         for entry in user_list:
             if not isinstance(entry, dict):
                 continue
-            eid = str(entry.get("id") or "").strip()
+            label = str(entry.get("label") or "").strip()
+            # Use Gemini-translated id for non-ASCII labels; fall back to original id.
+            if label and _needs_translation(label) and label in translations:
+                eid = translations[label]
+            else:
+                eid = str(entry.get("id") or "").strip()
             if not eid or eid in seen_ids:
                 continue
             seen_ids.add(eid)
             cleaned.append(
                 {
                     "id": eid,
-                    "label": str(entry.get("label") or eid),
+                    "label": label or eid,
                     "type": str(entry.get("type") or "actor"),
                     "frequency": int(entry.get("frequency") or 0),
                 }
