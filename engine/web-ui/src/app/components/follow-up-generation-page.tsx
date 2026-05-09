@@ -339,6 +339,8 @@ function CausalCard({
   onTogglePanel,
   onGenerateForCausal,
   isGeneratingForCausal,
+  onDeleteForCausal,
+  isDeletingForCausal,
   answers,
   filterAnswers,
   onAnswerChange,
@@ -361,6 +363,8 @@ function CausalCard({
   onTogglePanel: () => void;
   onGenerateForCausal: () => void;
   isGeneratingForCausal: boolean;
+  onDeleteForCausal: () => void;
+  isDeletingForCausal: boolean;
   answers: Record<string, string>;
   filterAnswers: Record<string, string>;
   onAnswerChange: (question: string, answer: string) => void;
@@ -409,14 +413,24 @@ function CausalCard({
             </span>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={onGenerateForCausal}
-          disabled={isGeneratingForCausal}
-          className="inline-flex items-center rounded-md border border-emerald-600 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
-        >
-          {isGeneratingForCausal ? "Generating..." : "Generate question"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onDeleteForCausal}
+            disabled={isDeletingForCausal}
+            className="inline-flex items-center rounded-md border border-rose-600 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+          >
+            {isDeletingForCausal ? "Deleting..." : "Delete"}
+          </button>
+          <button
+            type="button"
+            onClick={onGenerateForCausal}
+            disabled={isGeneratingForCausal}
+            className="inline-flex items-center rounded-md border border-emerald-600 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+          >
+            {isGeneratingForCausal ? "Generating..." : "Generate question"}
+          </button>
+        </div>
       </div>
 
       <dl className="grid gap-3 md:grid-cols-2">
@@ -736,6 +750,7 @@ export default function FollowUpGenerationPage({
   model = "",
   runFilterInternetAnswerable = false,
 }: FollowUpGenerationPageProps) {
+  const [causalItems, setCausalItems] = useState<CausalItem[]>(initialCausalItems);
   const [generatedResults, setGeneratedResults] = useState<GeneratedQuestionsData[]>(() => toGeneratedResults(initialFollowUpRecords));
   const [questionIdsBySource, setQuestionIdsBySource] = useState<Record<string, Record<string, string>>>(() =>
     toQuestionIdMap(initialFollowUpRecords),
@@ -761,6 +776,7 @@ export default function FollowUpGenerationPage({
   const [derivedExtractionBySourceQuestion, setDerivedExtractionBySourceQuestion] = useState<DerivedExtractionBySourceQuestion>(
     () => toDerivedExtractionMap(initialFollowUpRecords),
   );
+  const [deletingSources, setDeletingSources] = useState<Set<string>>(() => new Set());
 
   const answersBySourceRef = useRef<Record<string, Record<string, string>>>(answersBySource);
   const questionIdsBySourceRef = useRef<Record<string, Record<string, string>>>(questionIdsBySource);
@@ -772,6 +788,10 @@ export default function FollowUpGenerationPage({
   const flushDraftNowRef = useRef<(reason: "blur" | "leave" | "submit") => void>(() => {});
 
   const hasGenerated = generatedResults.some((result) => result.generated_questions.length > 0);
+
+  useEffect(() => {
+    setCausalItems(initialCausalItems);
+  }, [initialCausalItems]);
 
   useEffect(() => {
     const hydratedResults = toGeneratedResults(initialFollowUpRecords);
@@ -816,11 +836,11 @@ export default function FollowUpGenerationPage({
 
   const visibleCausalItems = useMemo(() => {
     if (includeImplicit) {
-      return initialCausalItems.filter((item) => item.explicit_type.trim().toUpperCase() === "I");
+      return causalItems.filter((item) => item.explicit_type.trim().toUpperCase() === "I");
     }
 
-    return initialCausalItems;
-  }, [includeImplicit, initialCausalItems]);
+    return causalItems;
+  }, [causalItems, includeImplicit]);
 
   const generatedBySourceText = useMemo(() => {
     return new Map(generatedResults.map((result) => [result.source_text, result]));
@@ -859,6 +879,79 @@ export default function FollowUpGenerationPage({
     setFilterBasisAnswersBySource(mergedAnswers);
     setDerivedExtractionBySourceQuestion(toDerivedExtractionMap(records));
     return records;
+  };
+
+  const buildCausalRefKey = (ref?: { head: string; relationship: string; tail: string; detail: string }): string => {
+    if (!ref) {
+      return "";
+    }
+
+    return [ref.head || "", ref.relationship || "", ref.tail || "", ref.detail || ""].join("||");
+  };
+
+  const normalizeValue = (value?: string | null): string => (value ?? "").trim();
+
+  const areExtractedRelationsEqual = (left: CausalItem["extracted"], right: CausalItem["extracted"]): boolean => {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    for (let index = 0; index < left.length; index += 1) {
+      const leftRelation = left[index];
+      const rightRelation = right[index];
+      if (!rightRelation) {
+        return false;
+      }
+
+      if (
+        normalizeValue(leftRelation.head) !== normalizeValue(rightRelation.head) ||
+        normalizeValue(leftRelation.relationship) !== normalizeValue(rightRelation.relationship) ||
+        normalizeValue(leftRelation.tail) !== normalizeValue(rightRelation.tail) ||
+        normalizeValue(leftRelation.detail) !== normalizeValue(rightRelation.detail)
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const doesClassMatchCausal = (
+    classItem: { pattern_type: string; sentence_type: string; marked_type: string; explicit_type: string; marker: string | null; source_text: string; extracted: CausalItem["extracted"]; },
+    causal: CausalItem,
+  ): boolean => {
+    if (
+      normalizeValue(classItem.pattern_type) !== normalizeValue(causal.pattern_type) ||
+      normalizeValue(classItem.sentence_type) !== normalizeValue(causal.sentence_type) ||
+      normalizeValue(classItem.marked_type) !== normalizeValue(causal.marked_type) ||
+      normalizeValue(classItem.explicit_type) !== normalizeValue(causal.explicit_type) ||
+      normalizeValue(classItem.marker) !== normalizeValue(causal.marker) ||
+      normalizeValue(classItem.source_text) !== normalizeValue(causal.source_text)
+    ) {
+      return false;
+    }
+
+    return areExtractedRelationsEqual(classItem.extracted ?? [], causal.extracted ?? []);
+  };
+
+  const flattenCausalItems = (rawExtraction: Array<{ chunk_label: string; classes: Array<{ pattern_type: string; sentence_type: string; marked_type: string; explicit_type: string; marker: string; source_text: string; extracted: CausalItem["extracted"]; }> }>): CausalItem[] => {
+    return rawExtraction.flatMap((payload) =>
+      (payload.classes ?? []).map((item) => ({
+        chunk_label: payload.chunk_label,
+        pattern_type: item.pattern_type,
+        sentence_type: item.sentence_type,
+        marked_type: item.marked_type,
+        explicit_type: item.explicit_type,
+        marker: item.marker ?? null,
+        source_text: item.source_text,
+        extracted: (item.extracted ?? []).map((relation) => ({
+          head: relation.head,
+          relationship: relation.relationship,
+          tail: relation.tail,
+          detail: relation.detail ?? "",
+        })),
+      })),
+    );
   };
 
   const refreshFilterSnapshot = () => {
@@ -1044,7 +1137,7 @@ export default function FollowUpGenerationPage({
           generated_questions: [...current.generated_questions, nextQuestion],
         });
       } else {
-        const sourceCausal = initialCausalItems.find((item) => item.source_text === sourceText);
+        const sourceCausal = causalItems.find((item) => item.source_text === sourceText);
         bySource.set(sourceText, {
           source_text: sourceText,
           sentence_type: sourceCausal?.sentence_type ?? "",
@@ -1218,7 +1311,7 @@ export default function FollowUpGenerationPage({
       return currentIds;
     }
 
-    const sourceCausal = initialCausalItems.find((item) => item.source_text === sourceText);
+    const sourceCausal = causalItems.find((item) => item.source_text === sourceText);
     if (!sourceCausal) {
       throw new Error("Unable to map this causal source when saving custom questions.");
     }
@@ -1268,6 +1361,110 @@ export default function FollowUpGenerationPage({
     } catch (error) {
       // Log but don't throw - submission succeeded, this is just an extra update
       console.warn("Failed to update explicit_type after submission:", error);
+    }
+  };
+
+  const handleDeleteCausal = async (causal: CausalItem) => {
+    const shouldDelete = typeof window !== "undefined"
+      ? window.confirm("Delete this causal class from the database? This will also remove its follow-up records.")
+      : false;
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setDeletingSources((previous) => {
+      const next = new Set(previous);
+      next.add(causal.source_text);
+      return next;
+    });
+    setGenerationStatus("");
+
+    try {
+      const itemId = ensureExperimentItemId();
+      const artifacts = await loadCausalArtifactsForItem(itemId);
+
+      let removed = false;
+      const updatedRawExtraction = artifacts.raw_extraction
+        .map((payload) => {
+          const filteredClasses = (payload.classes ?? []).filter((classItem) => {
+            if (removed) {
+              return true;
+            }
+
+            if (doesClassMatchCausal(classItem, causal)) {
+              removed = true;
+              return false;
+            }
+
+            return true;
+          });
+
+          return {
+            ...payload,
+            classes: filteredClasses,
+          };
+        })
+        .filter((payload) => (payload.classes ?? []).length > 0);
+
+      if (!removed) {
+        setGenerationStatus("Unable to find this causal class in the database.");
+        return;
+      }
+
+      const refKey = buildCausalRefKey(toCausalRef(causal));
+      const updatedFollowUp = artifacts.follow_up.filter((record) => {
+        if (refKey) {
+          return buildCausalRefKey(record.causal_ref) !== refKey;
+        }
+
+        return normalizeValue(record.source_text) !== normalizeValue(causal.source_text);
+      });
+
+      await saveCausalArtifactsForItem({
+        experimentItemId: itemId,
+        rawExtraction: updatedRawExtraction,
+        followUp: updatedFollowUp,
+      });
+
+      const cleanedDraftAnswers = { ...answersBySourceRef.current };
+      delete cleanedDraftAnswers[causal.source_text];
+      writeFollowUpDraftToStorage(itemId, cleanedDraftAnswers);
+
+      setCausalItems(flattenCausalItems(updatedRawExtraction));
+      await reloadFollowUpRecords(itemId);
+
+      const sourceText = causal.source_text;
+      setOpenedPanels((previous) => {
+        const next = new Set(previous);
+        next.delete(sourceText);
+        return next;
+      });
+      setNewQuestionDraftBySource((previous) => {
+        const next = { ...previous };
+        delete next[sourceText];
+        return next;
+      });
+      setGroupSubmitStatus((previous) => {
+        const next = { ...previous };
+        delete next[sourceText];
+        return next;
+      });
+      setSubmittedSources((previous) => {
+        const next = new Set(previous);
+        next.delete(sourceText);
+        return next;
+      });
+      setGenerationStatus("Deleted causal class and related follow-up records.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete causal class.";
+      setGenerationStatus(message);
+    } finally {
+      setDeletingSources((previous) => {
+        const next = new Set(previous);
+        next.delete(causal.source_text);
+        return next;
+      });
     }
   };
 
@@ -1572,6 +1769,8 @@ export default function FollowUpGenerationPage({
                   onTogglePanel={() => toggleGeneratedPanel(causal.source_text)}
                   onGenerateForCausal={() => void handleGenerateForCausal(causal)}
                   isGeneratingForCausal={generatingSources.has(causal.source_text)}
+                  onDeleteForCausal={() => void handleDeleteCausal(causal)}
+                  isDeletingForCausal={deletingSources.has(causal.source_text)}
                   answers={sourceAnswers}
                   filterAnswers={sourceFilterAnswers}
                   onAnswerChange={(question, answer) => handleAnswerChange(causal.source_text, question, answer)}
