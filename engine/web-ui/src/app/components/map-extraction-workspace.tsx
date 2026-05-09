@@ -13,7 +13,6 @@ import {
   fetchMapExtractInputs,
   fetchMapExtractResult,
   fetchMapExtractStatusOnce,
-  initializeMapExtractJobWithFiles,
   resumeMapExtractJob,
 } from "@/lib/map-api-client";
 import { CaretIcon, ExportIcon, ImportIcon, TrashIcon } from "@/app/components/icons/common-icons";
@@ -1098,47 +1097,6 @@ export default function MapExtractionWorkspace({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, jobId]);
-
-  // Initialize a job immediately when files are first uploaded (Option B: Immediate Backend Upload)
-  // This persists files to the backend so they survive page refresh.
-  // Only runs once per unique set of files, and only if no job is already running.
-  useEffect(() => {
-    if (!hydrated || jobId || isExtracting || isResuming || isJobActive) {
-      return;
-    }
-    if (overviewFiles.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-    const run = async () => {
-      try {
-        const newJobId = await initializeMapExtractJobWithFiles(
-          componentId,
-          overviewFiles.map((entry) => entry.file),
-          binFiles.map((entry) => entry.file),
-        );
-        if (cancelled) {
-          return;
-        }
-        setJobId(newJobId);
-        setEditStatus("Files uploaded to backend for persistence. Ready for extraction.");
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        // Silently fail — files stay in local state, extraction can still proceed later
-        const message = error instanceof Error ? error.message : "Failed to upload files to backend";
-        console.warn(`[map-extraction-workspace] Job initialization failed: ${message}`);
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, overviewFiles.length]);
 
   const onPickOverviewFiles = (files: FileList | null) => {
     const picked = Array.from(files || []);
