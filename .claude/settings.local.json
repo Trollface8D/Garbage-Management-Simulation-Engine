@@ -8,7 +8,10 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(git apply *)"
+      "Bash(git apply *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk find *)",
+      "Bash(rtk ls *)"
     ]
   }
 }

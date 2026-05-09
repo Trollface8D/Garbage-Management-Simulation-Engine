@@ -8,7 +8,7 @@ import CodeGenWorkspace, { type ArtifactFile } from "@/app/code/code-gen-workspa
 import SimulationViewer from "@/app/code/simulation-viewer";
 import FloatingWorkspaceToolbar from "@/app/code/floating-workspace-toolbar";
 import EntityExtractionPanel, { type GeneratedEntity } from "@/app/code/entity-extraction-panel";
-import MetricsSelectionPanel, { type WorkspaceMetric } from "@/app/code/metrics-selection-panel";
+import { type WorkspaceMetric } from "@/app/code/metrics-selection-panel";
 import JsonImportHandler, {
     extractMapGraphPayload,
     inferImportItemCategory,
@@ -41,8 +41,6 @@ import {
     groupEntitiesWithGemini,
     exportWorkspaceArchive,
     importWorkspaceArchive,
-    suggestMetrics,
-    type SuggestedMetric,
     type CodeGenPolicyOutline,
 } from "@/lib/code-gen-api-client";
 import { renameComponent } from "@/lib/pm-storage";
@@ -154,8 +152,6 @@ export default function CodePage() {
     const [manualPolicies, setManualPolicies] = useState<CodeGenPolicyOutline[]>([]);
     const [manualEntityName, setManualEntityName] = useState<string>("");
     const [manualEntityError, setManualEntityError] = useState<string>("");
-    const [manualMetricName, setManualMetricName] = useState<string>("");
-    const [manualMetricError, setManualMetricError] = useState<string>("");
     const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([]);
 
     // Custom hooks for state management
@@ -193,15 +189,6 @@ export default function CodePage() {
         setMetrics,
         metricsExtracted,
         setMetricsExtracted,
-        metricsError,
-        setMetricsError,
-        isSuggestingMetrics,
-        metricsLog,
-        setMetricsLog,
-        handleSuggestMetrics: hookHandleSuggestMetrics,
-        handleCancelMetricsSuggest: hookHandleCancelMetricsSuggest,
-        handleToggleMetric,
-        handleAddManualMetric: hookHandleAddManualMetric,
     } = metricsHook;
 
     const {
@@ -525,11 +512,8 @@ export default function CodePage() {
 
         setManualEntityName("");
         setManualEntityError("");
-        setManualMetricName("");
-        setManualMetricError("");
         setExtractError("");
         setGroupError("");
-        setMetricsError("");
         setImportError("");
     };
 
@@ -627,50 +611,6 @@ export default function CodePage() {
         setManualEntityError("");
     };
 
-    const handleSuggestMetrics = () => {
-        const sourceEntities = entities.filter(
-            (e) => !(e.memberIds && e.memberIds.length > 0),
-        );
-        hookHandleSuggestMetrics(sourceEntities, selectedModel, isSuggestingMetrics, inputsLocked);
-    };
-
-    const handleCancelMetricsSuggest = () => {
-        hookHandleCancelMetricsSuggest();
-    };
-
-    const handleAddManualMetric = () => {
-        if (inputsLocked) return;
-        const trimmed = manualMetricName.trim();
-        if (!trimmed) {
-            setManualMetricError("Type a metric name first.");
-            return;
-        }
-        const exists = metrics.some(
-            (m) => m.name.toLowerCase() === trimmed.toLowerCase(),
-        );
-        if (exists) {
-            setManualMetricError(`"${trimmed}" is already in the list.`);
-            return;
-        }
-        const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-        const id = `metric-manual-${String(Date.now())}-${slug || "metric"}`;
-        const newMetric: WorkspaceMetric = {
-            id,
-            name: slug || `metric_${String(Date.now())}`,
-            label: trimmed,
-            unit: "",
-            agg: "count",
-            entities: [],
-            viz: "line",
-            rationale: "(manual)",
-            selected: true,
-        };
-        setMetrics((prev) => [...prev, newMetric]);
-        setMetricsExtracted(true);
-        setManualMetricName("");
-        setManualMetricError("");
-    };
-
     const handleToggleCausalSelection = (id: string) => {
         if (inputsLocked) return;
         hookHandleToggleCausalSelection(id, inputsLocked, () => {
@@ -723,13 +663,6 @@ export default function CodePage() {
         } else if (selectedEntities.length === 0) {
             missing.push("Select at least one entity in the entity list.");
         }
-        if (!metricsExtracted || metrics.length === 0) {
-            missing.push(
-                'Generate or manually add metrics in the "Metric to be tracked" section.',
-            );
-        } else if (selectedMetrics.length === 0) {
-            missing.push("Select at least one metric in the metric list.");
-        }
         console.info("[code-gen] missing requirements", missing);
         return missing;
     }, [
@@ -737,9 +670,6 @@ export default function CodePage() {
         selectedMapId,
         isExtracted,
         selectedEntities,
-        metricsExtracted,
-        metrics,
-        selectedMetrics,
     ]);
 
     const resolveProjectIdForCreate = (): string | null => {
@@ -1284,26 +1214,6 @@ export default function CodePage() {
                             })
                         }
                         onModelChange={setSelectedModel}
-                    />
-
-                    <MetricsSelectionPanel
-                        metrics={metrics}
-                        isExtracted={isExtracted}
-                        isSuggestingMetrics={isSuggestingMetrics}
-                        metricsError={metricsError}
-                        metricsLog={metricsLog}
-                        inputsLocked={inputsLocked}
-                        manualMetricName={manualMetricName}
-                        manualMetricError={manualMetricError}
-                        selectedEntityCount={selectedEntities.length}
-                        selectedModel={selectedModel}
-                        onModelChange={setSelectedModel}
-                        onSuggestMetrics={handleSuggestMetrics}
-                        onCancelMetricsSuggest={handleCancelMetricsSuggest}
-                        onToggleMetric={handleToggleMetric}
-                        onAddManualMetric={handleAddManualMetric}
-                        onUpdateManualMetricName={setManualMetricName}
-                        onClearMetricsLog={() => setMetricsLog([])}
                     />
 
                     <CodeGenWorkspace
