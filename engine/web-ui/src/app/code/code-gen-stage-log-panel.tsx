@@ -507,7 +507,9 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                         <p className="wrap-break-word text-neutral-300">{progressMsg}</p>
                       ) : null}
 
-                      {status === "awaiting_confirmation" && entry.key === awaitingConfirmationStage ? (
+                      {status === "awaiting_confirmation" &&
+                      entry.key === awaitingConfirmationStage &&
+                      entry.key !== "state1d_metrics_draft" ? (
                         <div className="rounded-md border border-yellow-700/60 bg-yellow-500/10 p-3 space-y-2">
                           <p className="text-xs font-semibold text-yellow-200">
                             Waiting for confirmation before running {entry.label}

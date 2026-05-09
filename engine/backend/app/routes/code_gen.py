@@ -400,6 +400,11 @@ def update_job_metrics(job_id: str, payload: dict[str, Any] = Body(default_facto
     user-curated metric selection before confirming.
     """
     selected_metrics = list(payload.get("selectedMetrics") or [])
+    # # TEMP DEBUG: Remove this log after verifying metrics confirmation flow.
+    # print(
+    #     f"[code_gen][metrics] job_id={job_id} selected_metrics_count={len(selected_metrics)} selected_metrics={selected_metrics}",
+    #     flush=True,
+    # )
     try:
         checkpoints.update_selected_metrics(job_id, selected_metrics)
     except FileNotFoundError:
