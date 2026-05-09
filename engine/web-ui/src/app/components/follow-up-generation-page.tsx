@@ -5,6 +5,8 @@ import {
   loadFollowUpRecordsForItem,
   saveFollowUpAnswersForItem,
   saveFollowUpQuestionsForItem,
+  loadCausalArtifactsForItem,
+  saveCausalArtifactsForItem,
   type FollowUpRecord,
 } from "@/lib/pm-storage";
 
@@ -52,6 +54,41 @@ type FollowUpDraftPayload = {
 
 const DRAFT_SYNC_THRESHOLD = 3;
 const DRAFT_SYNC_DEBOUNCE_MS = 800;
+
+const PATTERN_TYPE_LABELS: Record<string, string> = {
+  C: "Causal",
+  A: "Action",
+  F: "Fact/Behavior",
+};
+
+const SENTENCE_TYPE_LABELS: Record<string, string> = {
+  SB: "System Behavior",
+  ES: "Environment Setting",
+  OT: "Optimization Target",
+  SP: "Suggest Policy",
+  D: "Define",
+  NR: "Not Related/Other",
+};
+
+const MARKED_TYPE_LABELS: Record<string, string> = {
+  M: "Marked",
+  U: "Unmarked",
+  "N/A": "Not Applicable",
+};
+
+const EXPLICIT_TYPE_LABELS: Record<string, string> = {
+  E: "Explicit",
+  I: "Implicit",
+};
+
+const formatCodeWithMeaning = (value: string, labels: Record<string, string>) => {
+  const trimmed = value.trim();
+  const label = labels[trimmed];
+  if (!label) {
+    return value;
+  }
+  return `${trimmed} (${label})`;
+};
 
 function getFollowUpDraftStorageKey(experimentItemId?: string): string | null {
   const itemId = (experimentItemId || "").trim();
@@ -385,19 +422,27 @@ function CausalCard({
       <dl className="grid gap-3 md:grid-cols-2">
         <div>
           <dt className="text-xs uppercase tracking-wide text-neutral-400">pattern_type</dt>
-          <dd className="mt-1 font-semibold text-neutral-100">{causal.pattern_type}</dd>
+          <dd className="mt-1 font-semibold text-neutral-100">
+            {formatCodeWithMeaning(causal.pattern_type, PATTERN_TYPE_LABELS)}
+          </dd>
         </div>
         <div>
           <dt className="text-xs uppercase tracking-wide text-neutral-400">sentence_type</dt>
-          <dd className="mt-1 font-semibold text-neutral-100">{causal.sentence_type}</dd>
+          <dd className="mt-1 font-semibold text-neutral-100">
+            {formatCodeWithMeaning(causal.sentence_type, SENTENCE_TYPE_LABELS)}
+          </dd>
         </div>
         <div>
           <dt className="text-xs uppercase tracking-wide text-neutral-400">marked_type</dt>
-          <dd className="mt-1 font-semibold text-neutral-100">{causal.marked_type}</dd>
+          <dd className="mt-1 font-semibold text-neutral-100">
+            {formatCodeWithMeaning(causal.marked_type, MARKED_TYPE_LABELS)}
+          </dd>
         </div>
         <div>
           <dt className="text-xs uppercase tracking-wide text-neutral-400">explicit_type</dt>
-          <dd className="mt-1 font-semibold text-neutral-100">{causal.explicit_type}</dd>
+          <dd className="mt-1 font-semibold text-neutral-100">
+            {formatCodeWithMeaning(causal.explicit_type, EXPLICIT_TYPE_LABELS)}
+          </dd>
         </div>
       </dl>
 
@@ -1196,6 +1241,36 @@ export default function FollowUpGenerationPage({
     return refreshedIds;
   };
 
+  const updateExplicitTypeAfterSubmission = async (itemId: string, sourceText: string) => {
+    try {
+      const artifacts = await loadCausalArtifactsForItem(itemId);
+      
+      // Update explicit_type from "I" to "E" for all classes with matching source_text
+      const updatedRawExtraction = artifacts.raw_extraction.map((record) => ({
+        ...record,
+        classes: record.classes.map((classItem) => {
+          if (classItem.source_text === sourceText && classItem.explicit_type.trim().toUpperCase() === "I") {
+            return {
+              ...classItem,
+              explicit_type: "E",
+            };
+          }
+          return classItem;
+        }),
+      }));
+
+      // Save the updated artifacts
+      await saveCausalArtifactsForItem({
+        experimentItemId: itemId,
+        rawExtraction: updatedRawExtraction,
+        followUp: artifacts.follow_up,
+      });
+    } catch (error) {
+      // Log but don't throw - submission succeeded, this is just an extra update
+      console.warn("Failed to update explicit_type after submission:", error);
+    }
+  };
+
   const handleSubmitGroup = async (sourceText: string, questions: string[]) => {
     if (questions.length === 0) {
       setGroupSubmitStatus((previous) => ({
@@ -1243,6 +1318,9 @@ export default function FollowUpGenerationPage({
       });
 
       await reloadFollowUpRecords(itemId);
+      
+      // Update explicit_type from "I" to "E" for submitted source_text
+      await updateExplicitTypeAfterSubmission(itemId, sourceText);
 
       for (const question of answeredQuestions) {
         dirtyAnswerKeysRef.current.delete(`${sourceText}||${question}`);
@@ -1335,6 +1413,12 @@ export default function FollowUpGenerationPage({
       });
 
       await reloadFollowUpRecords(itemId);
+
+      // Update explicit_type from "I" to "E" for all submitted source texts
+      const uniqueSourceTexts = new Set(answeredPairs.map((pair) => pair.sourceText));
+      for (const sourceText of uniqueSourceTexts) {
+        await updateExplicitTypeAfterSubmission(itemId, sourceText);
+      }
 
       for (const pair of answeredPairs) {
         dirtyAnswerKeysRef.current.delete(`${pair.sourceText}||${pair.question}`);

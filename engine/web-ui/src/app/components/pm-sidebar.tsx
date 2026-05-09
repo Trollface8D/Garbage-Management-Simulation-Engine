@@ -16,6 +16,8 @@ type NavItem = {
   badge?: number;
 };
 
+const THEME_STORAGE_KEY = "ui-theme";
+
 function NavLink({ href, label, badge, isActive }: NavItem & { isActive: boolean }) {
   return (
     <Link
@@ -39,6 +41,16 @@ export function PMSidebar() {
   const [recentCount, setRecentCount] = useState(0);
   const [trashCount, setTrashCount] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const nextTheme = saved === "light" || saved === "dark" ? saved : prefersDark ? "dark" : "light";
+
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+  }, []);
 
   useEffect(() => {
     const refresh = async () => {
@@ -74,6 +86,13 @@ export function PMSidebar() {
     ],
     [recentCount, trashCount],
   );
+
+  const toggleTheme = () => {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  };
 
   return (
     <aside
@@ -116,6 +135,22 @@ export function PMSidebar() {
           />
         ))}
       </nav>
+
+      <div
+        className={`mt-4 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-2 text-xs text-neutral-300 ${
+          isCollapsed ? "md:hidden" : ""
+        }`}
+      >
+        <span className="text-neutral-400">Theme</span>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] font-semibold text-neutral-200 transition hover:border-sky-500/70 hover:text-sky-200"
+          aria-label="Toggle light/dark theme"
+        >
+          {theme === "dark" ? "Dark" : "Light"}
+        </button>
+      </div>
 
       <div
         className={`mt-5 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 text-xs text-neutral-400 ${

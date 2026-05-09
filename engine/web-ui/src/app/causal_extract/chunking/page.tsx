@@ -371,7 +371,7 @@ function CausalExtractChunkingContent() {
     }, [blocks, componentId, initialItemId, selectedModel, selectedProjectId]);
 
     return (
-        <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+        <div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]">
             <main className="mx-auto w-full max-w-6xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
                 <CausalWorkflowHeader
                     title="Causal Extract - Chunking"
@@ -521,7 +521,7 @@ function CausalExtractChunkingContent() {
 
 export default function CausalExtractChunkingPage() {
     return (
-        <Suspense fallback={<div className="min-h-screen bg-[#1e1e1e] text-neutral-100" />}>
+        <Suspense fallback={<div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]" />}>
             <CausalExtractChunkingContent />
         </Suspense>
     );

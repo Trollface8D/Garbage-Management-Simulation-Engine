@@ -1,10 +1,11 @@
-import { type KeyboardEvent, useRef, useState } from "react";
-import { CausalCard, type CausalCardProps } from "@/app/components/causal-card";
+"use client";
 
-type UsedItemCardProps = {
+import { type KeyboardEvent, useRef, useState } from "react";
+
+export type CausalCardProps = {
   title: string;
-  project: string;
   lastEdited: string;
+  metaText: string;
   onDelete: () => void;
   selected?: boolean;
   onSelect?: () => void;
@@ -45,24 +46,25 @@ function FileTypeIcon() {
   );
 }
 
-function UsedItemCard({
+export function CausalCard({
   title,
-  project,
   lastEdited,
+  metaText,
   onDelete,
   selected,
   onSelect,
   onRename,
   isFullyExplicit,
   hasImplicit,
-}: UsedItemCardProps) {
+  implicitCount,
+}: CausalCardProps) {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(title);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const interactive = typeof onSelect === "function";
 
-  const startRename = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const startRename = (event: React.MouseEvent) => {
+    event.stopPropagation();
     setRenameValue(title);
     setRenaming(true);
     setTimeout(() => renameInputRef.current?.select(), 0);
@@ -75,6 +77,7 @@ function UsedItemCard({
     }
     setRenaming(false);
   };
+
   const baseClasses =
     "group overflow-hidden rounded-xl border bg-neutral-900/60 shadow-[0_0_0_1px_rgba(255,255,255,0.01)] transition duration-200 hover:scale-[1.02]";
   const selectedClasses = selected
@@ -83,16 +86,23 @@ function UsedItemCard({
   const cursorClass = interactive ? "cursor-pointer" : "";
 
   const handleClick = () => {
-    if (onSelect) onSelect();
+    if (onSelect) {
+      onSelect();
+    }
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (!onSelect) return;
+    if (!onSelect) {
+      return;
+    }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onSelect();
     }
   };
+
+  const implicitLabel =
+    typeof implicitCount === "number" ? `${implicitCount} implicit` : "Implicit";
 
   return (
     <article
@@ -114,13 +124,18 @@ function UsedItemCard({
                 ref={renameInputRef}
                 type="text"
                 value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
+                onChange={(event) => setRenameValue(event.target.value)}
                 onBlur={commitRename}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); commitRename(); }
-                  if (e.key === "Escape") { setRenaming(false); }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitRename();
+                  }
+                  if (event.key === "Escape") {
+                    setRenaming(false);
+                  }
                 }}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
                 className="flex-1 min-w-0 rounded border border-sky-600 bg-neutral-800 px-1.5 py-0.5 text-sm font-semibold text-neutral-100 focus:outline-none"
               />
             ) : (
@@ -135,25 +150,27 @@ function UsedItemCard({
                 aria-label={`Rename ${title}`}
               >
                 <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
-                  <path d="M11.013 1.427a1.75 1.75 0 0 1 2.475 2.474L5.91 11.48a2.25 2.25 0 0 1-.99.578l-2.68.728a.75.75 0 0 1-.912-.912l.727-2.68a2.25 2.25 0 0 1 .58-.99l7.378-7.377Zm1.414 1.06a.25.25 0 0 0-.354 0L4.695 9.865l-.55 2.024 2.025-.55 7.378-7.378a.25.25 0 0 0 0-.354l-1.12-1.12Z"/>
+                  <path d="M11.013 1.427a1.75 1.75 0 0 1 2.475 2.474L5.91 11.48a2.25 2.25 0 0 1-.99.578l-2.68.728a.75.75 0 0 1-.912-.912l.727-2.68a2.25 2.25 0 0 1 .58-.99l7.378-7.377Zm1.414 1.06a.25.25 0 0 0-.354 0L4.695 9.865l-.55 2.024 2.025-.55 7.378-7.378a.25.25 0 0 0 0-.354l-1.12-1.12Z" />
                 </svg>
               </button>
             )}
           </div>
           <p className="mt-1 text-xs text-neutral-400">Edited {lastEdited}</p>
-          <p className="mt-1 text-xs text-neutral-500">Project: {project}</p>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {isFullyExplicit && (
-              <span className="inline-flex rounded-full border border-emerald-600 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
-                Explicit
-              </span>
-            )}
-            {hasImplicit && (
-              <span className="inline-flex rounded-full border border-amber-600 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                Implicit
-              </span>
-            )}
-          </div>
+          <p className="mt-1 text-xs text-neutral-500">{metaText}</p>
+          {(isFullyExplicit || hasImplicit) && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {isFullyExplicit && (
+                <span className="inline-flex items-center rounded-full bg-emerald-900/30 px-2 py-1 text-xs font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/40">
+                  Explicit
+                </span>
+              )}
+              {hasImplicit && (
+                <span className="inline-flex items-center rounded-full bg-amber-900/30 px-2 py-1 text-xs font-medium text-amber-300 ring-1 ring-inset ring-amber-500/40">
+                  {implicitLabel}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <button
@@ -171,18 +188,3 @@ function UsedItemCard({
     </article>
   );
 }
-
-export function CausalUsedCard({ project, ...rest }: UsedItemCardProps) {
-  const causalProps: CausalCardProps = {
-    ...rest,
-    metaText: `Project: ${project}`,
-  };
-
-  return <CausalCard {...causalProps} />;
-}
-
-export function MapUsedCard(props: UsedItemCardProps) {
-  return <UsedItemCard {...props} />;
-}
-
-export type { UsedItemCardProps };

@@ -73,6 +73,41 @@ type DisplayExtractionPayload = ExtractionPayload & {
   sourceText?: string;
 };
 
+const PATTERN_TYPE_LABELS: Record<string, string> = {
+  C: "Causal",
+  A: "Action",
+  F: "Fact/Behavior",
+};
+
+const SENTENCE_TYPE_LABELS: Record<string, string> = {
+  SB: "System Behavior",
+  ES: "Environment Setting",
+  OT: "Optimization Target",
+  SP: "Suggest Policy",
+  D: "Define",
+  NR: "Not Related/Other",
+};
+
+const MARKED_TYPE_LABELS: Record<string, string> = {
+  M: "Marked",
+  U: "Unmarked",
+  "N/A": "Not Applicable",
+};
+
+const EXPLICIT_TYPE_LABELS: Record<string, string> = {
+  E: "Explicit",
+  I: "Implicit",
+};
+
+const formatCodeWithMeaning = (value: string, labels: Record<string, string>) => {
+  const trimmed = value.trim();
+  const label = labels[trimmed];
+  if (!label) {
+    return value;
+  }
+  return `${trimmed} (${label})`;
+};
+
 function buildSingleChunkPayload(selectedChunk: ChunkOption, classes: ExtractionClass[]): ExtractionPayload {
   return {
     chunk_label: selectedChunk.label,
@@ -631,7 +666,7 @@ function CausalExtractPageContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#1e1e1e] text-neutral-100">
+    <div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]">
       <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 lg:px-12">
         <CausalWorkflowHeader
           title="Causal Extraction Section"
@@ -763,19 +798,27 @@ function CausalExtractPageContent() {
                           <dl className="grid gap-3 md:grid-cols-2">
                             <div>
                               <dt className="text-xs uppercase tracking-wide text-neutral-400">pattern_type</dt>
-                              <dd className="mt-1 font-semibold text-neutral-100">{item.pattern_type}</dd>
+                              <dd className="mt-1 font-semibold text-neutral-100">
+                                {formatCodeWithMeaning(item.pattern_type, PATTERN_TYPE_LABELS)}
+                              </dd>
                             </div>
                             <div>
                               <dt className="text-xs uppercase tracking-wide text-neutral-400">sentence_type</dt>
-                              <dd className="mt-1 font-semibold text-neutral-100">{item.sentence_type}</dd>
+                              <dd className="mt-1 font-semibold text-neutral-100">
+                                {formatCodeWithMeaning(item.sentence_type, SENTENCE_TYPE_LABELS)}
+                              </dd>
                             </div>
                             <div>
                               <dt className="text-xs uppercase tracking-wide text-neutral-400">marked_type</dt>
-                              <dd className="mt-1 font-semibold text-neutral-100">{item.marked_type}</dd>
+                              <dd className="mt-1 font-semibold text-neutral-100">
+                                {formatCodeWithMeaning(item.marked_type, MARKED_TYPE_LABELS)}
+                              </dd>
                             </div>
                             <div>
                               <dt className="text-xs uppercase tracking-wide text-neutral-400">explicit_type</dt>
-                              <dd className="mt-1 font-semibold text-neutral-100">{item.explicit_type}</dd>
+                              <dd className="mt-1 font-semibold text-neutral-100">
+                                {formatCodeWithMeaning(item.explicit_type, EXPLICIT_TYPE_LABELS)}
+                              </dd>
                             </div>
                           </dl>
 
@@ -874,19 +917,27 @@ function CausalExtractPageContent() {
                       <dl className="grid gap-3 md:grid-cols-2">
                         <div>
                           <dt className="text-xs uppercase tracking-wide text-neutral-400">pattern_type</dt>
-                          <dd className="mt-1 font-semibold text-neutral-100">{item.pattern_type}</dd>
+                          <dd className="mt-1 font-semibold text-neutral-100">
+                            {formatCodeWithMeaning(item.pattern_type, PATTERN_TYPE_LABELS)}
+                          </dd>
                         </div>
                         <div>
                           <dt className="text-xs uppercase tracking-wide text-neutral-400">sentence_type</dt>
-                          <dd className="mt-1 font-semibold text-neutral-100">{item.sentence_type}</dd>
+                          <dd className="mt-1 font-semibold text-neutral-100">
+                            {formatCodeWithMeaning(item.sentence_type, SENTENCE_TYPE_LABELS)}
+                          </dd>
                         </div>
                         <div>
                           <dt className="text-xs uppercase tracking-wide text-neutral-400">marked_type</dt>
-                          <dd className="mt-1 font-semibold text-neutral-100">{item.marked_type}</dd>
+                          <dd className="mt-1 font-semibold text-neutral-100">
+                            {formatCodeWithMeaning(item.marked_type, MARKED_TYPE_LABELS)}
+                          </dd>
                         </div>
                         <div>
                           <dt className="text-xs uppercase tracking-wide text-neutral-400">explicit_type</dt>
-                          <dd className="mt-1 font-semibold text-neutral-100">{item.explicit_type}</dd>
+                          <dd className="mt-1 font-semibold text-neutral-100">
+                            {formatCodeWithMeaning(item.explicit_type, EXPLICIT_TYPE_LABELS)}
+                          </dd>
                         </div>
                       </dl>
 
@@ -952,7 +1003,7 @@ function CausalExtractPageContent() {
 
 export default function CausalExtractPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#1e1e1e] text-neutral-100" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[var(--surface-0)] text-[var(--text-1)]" />}>
       <CausalExtractPageContent />
     </Suspense>
   );
