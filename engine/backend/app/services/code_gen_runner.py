@@ -203,12 +203,31 @@ def _resume_skip_completed(job: JobRecord) -> set[str]:
     checkpoint files. Stage-N is considered complete only if its summary file
     exists (per-iteration files alone are NOT enough — see docstring on
     ``code_gen_checkpoints.ITERATIVE_STAGES``).
+
+    Also infers which confirmation gates were already acknowledged: if a gate
+    stage is complete *and* a later stage also has a checkpoint on disk, the
+    gate must have been confirmed before the crash/import (downstream stages
+    cannot run without it).  This prevents re-engaging gates after a restart
+    or when resuming an imported workspace.
     """
     completed: set[str] = set()
-    for stage in checkpoints.STAGE_ORDER:
+    stage_list = list(checkpoints.STAGE_ORDER)
+    for stage in stage_list:
         if checkpoints.load_stage(job.job_id, stage) is not None:
             completed.add(stage)
     completed.update(job.completed_stages or [])
+
+    confirmed = set(job.confirmed_stages or [])
+    for i, stage in enumerate(stage_list):
+        if stage not in POST_RUN_CONFIRMATION_GATES:
+            continue
+        if stage not in completed or stage in confirmed:
+            continue
+        # Any later checkpoint means this gate was already passed.
+        if any(stage_list[j] in completed for j in range(i + 1, len(stage_list))):
+            confirmed.add(stage)
+    job.confirmed_stages = list(confirmed)
+
     return completed
 
 

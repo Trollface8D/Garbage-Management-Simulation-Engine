@@ -22,6 +22,7 @@ import {
 const POLL_INTERVAL_MS = 1500;
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "partial"]);
 // awaiting_confirmation is non-terminal — worker is alive, just gated.
+const ACTIVE_STATUSES = new Set(["running", "queued", "awaiting_confirmation"]);
 
 function createPreviewingStatus(jobId: string): CodeGenJobStatus {
   return {
@@ -124,6 +125,15 @@ export function useCodeGenJob(componentId?: string) {
                         window.clearInterval(pollTimerRef.current);
                         pollTimerRef.current = null;
                       }
+                      setStatus((prev) => {
+                        if (!prev || !ACTIVE_STATUSES.has(prev.status)) return prev;
+                        return {
+                          ...prev,
+                          status: "partial" as const,
+                          canResume: true,
+                          stageMessage: "Server unreachable — resume when server is back.",
+                        };
+                      });
                     }
                   })();
                 }, POLL_INTERVAL_MS);
@@ -131,6 +141,17 @@ export function useCodeGenJob(componentId?: string) {
             } catch (err) {
               setIsRestoringFromPersistence(false);
               if (wasActive) {
+                // Server still down on page reload — mark job as resumable so the
+                // Resume button appears once the backend restarts.
+                setStatus((prev) => {
+                  if (!prev || !ACTIVE_STATUSES.has(prev.status)) return prev;
+                  return {
+                    ...prev,
+                    status: "partial" as const,
+                    canResume: true,
+                    stageMessage: "Server unreachable — resume when server is back.",
+                  };
+                });
                 setError(err instanceof Error ? err.message : "Failed to resume polling.");
               }
               // For terminal statuses, silently ignore poll errors (server may be offline).
@@ -183,6 +204,29 @@ export function useCodeGenJob(componentId?: string) {
             setError(err instanceof Error ? err.message : "Status poll failed.");
             stopPolling();
             window.clearTimeout(stabilizeTimer);
+            // Recovery: server may have crashed. Attempt one re-fetch after 3 s —
+            // if backend restarted it returns "partial" from disk checkpoints,
+            // surfacing the Resume button. If still unreachable, optimistically
+            // mark as "partial" so the button appears and the user can retry.
+            window.setTimeout(() => {
+              void (async () => {
+                try {
+                  const recovered = await fetchCodeGenStatus(id);
+                  setStatus(recovered);
+                  setError(null);
+                } catch {
+                  setStatus((prev) => {
+                    if (!prev || !ACTIVE_STATUSES.has(prev.status)) return prev;
+                    return {
+                      ...prev,
+                      status: "partial" as const,
+                      canResume: true,
+                      stageMessage: "Server unreachable — resume when server is back.",
+                    };
+                  });
+                }
+              })();
+            }, 3000);
           }
         })();
       }, POLL_INTERVAL_MS);

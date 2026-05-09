@@ -440,7 +440,7 @@ def resume_code_gen_job(job_id: str):
                 status_code=404,
             )
         now = utc_now_iso()
-        job = JobRecord(job_id=job_id, status="queued", created_at=now, updated_at=now)
+        job = JobRecord(job_id=job_id, status="partial", created_at=now, updated_at=now)
         with JOBS_LOCK:
             JOBS[job_id] = job
 
@@ -470,10 +470,17 @@ def resume_code_gen_job(job_id: str):
         "autoConfirm": bool(manifest.get("autoConfirm", False)),
     }
 
+    # Restore completed_stages from disk so status polls reflect the correct
+    # progress while the worker iterates through the skip phase (otherwise the
+    # fresh JobRecord starts with completed_stages=[] and the stage log appears
+    # to reset until new stages finish).
+    disk_completed = [s for s in checkpoints.STAGE_ORDER if checkpoints.load_stage(job_id, s) is not None]
+
     with JOBS_LOCK:
         job.status = "queued"
         job.cancel_requested = False
         job.error = None
+        job.completed_stages = disk_completed
         job.updated_at = utc_now_iso()
 
     _spawn_worker(
