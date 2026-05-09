@@ -50,7 +50,7 @@ STAGE_ORDER: tuple[str, ...] = (
 )
 
 ITERATIVE_STAGES: frozenset[str] = frozenset(
-    {"state2_code_entity_object", "state4_code_policy"}
+    {"state2_code_entity_object", "state4_code_policy", "state5_policy_verify"}
 )
 
 ACCUMULATOR_FILE_DELIMITER = "# === FILE: {name} ==="

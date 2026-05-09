@@ -1364,12 +1364,14 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
         elif not passed:
             failed_count += 1
 
-        verification_results.append({
+        file_result = {
             "rule_id": rule_id,
             "passed": passed,
             "attempts": len(attempts),
             "fix_history": attempts,
-        })
+        }
+        verification_results.append(file_result)
+        checkpoints.save_iteration(ctx.job_id, "state5_policy_verify", rule_id, file_result)
 
     return {
         "stage": "state5_policy_verify",
