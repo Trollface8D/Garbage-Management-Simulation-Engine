@@ -276,7 +276,7 @@ export default function CodePage() {
         return selectedComponent.projectId;
     }, [selectedComponent]);
 
-    const projectBackHref = resolvedProjectId ? `/pm/${encodeURIComponent(resolvedProjectId)}` : "/";
+    const projectBackHref = resolvedProjectId ? `/pm/${encodeURIComponent(resolvedProjectId)}?category=Code` : "/";
 
     const selectedProjectName = useMemo(() => {
         if (!resolvedProjectId) {

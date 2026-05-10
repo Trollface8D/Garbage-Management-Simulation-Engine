@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { CausalCard } from "@/app/components/causal-card";
 import {
@@ -64,6 +64,7 @@ function getProjectName(projectId: string, projects: SimulationProject[]): strin
 
 export default function ProjectDashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
   const [projects, setProjects] = useState<SimulationProject[]>([]);
@@ -73,6 +74,17 @@ export default function ProjectDashboardPage() {
   const [causalExplicitStatusByComponentId, setCausalExplicitStatusByComponentId] = useState<
     Record<string, { isFullyExplicit: boolean; hasImplicit: boolean; implicitCount: number }>
   >({});
+
+  const requestedCategory = useMemo(() => {
+    const raw = (searchParams.get("category") ?? "").trim();
+    if (!raw) {
+      return null;
+    }
+
+    return projectArtifactCategories.find(
+      (category) => category.toLowerCase() === raw.toLowerCase(),
+    ) ?? null;
+  }, [searchParams]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -91,6 +103,12 @@ export default function ProjectDashboardPage() {
 
     void loadData();
   }, []);
+
+  useEffect(() => {
+    if (requestedCategory) {
+      setActiveFilter(requestedCategory);
+    }
+  }, [requestedCategory]);
 
   useEffect(() => {
     const loadCausalStatus = async () => {
