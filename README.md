@@ -460,62 +460,103 @@ The architecture supports it: policies are independently swappable classes; the 
 
 ## 5. Evaluation Results
 
-### Causal Extraction — LLM-as-Judge
+### Causal Extraction — Human-Labelled (Experiment 1)
 
-Causal extraction quality was evaluated using a Gemini-based LLM judge operating on extraction outputs against source transcripts.
+N = 18 test cases evaluated across four metrics (1–5 scale).
 
-Evaluation rubric: 1 (completely wrong) → 5 (flawless), assessing completeness of extracted causal triples against ground truth.
+> **Reference:** `docs/Final_report__VIP_.pdf` §3.5.1 (p. 25–32)
 
-> **Reference:** `docs/Final_report__VIP_.pdf` pages 25–32
+| Metric | Mean | Description |
+|---|---|---|
+| Semantic Fidelity (SF) | **4.22 / 5** | Core causal logic preserved; 14/18 perfect |
+| Schema Accuracy (SA) | **4.89 / 5** | pattern/sentence/marked types correct; 17/18 cases |
+| Explicit Accuracy (EA) | **4.89 / 5** | Explicit vs Implicit label correct |
+| Structural Integrity (SI) | **~4+ / 5** | Subject–object directionality; 13/18 perfect |
 
-The Streamlit evaluator UI (`Experiment/causal_extraction/`) supports human labelling of extraction outputs alongside the LLM judge, enabling comparison of human vs automated quality ratings.
+**Sample results:**
+
+| Causal ID | SF/SA/EA/SI | Note |
+|---|---|---|
+| 14 | 5/5/5/5 | Clean directed extraction |
+| 11 | 5/5/5/5 | Implicit implicit handled correctly |
+| 7  | 1/5/5/1 | Passive voice → fatal direction reversal |
+| 12 | 1/3/3/1 | Failed to link action to correct entity |
+
+**Failure modes:** passive-voice constructions and compound noun boundaries caused simultaneous drops in SF and SI. Pronoun resolution ("We", "it") caused minor instability in 10/18.
+
+Evaluator UI: `Experiment/causal_extraction/visualize/visualize.py` — supports side-by-side human labelling.
 
 ---
 
-### Follow-Up Question — LLM-as-Judge
+### Follow-Up Question Generation — Human-Labelled (Experiment 2)
 
-Follow-up question generation was evaluated for relevance, groundedness, and coverage of unstated causal paths.
+> **Reference:** `docs/Final_report__VIP_.pdf` §3.5.2 (p. 33–38)
 
-> **Reference:** `docs/Final_report__VIP_.pdf` pages 33–38
+Three-metric rubric (each 1–3): **Relativeness** (subject/object specificity) · **Explicit Conversion** (depth of implicit→explicit probe) · **Hallucination Resistance** (no invented facts).
 
-Experiment outputs are in [`Experiment/follow-up_question/`](Experiment/follow-up_question/).
+**Phase 1 — Slot-Filling Prompt** (N = 18 inputs, 54 questions):
+
+| Metric | Score |
+|---|---|
+| Mean aggregate | **8.05 / 9.00** |
+
+Limitation: mandating 3 questions per input regardless of explicitness produced redundant queries for `explicit_type = E` records (e.g., _"Is this result deterministic?"_ for an already-explicit relation) and occasionally logically infeasible questions.
+
+**Phase 2 — Conditional Logic Strategy:**
+
+Success defined by elimination of Phase 1 failure modes, not a new numeric baseline.
+
+| Outcome | Result |
+|---|---|
+| Redundant questions for explicit relations | Eliminated (no output generated when `explicit_type = E`) |
+| Reviewer workload | Reduced — questions generated only for `I` (Implicit) records |
+| Token consumption | Reduced — skipped ~50% of inputs |
+
+Experiment outputs: [`Experiment/follow-up_question/`](Experiment/follow-up_question/)
 
 ---
 
 ### Code Generation — LLM-as-Judge (Two-Pass)
 
-Generated entity and policy code is evaluated using a two-pass LLM judge methodology. See [`docs/generated_code_evaluation_method.md`](docs/generated_code_evaluation_method.md) for the full specification.
+Two-pass Gemini judge. Full methodology: [`docs/generated_code_evaluation_method.md`](docs/generated_code_evaluation_method.md)
 
-**Pass 1 — Entity Interface Audit:**
-Each entity is scored 0–3 for interface completeness *in context of its associated policies*. An entity is correct when its state attributes, policy-callable methods, `on_query()` return values, and `on_interact()` action handlers all match what the associated policies expect.
+**Pass 1** scores each entity 0–3 for interface completeness against associated policies. **Pass 2** audits three-way contracts (policy ↔ FROM entity ↔ TO entity) for flagged edges.
 
-| Score | Label | Meaning |
-|---|---|---|
-| 3 | Complete interface | All policy-callable methods correct; `on_query()` complete; state well-initialised |
-| 2 | Mostly present | Minor attrs missing |
-| 1 | Broken interface | Key methods missing — policies will fail at runtime |
-| 0 | Hollow stub | No usable interface |
+**Run comparison:**
 
-**Pass 2 — Policy–Entity Contract Audit:**
-Edges with `behavior_score ≤ threshold` are audited as three-way contracts: policy ↔ FROM entity ↔ TO entity. The judge checks method call consistency, attribute key alignment, and type compatibility.
+| Run | Data | Model | Causal Type | Pass 1 Result | Pass 2 Result |
+|---|---|---|---|---|---|
+| Run 1 | Incomplete Note | gemini-2.5-flash | Implicit | 9/19 pass (47%) · 5 Warn · 5 Fail · avg 2.11/3 (70.33%) | 1/23 (4%) |
+| Run 2 | Note + Interview | gemini-2.5-pro | Implicit | 15/20 pass (75%) · 1 Warn · 4 Fail · avg 2.55/3 (85.00%) | 5/12 (42%) |
+| Run 3 | Note + Interview | gemini-2.5-pro | Explicit | — | — |
+
+**Causal claim coverage** (how many causal triples from extraction are reflected in generated entity/policy code):
+
+| Run | FOUND | PARTIAL | MISSING | Total Claims |
+|---|---|---|---|---|
+| Run 1 | 49% | 10% | 41% | 153 |
+| Run 2 | 79% | 7% | 14% | 72 |
+
+**Takeaways:**
+- More input data (note + interview vs note-only) improves Pass 1 pass rate by 28pp and causal coverage by 30pp.
+- `gemini-2.5-pro` over `gemini-2.5-flash` improves entity interface alignment.
+- Pass 2 (policy–entity contract) remains low across runs — primary failure is method-name mismatches between generated policies and entity interfaces; no causal data directly addresses this.
 
 **Evaluation notebook:** [`Experiment/code_generation/entity_design/enitiy_code_verification/llm_judge.ipynb`](Experiment/code_generation/entity_design/enitiy_code_verification/llm_judge.ipynb)
 
-**Experiment runs** (saved workspaces with full checkpoint + artifact bundles):
+**Experiment workspace bundles:**
 
-| Run | Location |
+| Workspace | Location |
 |---|---|
-| newpipe1 | `enitiy_code_verification/judge_output/newpipe1/` |
-| newpipe2 | `enitiy_code_verification/judge_output/newpipe2/` |
-| newpipe3 (explicit) | `enitiy_code_verification/judge_output/newpipe3_explicit/` |
+| Run 1 (Incomplete Note / flash / Implicit) | `enitiy_code_verification/judge_output/newpipe1/` |
+| Run 2 (Note + Interview / pro / Implicit) | `enitiy_code_verification/judge_output/newpipe2/` |
+| Run 3 (Note + Interview / pro / Explicit) | `enitiy_code_verification/judge_output/newpipe3_explicit/` |
 
 ---
 
 ## 6. Future Work
 
 Several features are designed but not yet fully implemented. **Entity–map binding** (`state1d_entity_map_binding`) — which links `place` and `equipment` entity types to specific map nodes, enabling per-node instantiation and spatial traversal via Dijkstra shortest-path — is architecturally planned in [`docs/entity_map_binding.md`](docs/entity_map_binding.md) but the stage is not yet wired into the production pipeline. **Policy testing** (batch simulation runs with different policy configurations and outcome comparison) has no implementation yet; the simulation architecture supports it but the UI, batch runner, and results dashboard are missing. **Interactive simulation visualization** (graphical playback of time-stepped simulation, live entity state display) remains unbuilt; the current analytics layer only exports static metric tables for Power BI. **Directed edge support** in map traversal (currently Dijkstra treats edges as undirected) needs upstream changes in the map extraction pipeline to surface edge directionality. **Multi-map support** in code generation (currently limited to one map per job) is deferred to a future version where the `extracted_node_json` input becomes a `maps` array with per-map transforms.
-
-> **Contradiction flagged:** The intended desktop packaging is described as "nextron" (a Next.js + Electron framework). The current implementation uses **standard Electron** (`engine/desktop/`) with `electron-builder`, pointing at the compiled Next.js build. This is functionally equivalent but the codebase does **not** use the nextron CLI/framework. If nextron integration is planned, it has not been implemented yet.
 
 ---
 
