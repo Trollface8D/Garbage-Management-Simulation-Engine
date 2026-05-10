@@ -1007,6 +1007,8 @@ export default function FollowUpGenerationPage({
     setAnsweringQuestionKeys(new Set());
     setIsAnsweringSearchable(false);
     setIsAnsweringAll(false);
+    setGroupSubmitting(new Set());
+    setIsSubmittingAll(false);
 
     const initialSubmittedSources = new Set<string>();
     for (const record of initialFollowUpRecords) {
@@ -1823,19 +1825,64 @@ export default function FollowUpGenerationPage({
         })
         .filter((payload) => (payload.classes ?? []).length > 0);
 
+      let updatedFollowUp = artifacts.follow_up;
+
       if (!removed) {
-        setGenerationStatus("Unable to find this causal class in the database.");
-        return;
-      }
+        let removedDerived = false;
+        updatedFollowUp = artifacts.follow_up.map((record) => {
+          const nextQuestions = (record.questions ?? []).map((question) => {
+            const derived = Array.isArray(question.derived_causal) ? question.derived_causal : [];
+            if (derived.length === 0) {
+              return question;
+            }
 
-      const refKey = buildCausalRefKey(toCausalRef(causal));
-      const updatedFollowUp = artifacts.follow_up.filter((record) => {
-        if (refKey) {
-          return buildCausalRefKey(record.causal_ref) !== refKey;
+            const filteredDerived = derived.filter((row) =>
+              !doesClassMatchCausal({
+                pattern_type: row.pattern_type,
+                sentence_type: row.sentence_type,
+                marked_type: row.marked_type,
+                explicit_type: row.explicit_type,
+                marker: row.marker ?? null,
+                source_text: row.source_text,
+                extracted: (row.extracted ?? []).map((relation) => ({
+                  head: relation.head,
+                  relationship: relation.relationship,
+                  tail: relation.tail,
+                  detail: relation.detail ?? "",
+                })),
+              }, causal),
+            );
+
+            if (filteredDerived.length !== derived.length) {
+              removedDerived = true;
+            }
+
+            return {
+              ...question,
+              derived_causal: filteredDerived.length > 0 ? filteredDerived : undefined,
+            };
+          });
+
+          return {
+            ...record,
+            questions: nextQuestions,
+          };
+        });
+
+        if (!removedDerived) {
+          setGenerationStatus("Unable to find this causal class in the database.");
+          return;
         }
+      } else {
+        const refKey = buildCausalRefKey(toCausalRef(causal));
+        updatedFollowUp = artifacts.follow_up.filter((record) => {
+          if (refKey) {
+            return buildCausalRefKey(record.causal_ref) !== refKey;
+          }
 
-        return normalizeValue(record.source_text) !== normalizeValue(causal.source_text);
-      });
+          return normalizeValue(record.source_text) !== normalizeValue(causal.source_text);
+        });
+      }
 
       await saveCausalArtifactsForItem({
         experimentItemId: itemId,
@@ -1944,6 +1991,10 @@ export default function FollowUpGenerationPage({
   };
 
   const handleSubmitGroup = async (sourceText: string, questions: string[]) => {
+    if (groupSubmitting.has(sourceText)) {
+      return;
+    }
+
     if (questions.length === 0) {
       setGroupSubmitStatus((previous) => ({
         ...previous,
@@ -1952,7 +2003,7 @@ export default function FollowUpGenerationPage({
       return;
     }
 
-    const answers = answersBySource[sourceText] ?? {};
+    const answers = answersBySourceRef.current[sourceText] ?? {};
     const answeredQuestions = questions.filter((question) => (answers[question] ?? "").trim().length > 0);
     const unansweredCount = questions.length - answeredQuestions.length;
 
@@ -1970,6 +2021,10 @@ export default function FollowUpGenerationPage({
         next.add(sourceText);
         return next;
       });
+      setGroupSubmitStatus((previous) => ({
+        ...previous,
+        [sourceText]: "",
+      }));
       flushDraftNow("submit");
       const itemId = ensureExperimentItemId();
       const questionIds = await ensureQuestionIdsForSource(itemId, sourceText, questions);
@@ -2036,12 +2091,16 @@ export default function FollowUpGenerationPage({
   };
 
   const handleSubmitAllQA = async () => {
+    if (isSubmittingAll) {
+      return;
+    }
+
     if (!hasGenerated) {
       setAllSubmitStatus("No generated questions available to submit yet.");
       return;
     }
 
-    const qaPairs = generatedResults.flatMap((result) =>
+    const qaPairs = generatedResultsRef.current.flatMap((result) =>
       result.generated_questions.map((question) => ({
         sourceText: result.source_text,
         question,
@@ -2049,12 +2108,12 @@ export default function FollowUpGenerationPage({
     );
 
     const unansweredCount = qaPairs.filter(({ sourceText, question }) => {
-      const answer = answersBySource[sourceText]?.[question] ?? "";
+      const answer = answersBySourceRef.current[sourceText]?.[question] ?? "";
       return !answer.trim();
     }).length;
 
     const answeredPairs = qaPairs.filter(({ sourceText, question }) => {
-      const answer = answersBySource[sourceText]?.[question] ?? "";
+      const answer = answersBySourceRef.current[sourceText]?.[question] ?? "";
       return answer.trim().length > 0;
     });
 
@@ -2065,6 +2124,7 @@ export default function FollowUpGenerationPage({
 
     try {
       setIsSubmittingAll(true);
+      setAllSubmitStatus("");
       flushDraftNow("submit");
       const itemId = ensureExperimentItemId();
       const sourceToQuestions = new Map<string, string[]>();
@@ -2089,7 +2149,7 @@ export default function FollowUpGenerationPage({
           questionId,
           questionText: question,
           sourceText,
-          answerText: (answersBySource[sourceText]?.[question] ?? "").trim(),
+          answerText: (answersBySourceRef.current[sourceText]?.[question] ?? "").trim(),
           answeredBy: "user",
         };
       })
@@ -2337,6 +2397,14 @@ export default function FollowUpGenerationPage({
                 const sourceAnsweredCount = sourceQuestions.filter((question) => (sourceFilterAnswers[question] ?? "").trim().length > 0).length;
                 const sourceUnansweredCount = sourceQuestions.length - sourceAnsweredCount;
                 const uniqueKey = `${causal.source_text}__${causal.pattern_type}__${causal.sentence_type}__${index}`;
+                const isAddedToCausalStructure =
+                  submittedSources.has(causal.source_text) ||
+                  Object.keys(derivedExtractionBySourceQuestion[causal.source_text] ?? {}).length > 0;
+                const isImplicit = causal.explicit_type.trim().toUpperCase() === "I";
+
+                if (isImplicit && isAddedToCausalStructure) {
+                  return null;
+                }
 
                 return (
                   <CausalCard
@@ -2370,10 +2438,7 @@ export default function FollowUpGenerationPage({
                     answerFilterMode={answerFilterMode}
                     totalAnsweredCount={sourceAnsweredCount}
                     totalUnansweredCount={sourceUnansweredCount}
-                    isAddedToCausalStructure={
-                      submittedSources.has(causal.source_text) ||
-                      Object.keys(derivedExtractionBySourceQuestion[causal.source_text] ?? {}).length > 0
-                    }
+                    isAddedToCausalStructure={isAddedToCausalStructure}
                   />
                 );
               })}
