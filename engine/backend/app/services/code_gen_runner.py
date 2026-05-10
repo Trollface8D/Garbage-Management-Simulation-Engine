@@ -777,8 +777,9 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
 
     max_attempts = int(ctx.inputs.get("maxVerifyAttempts", 3))
     results: list[dict] = []
+    total = len(iterations)
 
-    for entry in iterations:
+    for index, entry in enumerate(iterations):
         ctx.raise_if_cancelled()
         entity_id = str(entry["iterId"])
         payload = checkpoints.load_iteration(ctx.job_id, "state2_code_entity_object", entity_id)
@@ -793,7 +794,7 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
         attempts: list[dict] = []
         passed = True
 
-        ctx.emit_stage_message("state2j_entity_judge", f"state2j: judging {entity_id}")
+        ctx.emit_stage_message("state2j_entity_judge", f"state2j: judging {entity_id} ({index + 1}/{total})")
 
         for attempt_num in range(max_attempts):
             ctx.raise_if_cancelled()

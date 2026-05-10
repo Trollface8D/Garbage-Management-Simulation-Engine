@@ -382,6 +382,7 @@ def save_inputs(
     model_name: str,
     use_env_model_overrides: bool,
     auto_confirm: bool = False,
+    max_verify_attempts: int = 3,
 ) -> None:
     """Persist inputs needed to re-run the pipeline without re-upload."""
     base = ensure_job_dir(job_id)
@@ -414,6 +415,7 @@ def save_inputs(
         "modelName": model_name,
         "useEnvModelOverrides": bool(use_env_model_overrides),
         "autoConfirm": bool(auto_confirm),
+        "maxVerifyAttempts": int(max_verify_attempts),
         "extraFiles": extra_manifest,
     }
     (base / "inputs.json").write_text(
