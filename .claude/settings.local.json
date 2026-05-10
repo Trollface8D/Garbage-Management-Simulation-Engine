@@ -17,7 +17,12 @@
       "Bash(git checkout *)",
       "Bash(python3 *)",
       "Bash(rtk wc *)",
-      "Bash(rtk tsc *)"
+      "Bash(rtk tsc *)",
+      "Bash(rtk read *)",
+      "Bash(xargs ls -1)",
+      "Bash(pdftoppm --version)",
+      "Bash(pdftotext /Users/rapepong/Development/kmutt/Garbage-Management-Simulation-Engine/docs/Final_report__VIP_.pdf -)",
+      "Bash(awk '/1\\\\.2 Objective/,/CHAPTER 2/')"
     ]
   }
 }

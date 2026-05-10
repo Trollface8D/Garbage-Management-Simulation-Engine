@@ -39,7 +39,7 @@ st.divider()
 if st.session_state.current_page == "extractor":
     st.markdown("## 📄 Data Extraction")
     try:
-        from extractor_page import show_extractor
+        from Experiment.Extraction.causal_extraction.page.extractor_page import show_extractor
         show_extractor()
     except ImportError as e:
         st.error(f"Could not load the extraction page: {e}")
@@ -47,7 +47,7 @@ if st.session_state.current_page == "extractor":
 elif st.session_state.current_page == "visualize":
     st.markdown("## 📊 Visualization & Validation")
     try:
-        from visualize_page import show_visualize
+        from Experiment.Extraction.causal_extraction.page.visualize_page import show_visualize
         show_visualize()
     except ImportError as e:
         st.error(f"Could not load the visualization page: {e}")
