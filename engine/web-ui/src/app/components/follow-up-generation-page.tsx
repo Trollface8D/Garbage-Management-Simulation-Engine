@@ -493,6 +493,7 @@ function CausalCard({
   totalUnansweredCount: number;
   isAddedToCausalStructure: boolean;
 }) {
+  const isExplicit = causal.explicit_type.trim().toUpperCase() === "E";
   const filteredQuestions = generatedQuestions.filter((question) => {
     const isAnswered = (filterAnswers[question] ?? "").trim().length > 0;
     if (answerFilterMode === "all") {
@@ -520,6 +521,11 @@ function CausalCard({
           <span className="inline-flex rounded-full border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-300">
             class {String(index + 1)}
           </span>
+          {isExplicit ? (
+            <span className="inline-flex rounded-full border border-sky-600/70 bg-sky-500/20 px-2 py-1 text-[11px] uppercase tracking-wide text-sky-200">
+              Explicit
+            </span>
+          ) : null}
           {isAddedToCausalStructure ? (
             <span className="inline-flex rounded-full border border-emerald-700 bg-emerald-500/20 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-200">
               Added to causal structure
@@ -936,6 +942,7 @@ export default function FollowUpGenerationPage({
   runFilterInternetAnswerable = false,
 }: FollowUpGenerationPageProps) {
   const [causalItems, setCausalItems] = useState<CausalItem[]>(initialCausalItems);
+  const [followUpRecords, setFollowUpRecords] = useState<FollowUpRecord[]>(initialFollowUpRecords);
   const [generatedResults, setGeneratedResults] = useState<GeneratedQuestionsData[]>(() => toGeneratedResults(initialFollowUpRecords));
   const [questionIdsBySource, setQuestionIdsBySource] = useState<Record<string, Record<string, string>>>(() =>
     toQuestionIdMap(initialFollowUpRecords),
@@ -987,6 +994,7 @@ export default function FollowUpGenerationPage({
   }, [initialCausalItems]);
 
   useEffect(() => {
+    setFollowUpRecords(initialFollowUpRecords);
     const hydratedResults = toGeneratedResults(initialFollowUpRecords);
     const serverAnswers = toAnswersMap(initialFollowUpRecords);
     const localDraft = readFollowUpDraftFromStorage(experimentItemId);
@@ -1041,15 +1049,15 @@ export default function FollowUpGenerationPage({
         })
       : causalItems.filter((item) => !submittedSources.has(item.source_text));
 
-    const derivedItems = toDerivedCausalItems(initialFollowUpRecords);
+    const derivedItems = toDerivedCausalItems(followUpRecords);
     return uniqueCausalItems([...baseItems, ...derivedItems]);
-  }, [causalItems, includeImplicit, initialFollowUpRecords, submittedSources]);
+  }, [causalItems, followUpRecords, includeImplicit, submittedSources]);
 
   const submittedArchiveGroups = useMemo(() => {
-    return initialFollowUpRecords.filter((record) =>
+    return followUpRecords.filter((record) =>
       (record.questions ?? []).some((question) => normalizeQuestionValue(question.answerText).length > 0),
     );
-  }, [initialFollowUpRecords]);
+  }, [followUpRecords]);
 
   const generatedBySourceText = useMemo(() => {
     return new Map(generatedResults.map((result) => [result.source_text, result]));
@@ -1115,6 +1123,7 @@ export default function FollowUpGenerationPage({
   };
 
   const applyFollowUpRecords = (records: FollowUpRecord[], rawExtraction?: FollowUpSubmitResponse["rawExtraction"]) => {
+    setFollowUpRecords(records);
     const hydratedResults = toGeneratedResults(records);
     const serverAnswers = toAnswersMap(records);
     const localDraft = readFollowUpDraftFromStorage(experimentItemId);
@@ -1152,29 +1161,38 @@ export default function FollowUpGenerationPage({
 
   const normalizeValue = (value?: string | null): string => (value ?? "").trim();
 
+  const buildRelationKey = (relation: CausalItem["extracted"][number]): string => [
+    normalizeValue(relation.head),
+    normalizeValue(relation.relationship),
+    normalizeValue(relation.tail),
+    normalizeValue(relation.detail),
+  ].join("||");
+
   const areExtractedRelationsEqual = (left: CausalItem["extracted"], right: CausalItem["extracted"]): boolean => {
     if (left.length !== right.length) {
       return false;
     }
 
-    for (let index = 0; index < left.length; index += 1) {
-      const leftRelation = left[index];
-      const rightRelation = right[index];
-      if (!rightRelation) {
+    const relationCounts = new Map<string, number>();
+    for (const relation of left) {
+      const key = buildRelationKey(relation);
+      relationCounts.set(key, (relationCounts.get(key) ?? 0) + 1);
+    }
+
+    for (const relation of right) {
+      const key = buildRelationKey(relation);
+      const nextCount = (relationCounts.get(key) ?? 0) - 1;
+      if (nextCount < 0) {
         return false;
       }
-
-      if (
-        normalizeValue(leftRelation.head) !== normalizeValue(rightRelation.head) ||
-        normalizeValue(leftRelation.relationship) !== normalizeValue(rightRelation.relationship) ||
-        normalizeValue(leftRelation.tail) !== normalizeValue(rightRelation.tail) ||
-        normalizeValue(leftRelation.detail) !== normalizeValue(rightRelation.detail)
-      ) {
-        return false;
+      if (nextCount === 0) {
+        relationCounts.delete(key);
+      } else {
+        relationCounts.set(key, nextCount);
       }
     }
 
-    return true;
+    return relationCounts.size === 0;
   };
 
   const doesClassMatchCausal = (
@@ -1185,7 +1203,6 @@ export default function FollowUpGenerationPage({
       normalizeValue(classItem.pattern_type) !== normalizeValue(causal.pattern_type) ||
       normalizeValue(classItem.sentence_type) !== normalizeValue(causal.sentence_type) ||
       normalizeValue(classItem.marked_type) !== normalizeValue(causal.marked_type) ||
-      normalizeValue(classItem.explicit_type) !== normalizeValue(causal.explicit_type) ||
       normalizeValue(classItem.marker) !== normalizeValue(causal.marker) ||
       normalizeValue(classItem.source_text) !== normalizeValue(causal.source_text)
     ) {
@@ -1943,11 +1960,15 @@ export default function FollowUpGenerationPage({
       const itemId = ensureExperimentItemId();
       const artifacts = await loadCausalArtifactsForItem(itemId);
 
-      let updated = false;
+      let matchedCount = 0;
+      let updatedCount = 0;
       const updatedRawExtraction = artifacts.raw_extraction.map((payload) => {
         const nextClasses = (payload.classes ?? []).map((classItem) => {
-          if (!updated && doesClassMatchCausal(classItem, causal)) {
-            updated = true;
+          if (doesClassMatchCausal(classItem, causal)) {
+            matchedCount += 1;
+            if (normalizeValue(classItem.explicit_type).toUpperCase() !== "E") {
+              updatedCount += 1;
+            }
             return {
               ...classItem,
               explicit_type: "E",
@@ -1963,21 +1984,90 @@ export default function FollowUpGenerationPage({
         };
       });
 
-      if (!updated) {
+      let matchedDerivedCount = 0;
+      let updatedDerivedCount = 0;
+      const updatedFollowUp = (artifacts.follow_up ?? []).map((record) => {
+        const nextQuestions = (record.questions ?? []).map((question) => {
+          if (!Array.isArray(question.derived_causal) || question.derived_causal.length === 0) {
+            return question;
+          }
+
+          let hasDerivedUpdate = false;
+          const nextDerived = question.derived_causal.map((row) => {
+            const derivedItem = {
+              pattern_type: row.pattern_type,
+              sentence_type: row.sentence_type,
+              marked_type: row.marked_type,
+              explicit_type: row.explicit_type,
+              marker: row.marker ?? null,
+              source_text: row.source_text,
+              extracted: (row.extracted ?? []).map((relation) => ({
+                head: relation.head,
+                relationship: relation.relationship,
+                tail: relation.tail,
+                detail: relation.detail ?? "",
+              })),
+            };
+
+            if (!doesClassMatchCausal(derivedItem, causal)) {
+              return row;
+            }
+
+            matchedDerivedCount += 1;
+            if (normalizeValue(row.explicit_type).toUpperCase() !== "E") {
+              updatedDerivedCount += 1;
+            }
+            hasDerivedUpdate = true;
+            return {
+              ...row,
+              explicit_type: "E",
+            };
+          });
+
+          return hasDerivedUpdate
+            ? {
+              ...question,
+              derived_causal: nextDerived,
+            }
+            : question;
+        });
+
+        return {
+          ...record,
+          questions: nextQuestions,
+        };
+      });
+
+      const totalMatches = matchedCount + matchedDerivedCount;
+      const totalUpdates = updatedCount + updatedDerivedCount;
+
+      if (totalMatches === 0) {
         setGenerationStatus("Unable to find this causal class in the database.");
+        return;
+      }
+
+      if (totalUpdates === 0) {
+        setGenerationStatus("Already marked explicit.");
         return;
       }
 
       await saveCausalArtifactsForItem({
         experimentItemId: itemId,
         rawExtraction: updatedRawExtraction,
-        followUp: artifacts.follow_up,
+        followUp: updatedFollowUp,
       });
 
-      setGenerationStatus("Marked causal class as explicit. Reloading...");
-      if (typeof window !== "undefined") {
-        window.location.reload();
-      }
+      const totalUpdatedLabel = `Marked ${String(totalUpdates)} causal class${totalUpdates === 1 ? "" : "es"} as explicit`;
+      const derivedLabel = updatedDerivedCount > 0
+        ? ` (including ${String(updatedDerivedCount)} follow-up derived class${updatedDerivedCount === 1 ? "" : "es"})`
+        : "";
+      setGenerationStatus(`${totalUpdatedLabel}${derivedLabel}.`);
+
+      const [nextArtifacts] = await Promise.all([
+        loadCausalArtifactsForItem(itemId),
+        reloadFollowUpRecords(itemId),
+      ]);
+      setCausalItems(flattenCausalItems(nextArtifacts.raw_extraction));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to mark causal as explicit.";
       setGenerationStatus(message);
