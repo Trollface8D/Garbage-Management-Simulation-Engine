@@ -273,21 +273,38 @@ Each stage is checkpointed independently; the job can resume from the last succe
 
 #### Data Schema
 
-The canonical data model for a code generation job input:
+Two schemas feed into code generation. Full field-by-field justification is in the dedicated docs below.
 
-```json
-{
-  "causalData":       "...",           // merged causal triples text
-  "entityList":       [...],           // entities from causal stage
-  "mapGraph": {
-    "nodes":          [...],           // from map extraction
-    "edges":          [...]
-  },
-  "userEntityList":   [...],           // user-confirmed entity selection
-  "policyConstraints": "...",          // user-authored policy intent
-  "metricContracts":  [...]            // expected simulation observables
-}
-```
+**Causal extraction record** — [`Experiment/causal_extraction/README.md`](Experiment/causal_extraction/README.md)
+
+Each source sentence yields one record with classification metadata and one or more atomic triples:
+
+| Field | Values | Purpose |
+|---|---|---|
+| `pattern_type` | `C` / `A` / `F` | Causal → becomes Policy; Action → entity method hint; Fact → initial state |
+| `sentence_type` | `SB ES OT SP D NR` | Filters what reaches code gen (`OT` → metrics; `SP` → policies; `NR` discarded) |
+| `marked_type` | `M` / `U` / `N/A` | Unmarked causal relations flagged for follow-up questions |
+| `explicit_type` | `E` / `I` | Implicit relations (`I`) are follow-up candidates |
+| `marker` | string | Exact connector word ("because", "results in"); required when `M` |
+| `source_text` | string | Original-language source; triples extracted to English |
+| `extracted[].head` | string | Single noun phrase — agent / cause |
+| `extracted[].relationship` | string | Verb clause — the causal link |
+| `extracted[].tail` | string | Single noun phrase — effect / target |
+| `extracted[].detail` | string \| null | Adverbial context not captured in head/tail |
+
+**Map extraction graph** — [`Experiment/Extraction/spatial_extract/README.md`](Experiment/Extraction/spatial_extract/README.md)
+
+| Field | Required | Purpose |
+|---|---|---|
+| `nodes[].id` | Yes | Stable key referenced by edges and entity-map binding |
+| `nodes[].label` | Yes | Human-readable name; LLM uses it to match entity names to locations |
+| `nodes[].type` | No | Semantic category (bin, corridor, facility) for binding guidance |
+| `nodes[].x`, `y` | No | Pixel position from source image; used for visual rendering |
+| `nodes[].metadata` | No | Free-form domain attributes (capacity, floor, accessibility) |
+| `edges[].source` | Yes | Origin node id |
+| `edges[].target` | Yes | Destination node id |
+| `edges[].approximate_cost` | No | Traversal weight for Dijkstra; pixel-estimated, defaults to 1.0 |
+| `edges[].label` | No | Connection description; used in entity-map binding fuzzy matching |
 
 ---
 
