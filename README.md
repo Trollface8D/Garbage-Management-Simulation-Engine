@@ -562,7 +562,7 @@ Several features are designed but not yet fully implemented. **Entity–map bind
 
 ---
 ## Demo
-[![Watch the video](docs/thumbnail)]([google_drive_video_link](https://drive.google.com/file/d/1fUMyMInJXjp28qA8rvJRGY0ZgvVBCrGS/view?usp=sharing))
+[![Watch the demo video](/docs/thumbnail.png)]([google_drive_video_link](https://drive.google.com/file/d/1fUMyMInJXjp28qA8rvJRGY0ZgvVBCrGS/view?usp=sharing))
 ---
 
 ## Quick Start
