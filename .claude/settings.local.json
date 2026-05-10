@@ -15,7 +15,9 @@
       "Bash(rtk diff *)",
       "Bash(rtk git *)",
       "Bash(git checkout *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(rtk wc *)",
+      "Bash(rtk tsc *)"
     ]
   }
 }

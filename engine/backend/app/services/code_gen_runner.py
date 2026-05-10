@@ -754,6 +754,132 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
     }
 
 
+def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
+    """LLM-as-Judge: review each entity, fix via state2 retry, loop up to maxVerifyAttempts."""
+    ctx.raise_if_cancelled()
+
+    iterations = checkpoints.list_iterations(ctx.job_id, "state2_code_entity_object")
+    if not iterations:
+        return {"stage": "state2j_entity_judge", "skipped": True, "reason": "no state2 iterations"}
+
+    state1 = ctx.stage_payload("state1_entity_list") or {}
+    entity_list: list[dict] = state1.get("entities") or []
+    entity_map = {str(e.get("id") or ""): e for e in entity_list if isinstance(e, dict)}
+
+    state1b = ctx.stage_payload("state1b_policy_outline") or {}
+    policy_outline: list[dict] = state1b.get("policies") or []
+
+    selected_metrics: list[dict] = list(ctx.inputs.get("selectedMetrics") or [])
+
+    base_class_src = Path(
+        Path(__file__).resolve().parents[1] / "services" / "templates" / "entity_object_template.py"
+    ).read_text(encoding="utf-8")
+
+    max_attempts = int(ctx.inputs.get("maxVerifyAttempts", 3))
+    results: list[dict] = []
+
+    for entry in iterations:
+        ctx.raise_if_cancelled()
+        entity_id = str(entry["iterId"])
+        payload = checkpoints.load_iteration(ctx.job_id, "state2_code_entity_object", entity_id)
+        if not isinstance(payload, dict) or not payload.get("code"):
+            skip_record: dict[str, Any] = {"entity_id": entity_id, "skipped": True}
+            checkpoints.save_iteration(ctx.job_id, "state2j_entity_judge", entity_id, skip_record)
+            results.append(skip_record)
+            continue
+
+        current_code = str(payload["code"])
+        entity_obj = entity_map.get(entity_id, {"id": entity_id})
+        attempts: list[dict] = []
+        passed = True
+
+        ctx.emit_stage_message("state2j_entity_judge", f"state2j: judging {entity_id}")
+
+        for attempt_num in range(max_attempts):
+            ctx.raise_if_cancelled()
+            judge_prompt = prompts.build_entity_judge_prompt(
+                entity_id=entity_id,
+                entity_obj=entity_obj,
+                entity_code=current_code,
+                policy_outline=policy_outline,
+                selected_metrics=selected_metrics,
+                base_class_src=base_class_src,
+            )
+            judge_result = _generate_json(
+                ctx, "state2j_entity_judge", judge_prompt, prompts.JUDGE_PASS1_SCHEMA,
+                iter_id=f"{entity_id}_attempt{attempt_num + 1}",
+            )
+            issues = []
+            if isinstance(judge_result, dict):
+                issues = [i for i in (judge_result.get("issues") or []) if isinstance(i, dict)]
+
+            attempt_record: dict = {"attempt": attempt_num + 1, "issues": issues}
+
+            if not issues:
+                attempt_record["status"] = "pass"
+                attempts.append(attempt_record)
+                break
+
+            if attempt_num < max_attempts - 1:
+                issues_text = "\n".join(
+                    f"- [{i.get('severity')}] {i.get('location')}: {i.get('description')} → {i.get('suggested_fix', '')}"
+                    for i in issues
+                )
+                regen_prompt = prompts.build_state2_entity_prompt(
+                    entity_id=entity_id,
+                    entity_obj=entity_obj,
+                    accumulator_blob=current_code,
+                    causal_data=str(ctx.inputs.get("causalData") or ""),
+                    interface_digest={},
+                    policy_outline=policy_outline,
+                    selected_metrics=selected_metrics,
+                    retry_error=issues_text,
+                    omit_cached_context=True,
+                )
+                fixed_code = _generate_text(
+                    ctx, "state2j_entity_judge", regen_prompt,
+                    iter_id=f"{entity_id}_fix{attempt_num + 1}",
+                )
+                if fixed_code.strip():
+                    current_code = fixed_code
+                    attempt_record["status"] = "fixed_and_retry"
+                else:
+                    attempt_record["status"] = "fix_failed"
+                    passed = False
+                    attempts.append(attempt_record)
+                    break
+            else:
+                attempt_record["status"] = "fail"
+                passed = False
+
+            attempts.append(attempt_record)
+
+        code_changed = current_code != str(payload.get("code", ""))
+        if code_changed:
+            updated_payload = dict(payload)
+            updated_payload["code"] = current_code
+            checkpoints.save_iteration(ctx.job_id, "state2_code_entity_object", entity_id, updated_payload)
+
+        judge_record: dict[str, Any] = {
+            "entity_id": entity_id,
+            "passed": passed,
+            "attempts": attempts,
+            "codeChanged": code_changed,
+        }
+        checkpoints.save_iteration(ctx.job_id, "state2j_entity_judge", entity_id, judge_record)
+        results.append({"entity_id": entity_id, "passed": passed, "attempts": attempts})
+
+    passed_count = sum(1 for r in results if r.get("passed"))
+    failed_count = sum(1 for r in results if not r.get("passed") and not r.get("skipped"))
+    return {
+        "stage": "state2j_entity_judge",
+        "entityCount": len(results),
+        "passedCount": passed_count,
+        "failedCount": failed_count,
+        "results": results,
+    }
+
+
 def _stage_state2v_validate_protocol(ctx: StageContext) -> dict[str, Any]:
     ctx.raise_if_cancelled()
     iterations = checkpoints.list_iterations(ctx.job_id, "state2_code_entity_object")
@@ -1377,7 +1503,8 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
             f"state5: judging {rule_id} ({state4_iterations.index(entry) + 1}/{len(state4_iterations)})",
         )
 
-        for attempt_num in range(3):  # pass 1 + max 2 fix retries
+        max_verify_attempts = int(ctx.inputs.get("maxVerifyAttempts", 3))
+        for attempt_num in range(max_verify_attempts):
             ctx.raise_if_cancelled()
             judge_prompt = prompts.build_policy_judge_pass1_prompt(
                 policy_code=current_code,
@@ -1484,6 +1611,7 @@ STAGE_REGISTRY["state1c_entity_dependencies"] = _stage_state1c_entity_dependenci
 STAGE_REGISTRY["state1d_metrics_draft"] = _stage_state1d_metrics_draft
 STAGE_REGISTRY["state2_code_entity_object"] = _stage_state2_code_entity_object
 STAGE_REGISTRY["state2v_validate_protocol"] = _stage_state2v_validate_protocol
+STAGE_REGISTRY["state2j_entity_judge"] = _stage_state2j_entity_judge
 STAGE_REGISTRY["state3_code_environment"] = _stage_state3_code_environment
 STAGE_REGISTRY["state4_code_policy"] = _stage_state4_code_policy
 STAGE_REGISTRY["state4v_validate_policy"] = _stage_state4v_validate_policy

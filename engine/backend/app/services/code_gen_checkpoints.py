@@ -42,6 +42,7 @@ STAGE_ORDER: tuple[str, ...] = (
     "state1d_metrics_draft",
     "state2_code_entity_object",
     "state2v_validate_protocol",
+    "state2j_entity_judge",
     "state3_code_environment",
     "state4_code_policy",
     "state4v_validate_policy",
@@ -50,7 +51,7 @@ STAGE_ORDER: tuple[str, ...] = (
 )
 
 ITERATIVE_STAGES: frozenset[str] = frozenset(
-    {"state2_code_entity_object", "state4_code_policy", "state5_policy_verify"}
+    {"state2_code_entity_object", "state2j_entity_judge", "state4_code_policy", "state5_policy_verify"}
 )
 
 ACCUMULATOR_FILE_DELIMITER = "# === FILE: {name} ==="

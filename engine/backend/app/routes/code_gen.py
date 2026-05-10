@@ -711,6 +711,24 @@ def _summarize_code_gen_stage(stage: str, payload: dict[str, Any], *, job_id: st
             summary["iterationCount"] = payload.get("iterations") or 0
             summary["failureCount"] = len(failures)
             preview = {"failures": failures}
+        elif stage == "state2j_entity_judge":
+            results = payload.get("results") or []
+            summary["entityCount"] = payload.get("entityCount") or len(results)
+            summary["passedCount"] = payload.get("passedCount") or 0
+            summary["failedCount"] = payload.get("failedCount") or 0
+            if payload.get("skipped"):
+                summary["skipped"] = True
+            preview = {
+                "results": [
+                    {
+                        "entity_id": r.get("entity_id"),
+                        "passed": r.get("passed"),
+                        "attempts": len(r.get("attempts") or []),
+                        "skipped": r.get("skipped"),
+                    }
+                    for r in results
+                ]
+            }
         elif stage == "state3_code_environment":
             validation_errors = (payload.get("validation") or {}).get("errors") or []
             summary["hasCode"] = bool(payload.get("code"))
