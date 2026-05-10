@@ -512,7 +512,7 @@ Success defined by elimination of Phase 1 failure modes, not a new numeric basel
 | Reviewer workload | Reduced — questions generated only for `I` (Implicit) records |
 | Token consumption | Reduced — skipped ~50% of inputs |
 
-Experiment outputs: [`Experiment/follow-up_question/`](Experiment/follow-up_question/)
+Experiment outputs: [`Experiment/follow-up_question/output`](Experiment/Extraction/follow-up_question/output)
 
 ---
 
