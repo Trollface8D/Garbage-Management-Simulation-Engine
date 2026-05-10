@@ -386,6 +386,7 @@ state2v_validate_protocol
       ▼
 state2j_entity_judge
       │  LLM judge scores each entity (0–3) for interface completeness
+      |  Fix semantic miss match acccording to score reasoning
       ▼
 state3_code_environment
       │  LLM generates environment.py, grounded in map node data
@@ -398,6 +399,7 @@ state4v_validate_policy
       ▼
 state5_policy_verify
       │  Cross-checks policy ↔ entity contracts (Pass 2 of LLM judge)
+      |  Fix semantic miss match acccording to score reasoning
       ▼
 finalize_bundle
       └─ Writes artifacts/ zip + manifest
