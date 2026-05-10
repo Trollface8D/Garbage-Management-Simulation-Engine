@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { saveFollowUpAnswers, type ExtractionClassRecord } from "@/lib/db";
+import {
+  getCausalArtifactsForItem,
+  listFollowUpRecordsForExperimentItem,
+  saveFollowUpAnswers,
+  type ExtractionClassRecord,
+  type FollowUpRecord,
+} from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +22,23 @@ type FollowUpSubmitRequest = {
   experimentItemId?: string;
   answers?: FollowUpSubmitAnswer[];
   model?: string;
+};
+
+type FollowUpSubmitResponse = {
+  savedAnswers: number;
+  followUpRecords: FollowUpRecord[];
+  rawExtraction: Array<{
+    chunk_label: string;
+    classes: Array<{
+      pattern_type: string;
+      sentence_type: string;
+      marked_type: string;
+      explicit_type: string;
+      marker: string;
+      source_text: string;
+      extracted: Array<{ head: string; relationship: string; tail: string; detail: string }>;
+    }>;
+  }>;
 };
 
 type ExtractProxyResponse = {
@@ -149,8 +172,37 @@ export async function POST(request: Request) {
   }
 
   try {
+    saveFollowUpAnswers({
+      experimentItemId,
+      answers: answeredItems.map((item) => ({
+        questionId: item.questionId,
+        answerText: item.answerText,
+        answeredBy: item.answeredBy,
+      })),
+    });
+
+    const followUpRecords = listFollowUpRecordsForExperimentItem(experimentItemId);
+    const submittedQuestionIds = new Set(answeredItems.map((item) => item.questionId));
+
+    const extractionTargets = followUpRecords.flatMap((record) =>
+      (record.questions ?? [])
+        .filter((question) => submittedQuestionIds.has(question.questionId))
+        .map((question) => ({
+          questionId: question.questionId,
+          questionText: question.questionText,
+          answerText: question.answerText ?? "",
+          answeredBy: question.answeredBy ?? "user",
+          sourceText: record.sourceText,
+        }))
+        .filter((entry) => entry.answerText.trim().length > 0),
+    );
+
+    if (extractionTargets.length === 0) {
+      return NextResponse.json({ error: "No saved answers found for re-extraction." }, { status: 400 });
+    }
+
     const extractionPayload = await Promise.all(
-      answeredItems.map(async (item) => {
+      extractionTargets.map(async (item) => {
         const joinedText = buildFollowUpExtractText(item.questionText, item.answerText, item.sourceText);
         const derivedExtraction = await requestFollowUpExtraction(joinedText, experimentItemId, payload.model);
         return {
@@ -167,12 +219,18 @@ export async function POST(request: Request) {
       answers: extractionPayload,
     });
 
-    return NextResponse.json({
+    const updatedArtifacts = getCausalArtifactsForItem(experimentItemId);
+    const updatedFollowUpRecords = listFollowUpRecordsForExperimentItem(experimentItemId);
+
+    const responseBody: FollowUpSubmitResponse = {
       savedAnswers: result.savedAnswers,
-      extractedFromFollowUp: extractionPayload.length,
-    });
+      followUpRecords: updatedFollowUpRecords,
+      rawExtraction: updatedArtifacts.raw_extraction,
+    };
+
+    return NextResponse.json(responseBody);
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown follow-up submit error.";
-    return NextResponse.json({ error: "Failed to extract and save follow-up answers.", detail }, { status: 502 });
+    return NextResponse.json({ error: "Failed to save follow-up answers.", detail }, { status: 502 });
   }
 }

@@ -2,6 +2,7 @@ from .code_gen import router as code_gen_router
 from .compat import router as compat_router
 from .codegen_analytics import router as codegen_analytics_router
 from .extract import router as extract_router
+from .follow_up_answer import router as follow_up_answer_router
 from .group_entities import router as group_entities_router
 from .health import router as health_router
 from .suggest_metrics import router as suggest_metrics_router
@@ -18,6 +19,7 @@ __all__ = [
 	"compat_router",
 	"codegen_analytics_router",
 	"extract_router",
+	"follow_up_answer_router",
 	"group_entities_router",
 	"health_router",
 	"jobs_artifacts_router",

@@ -7,20 +7,20 @@ import pandas as pd
 from datetime import datetime
 # Try to import the project's GeminiClient
 try:
-    from utils.gemini import GeminiClient
+    from Experiment.Extraction.causal_extraction.utils.gemini import GeminiClient
 except Exception:
     try:
         this_dir = os.path.dirname(__file__)
         causal_pkg_dir = os.path.abspath(os.path.join(this_dir, '..'))
         if causal_pkg_dir not in sys.path:
             sys.path.insert(0, causal_pkg_dir)
-        from utils.gemini import GeminiClient
+        from Experiment.Extraction.causal_extraction.utils.gemini import GeminiClient
     except Exception as inner_exc:
         st.error(f"Could not import GeminiClient: {inner_exc}")
         st.stop()
 
 try:
-    from config import API_KEY, out_as_json
+    from Experiment.Extraction.causal_extraction.config import API_KEY, out_as_json
 except Exception:
     API_KEY = None
     out_as_json = None

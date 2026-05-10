@@ -50,7 +50,7 @@ export default function MapArtifactPage() {
   }, [projectId, projects]);
 
   const title = selectedComponent?.title ?? componentId;
-  const backHref = projectId ? `/pm/${encodeURIComponent(projectId)}` : "/";
+  const backHref = projectId ? `/pm/${encodeURIComponent(projectId)}?category=Map` : "/";
 
   return (
     <MapExtractionWorkspace

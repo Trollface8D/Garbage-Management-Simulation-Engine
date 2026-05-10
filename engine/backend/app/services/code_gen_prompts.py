@@ -1090,6 +1090,109 @@ Entity class interfaces:
 Return ONLY the fixed Python code. No markdown fences, no explanation.
 """
 
+_ENTITY_JUDGE_TEMPLATE = """You are a Python code reviewer checking a simulation entity module.
+
+Entity contract:
+  entity_id: {entity_id}
+  label: {label}
+  description: {description}
+
+Policy methods this entity MUST expose (called by policies):
+{policy_methods}
+
+Metric attributes this entity MUST expose for the Reporter:
+{metric_attrs}
+
+Base class interface (entity_object_template.py — must be satisfied):
+{base_class_interface}
+
+Entity code under review:
+```python
+{entity_code}
+```
+
+Identify concrete bugs only:
+- Missing or wrong-signature policy methods
+- Metric attrs that don't exist, are wrong type, or are not reporter-reducible
+  (reporter-reducible = int/float/bool, or List[Dict] with at least one numeric value field)
+- Missing step() or on_query() overrides
+- Broken base class inheritance
+
+Do NOT report style issues or minor formatting.
+
+Return JSON only:
+{{
+  "issues": [
+    {{
+      "severity": "critical",
+      "location": "method_or_attr_name",
+      "description": "what is wrong",
+      "suggested_fix": "how to fix it"
+    }}
+  ],
+  "verdict": "pass"
+}}
+If no issues: {{"issues": [], "verdict": "pass"}}.
+If issues: {{"issues": [...], "verdict": "fail"}}.
+"""
+
+
+def build_entity_judge_prompt(
+    *,
+    entity_id: str,
+    entity_obj: dict[str, Any],
+    entity_code: str,
+    policy_outline: list[dict[str, Any]],
+    selected_metrics: list[dict[str, Any]],
+    base_class_src: str,
+) -> str:
+    """Pass 1 judge for entity code — same prompt reused in judge→fix loop."""
+    relevant_policies = [
+        p for p in policy_outline
+        if p.get("target_entity_id") == entity_id
+    ]
+    policy_methods_lines = [
+        f"  {p.get('rule_id')}: {p.get('target_method')}() — {p.get('trigger', '')}"
+        for p in relevant_policies
+    ] or ["  (none)"]
+
+    entity_metrics = [
+        m for m in selected_metrics
+        if isinstance(m, dict) and (
+            m.get("entity_id") == entity_id
+            or entity_id in (m.get("entities") or [])
+        )
+    ]
+    metric_attr_lines = []
+    for m in entity_metrics:
+        attrs = [
+            dep.get("attr") for dep in (m.get("required_attrs") or [])
+            if isinstance(dep, dict) and dep.get("entity") == entity_id
+        ]
+        metric_attr_lines.append(
+            f"  metric '{m.get('name')}' (agg={m.get('agg')}): {', '.join(attrs) or '(none)'}"
+        )
+    if not metric_attr_lines:
+        metric_attr_lines = ["  (none)"]
+
+    digest = interface_digest_from_source(base_class_src)
+    base_lines: list[str] = []
+    for cls in digest.get("classes") or []:
+        for method in cls.get("methods") or []:
+            args = ", ".join(method.get("args") or [])
+            base_lines.append(f"  def {method['name']}({args}): ...")
+
+    return _ENTITY_JUDGE_TEMPLATE.format(
+        entity_id=entity_id,
+        label=str(entity_obj.get("label") or entity_id),
+        description=str(entity_obj.get("description") or ""),
+        policy_methods="\n".join(policy_methods_lines),
+        metric_attrs="\n".join(metric_attr_lines),
+        base_class_interface="\n".join(base_lines) or "  (unavailable)",
+        entity_code=entity_code[:8000],
+    )
+
+
 JUDGE_PASS1_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {

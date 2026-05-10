@@ -191,6 +191,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
     user_entity_list = list(payload.get("userEntityList") or [])
     preview_only = bool(payload.get("previewOnly", False))
     auto_confirm = bool(payload.get("autoConfirm", False))
+    max_verify_attempts = max(1, min(10, int(payload.get("verificationLoops") or 3)))
 
     now = utc_now_iso()
     job_id = f"code_gen-{uuid4().hex}"
@@ -209,6 +210,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         model_name=resolved_model,
         use_env_model_overrides=use_env_model_overrides,
         auto_confirm=auto_confirm,
+        max_verify_attempts=max_verify_attempts,
     )
     # Persist mapGraph separately for state3 and state4
     if map_graph:
@@ -225,6 +227,7 @@ async def create_code_gen_job(payload: dict[str, Any] = Body(default_factory=dic
         "selectedPolicies": selected_policies,
         "userEntityList": user_entity_list,
         "autoConfirm": auto_confirm,
+        "maxVerifyAttempts": max_verify_attempts,
     }
     if not preview_only:
         _spawn_worker(
@@ -468,6 +471,7 @@ def resume_code_gen_job(job_id: str):
         "selectedPolicies": manifest.get("selectedPolicies") or [],
         "userEntityList": manifest.get("userEntityList") or [],
         "autoConfirm": bool(manifest.get("autoConfirm", False)),
+        "maxVerifyAttempts": int(manifest.get("maxVerifyAttempts") or 3),
     }
 
     # Restore completed_stages from disk so status polls reflect the correct
@@ -711,6 +715,24 @@ def _summarize_code_gen_stage(stage: str, payload: dict[str, Any], *, job_id: st
             summary["iterationCount"] = payload.get("iterations") or 0
             summary["failureCount"] = len(failures)
             preview = {"failures": failures}
+        elif stage == "state2j_entity_judge":
+            results = payload.get("results") or []
+            summary["entityCount"] = payload.get("entityCount") or len(results)
+            summary["passedCount"] = payload.get("passedCount") or 0
+            summary["failedCount"] = payload.get("failedCount") or 0
+            if payload.get("skipped"):
+                summary["skipped"] = True
+            preview = {
+                "results": [
+                    {
+                        "entity_id": r.get("entity_id"),
+                        "passed": r.get("passed"),
+                        "attempts": len(r.get("attempts") or []),
+                        "skipped": r.get("skipped"),
+                    }
+                    for r in results
+                ]
+            }
         elif stage == "state3_code_environment":
             validation_errors = (payload.get("validation") or {}).get("errors") or []
             summary["hasCode"] = bool(payload.get("code"))

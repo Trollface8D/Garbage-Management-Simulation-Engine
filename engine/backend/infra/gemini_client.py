@@ -15,6 +15,23 @@ from google.genai.types import GenerateContentConfig, Part, ThinkingConfig
 
 logger = logging.getLogger(__name__)
 
+_CONCURRENT_CALL_SEM: threading.Semaphore | None = None
+_CONCURRENT_CALL_SEM_LOCK = threading.Lock()
+
+
+def _get_call_semaphore() -> threading.Semaphore:
+    global _CONCURRENT_CALL_SEM
+    if _CONCURRENT_CALL_SEM is None:
+        with _CONCURRENT_CALL_SEM_LOCK:
+            if _CONCURRENT_CALL_SEM is None:
+                try:
+                    limit = max(1, int(os.getenv("GEMINI_MAX_CONCURRENT_CALLS", "3") or "3"))
+                except (TypeError, ValueError):
+                    limit = 3
+                _CONCURRENT_CALL_SEM = threading.Semaphore(limit)
+                logger.info("[gemini] concurrent call semaphore limit=%d", limit)
+    return _CONCURRENT_CALL_SEM
+
 
 class GeminiCancelledError(RuntimeError):
     """Raised when a cancel_check callback signals True during a Gemini call.
@@ -100,6 +117,7 @@ class GeminiGateway:
         prompt: str,
         *,
         parts: list[Part] | None = None,
+        tools: list[Any] | None = None,
         response_json: bool,
         response_schema: dict[str, Any] | None = None,
         usage_collector: dict[str, int] | None = None,
@@ -135,6 +153,8 @@ class GeminiGateway:
             "thinking_config": ThinkingConfig(thinking_budget=thinking_budget),
             "temperature": 0.2,
         }
+        if tools:
+            config_kwargs["tools"] = tools
         if response_json:
             config_kwargs["response_mime_type"] = "application/json"
             if response_schema is not None:
@@ -229,6 +249,7 @@ class GeminiGateway:
 
         response = None
         last_exc: Exception | None = None
+        sem = _get_call_semaphore()
         for attempt in range(1, max_attempts + 1):
             if _should_cancel():
                 logger.info(
@@ -237,6 +258,9 @@ class GeminiGateway:
                     max_attempts,
                 )
                 raise GeminiCancelledError("generate_content cancelled before attempt")
+            while not sem.acquire(timeout=0.5):
+                if _should_cancel():
+                    raise GeminiCancelledError("generate_content cancelled while waiting for call slot")
             try:
                 response = _call_with_cancel()
                 break
@@ -274,14 +298,16 @@ class GeminiGateway:
                         )
                     except Exception:  # pragma: no cover - defensive
                         logger.exception("[gemini] on_retry callback raised")
-                _interruptible_sleep(delay)
-                if _should_cancel():
-                    logger.info(
-                        "[gemini] cancel detected during backoff attempt=%s/%s — aborting",
-                        attempt,
-                        max_attempts,
-                    )
-                    raise GeminiCancelledError("generate_content cancelled during backoff")
+            finally:
+                sem.release()
+            _interruptible_sleep(delay)
+            if _should_cancel():
+                logger.info(
+                    "[gemini] cancel detected during backoff attempt=%s/%s — aborting",
+                    attempt,
+                    max_attempts,
+                )
+                raise GeminiCancelledError("generate_content cancelled during backoff")
 
         if response is None:
             # Should be unreachable — either break or raise above.
@@ -390,6 +416,9 @@ class GeminiGateway:
             "connection reset",
             "connection aborted",
             "network",
+            "server disconnected",
+            "remoteprotocolerror",
+            "protocol error",
         )
         return any(token in message for token in transient_tokens)
 

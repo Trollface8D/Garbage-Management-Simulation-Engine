@@ -18,11 +18,11 @@ except Exception:
         if causal_pkg_dir not in sys.path:
             sys.path.insert(0, causal_pkg_dir)
         try:
-            from utils.gemini import GeminiClient
+            from Experiment.Extraction.causal_extraction.utils.gemini import GeminiClient
         except Exception as inner_exc:
             raise
 
-from config import API_KEY, out_as_json
+from Experiment.Extraction.causal_extraction.config import API_KEY, out_as_json
 import pandas as pd
 import os
 
@@ -133,7 +133,7 @@ if submitted:
                         final_prompt = prompt_template + "\n\nInput: " + str(user_input)
 
                 # --- Call Gemini API ---
-                text, response = model.generate(prompt=final_prompt, generation_config=out_as_json, model_name="gemini-2.5-pro", google_search=False)
+                text, response = model.generate(prompt=final_prompt, generation_config=out_as_json, model_name="gemini-2.5-flash", google_search=False)
                 
                 # Clean the response to extract only the JSON part
                 raw = (response.text or "").strip()

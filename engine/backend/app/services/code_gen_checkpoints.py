@@ -42,6 +42,7 @@ STAGE_ORDER: tuple[str, ...] = (
     "state1d_metrics_draft",
     "state2_code_entity_object",
     "state2v_validate_protocol",
+    "state2j_entity_judge",
     "state3_code_environment",
     "state4_code_policy",
     "state4v_validate_policy",
@@ -50,7 +51,7 @@ STAGE_ORDER: tuple[str, ...] = (
 )
 
 ITERATIVE_STAGES: frozenset[str] = frozenset(
-    {"state2_code_entity_object", "state4_code_policy", "state5_policy_verify"}
+    {"state2_code_entity_object", "state2j_entity_judge", "state4_code_policy", "state5_policy_verify"}
 )
 
 ACCUMULATOR_FILE_DELIMITER = "# === FILE: {name} ==="
@@ -381,6 +382,7 @@ def save_inputs(
     model_name: str,
     use_env_model_overrides: bool,
     auto_confirm: bool = False,
+    max_verify_attempts: int = 3,
 ) -> None:
     """Persist inputs needed to re-run the pipeline without re-upload."""
     base = ensure_job_dir(job_id)
@@ -413,6 +415,7 @@ def save_inputs(
         "modelName": model_name,
         "useEnvModelOverrides": bool(use_env_model_overrides),
         "autoConfirm": bool(auto_confirm),
+        "maxVerifyAttempts": int(max_verify_attempts),
         "extraFiles": extra_manifest,
     }
     (base / "inputs.json").write_text(

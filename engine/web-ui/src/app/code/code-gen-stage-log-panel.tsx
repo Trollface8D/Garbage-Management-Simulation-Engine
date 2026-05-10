@@ -53,6 +53,11 @@ const STAGE_ENTRIES: StageEntry[] = [
     description: "Static checks that entity classes meet the runtime protocol.",
   },
   {
+    key: "state2j_entity_judge",
+    label: "Entity judge",
+    description: "LLM-as-Judge reviews each entity for missing methods and metric attrs; applies fixes (max retries).",
+  },
+  {
     key: "state3_code_environment",
     label: "Environment",
     description: "Simulation environment glue (clock, registries, world).",

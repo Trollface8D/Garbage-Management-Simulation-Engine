@@ -1748,7 +1748,6 @@ export default function MapExtractionWorkspace({
               <BackToHome
                 href={backHref}
                 label="Back to project"
-                useHistoryBack
                 containerClassName=""
                 className="rounded-md px-3 py-2"
               />
@@ -2182,10 +2181,10 @@ export default function MapExtractionWorkspace({
                 <CodeExplorer graph={graphData} onPick={setSelection} />
               )}
 
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0 flex-1 break-words text-xs text-neutral-400">{extractStatus}</div>
-                <div className="ml-auto flex items-end gap-3">
-                  <div className="text-right text-[11px] text-neutral-400">
+              <div className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0 w-full break-words text-xs text-neutral-400 lg:flex-1">{extractStatus}</div>
+                <div className="flex flex-wrap items-center gap-3 lg:ml-auto lg:flex-nowrap lg:items-end">
+                  <div className="text-left text-[11px] text-neutral-400 sm:text-right">
                     <div>
                       tokens: in {usageStats.promptTokens.toLocaleString()} / out {usageStats.outputTokens.toLocaleString()} / total {usageStats.totalTokens.toLocaleString()}
                     </div>

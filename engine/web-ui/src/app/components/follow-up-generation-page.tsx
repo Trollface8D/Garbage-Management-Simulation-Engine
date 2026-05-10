@@ -34,6 +34,36 @@ export interface GeneratedQuestionsData {
   generated_questions: string[];
 }
 
+type FollowUpAnswerRequestQuestion = {
+  questionText: string;
+  sourceText: string;
+  sentenceType: string;
+  useInternet: boolean;
+};
+
+type FollowUpAnswerResult = {
+  questionText: string;
+  answerText: string;
+  sourceText: string;
+};
+
+type FollowUpSubmitResponse = {
+  savedAnswers: number;
+  followUpRecords: FollowUpRecord[];
+  rawExtraction: Array<{
+    chunk_label: string;
+    classes: Array<{
+      pattern_type: string;
+      sentence_type: string;
+      marked_type: string;
+      explicit_type: string;
+      marker: string;
+      source_text: string;
+      extracted: CausalTriple[];
+    }>;
+  }>;
+};
+
 type DerivedExtractionBySourceQuestion = Record<string, Record<string, CausalItem[]>>;
 
 type FollowUpGenerationPageProps = {
@@ -46,6 +76,8 @@ type FollowUpGenerationPageProps = {
 };
 
 type AnswerFilterMode = "all" | "unanswered" | "answered";
+
+type FollowUpTabMode = "question" | "submitted";
 
 type FollowUpDraftPayload = {
   answersBySource: Record<string, Record<string, string>>;
@@ -308,6 +340,77 @@ function toDerivedExtractionMap(records: FollowUpRecord[]): DerivedExtractionByS
   return derived;
 }
 
+function toDerivedCausalItems(records: FollowUpRecord[]): CausalItem[] {
+  const items: CausalItem[] = [];
+
+  for (const record of records) {
+    for (const question of record.questions ?? []) {
+      for (const row of question.derivedCausal ?? []) {
+        const sourceText = (row.source_text || record.sourceText || question.questionText || "").trim();
+        if (!sourceText) {
+          continue;
+        }
+
+        items.push({
+          chunk_label: "follow-up",
+          pattern_type: row.pattern_type,
+          sentence_type: row.sentence_type,
+          marked_type: row.marked_type,
+          explicit_type: row.explicit_type,
+          marker: row.marker ?? null,
+          source_text: sourceText,
+          extracted: (row.extracted ?? []).map((relation) => ({
+            head: relation.head,
+            relationship: relation.relationship,
+            tail: relation.tail,
+            detail: relation.detail ?? "",
+          })),
+        });
+      }
+    }
+  }
+
+  return items;
+}
+
+function buildCausalItemKey(item: CausalItem): string {
+  const relationKey = item.extracted
+    .map((relation) => [relation.head || "", relation.relationship || "", relation.tail || "", relation.detail || ""].join("||"))
+    .join("~~");
+
+  return [
+    item.chunk_label || "",
+    item.pattern_type || "",
+    item.sentence_type || "",
+    item.marked_type || "",
+    item.explicit_type || "",
+    item.marker || "",
+    item.source_text || "",
+    relationKey,
+  ].join("##");
+}
+
+function uniqueCausalItems(items: CausalItem[]): CausalItem[] {
+  const seen = new Set<string>();
+  const uniqueItems: CausalItem[] = [];
+
+  for (const item of items) {
+    const key = buildCausalItemKey(item);
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueItems.push(item);
+  }
+
+  return uniqueItems;
+}
+
+function normalizeQuestionValue(value?: string | null): string {
+  return (value ?? "").trim();
+}
+
 function GoogleGIcon() {
   return (
     <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 18 18">
@@ -350,7 +453,10 @@ function CausalCard({
   newQuestionDraft,
   onNewQuestionDraftChange,
   onAddQuestionSet,
+  onAutoAnswerQuestion,
+  isAnsweringQuestion,
   onSubmitGroup,
+  isSubmittingGroup,
   groupSubmitMessage,
   derivedExtractionByQuestion,
   answerFilterMode,
@@ -376,7 +482,10 @@ function CausalCard({
   newQuestionDraft: string;
   onNewQuestionDraftChange: (value: string) => void;
   onAddQuestionSet: () => void;
+  onAutoAnswerQuestion: (question: string) => void;
+  isAnsweringQuestion: (question: string) => boolean;
   onSubmitGroup: () => void;
+  isSubmittingGroup?: boolean;
   groupSubmitMessage: string;
   derivedExtractionByQuestion: Record<string, CausalItem[]>;
   answerFilterMode: AnswerFilterMode;
@@ -384,6 +493,7 @@ function CausalCard({
   totalUnansweredCount: number;
   isAddedToCausalStructure: boolean;
 }) {
+  const isExplicit = causal.explicit_type.trim().toUpperCase() === "E";
   const filteredQuestions = generatedQuestions.filter((question) => {
     const isAnswered = (filterAnswers[question] ?? "").trim().length > 0;
     if (answerFilterMode === "all") {
@@ -411,6 +521,11 @@ function CausalCard({
           <span className="inline-flex rounded-full border border-neutral-700 bg-neutral-800 px-2 py-1 text-[11px] uppercase tracking-wide text-neutral-300">
             class {String(index + 1)}
           </span>
+          {isExplicit ? (
+            <span className="inline-flex rounded-full border border-sky-600/70 bg-sky-500/20 px-2 py-1 text-[11px] uppercase tracking-wide text-sky-200">
+              Explicit
+            </span>
+          ) : null}
           {isAddedToCausalStructure ? (
             <span className="inline-flex rounded-full border border-emerald-700 bg-emerald-500/20 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-200">
               Added to causal structure
@@ -563,22 +678,47 @@ function CausalCard({
                   Showing {answerFilterMode === "all" ? "all" : answerFilterMode} questions: {String(filteredQuestions.length)} of {String(generatedQuestions.length)} (answered {String(totalAnsweredCount)}, unanswered {String(totalUnansweredCount)})
                 </p>
 
-                {hasFilteredQuestions ? filteredQuestions.map((question) => (
-                  <div key={question} className="rounded-lg border border-neutral-700 bg-neutral-950/90 p-2">
-                    <p className="text-sm text-neutral-100">{question}</p>
-                    <textarea
-                      value={answers[question] ?? ""}
-                      onChange={(event) => onAnswerChange(question, event.target.value)}
-                      onBlur={onAnswerBlur}
-                      rows={1}
-                      className="mt-2 h-10 w-full resize-y rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
-                      placeholder="Type answer for this question"
-                    />
+                {hasFilteredQuestions ? filteredQuestions.map((question) => {
+                  const isSearchable = isLikelyInternetAnswerable(question);
+                  const isAnswering = isAnsweringQuestion(question);
+                  const hasAnswer = (answers[question] ?? "").trim().length > 0;
+
+                  return (
+                    <div key={question} className="rounded-lg border border-neutral-700 bg-neutral-950/90 p-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm text-neutral-100">{question}</p>
+                        {isSearchable ? (
+                          <span className="inline-flex rounded-full border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">
+                            Searchable
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onAutoAnswerQuestion(question)}
+                          disabled={isAnswering || hasAnswer}
+                          className="rounded-md border border-violet-500/70 bg-violet-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-violet-200 transition hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+                        >
+                          {isAnswering ? "Answering..." : "AI Answer"}
+                        </button>
+                        {hasAnswer ? (
+                          <span className="text-[11px] text-neutral-400">Answered</span>
+                        ) : null}
+                      </div>
+                      <textarea
+                        value={answers[question] ?? ""}
+                        onChange={(event) => onAnswerChange(question, event.target.value)}
+                        onBlur={onAnswerBlur}
+                        rows={1}
+                        className="mt-2 h-10 w-full resize-y rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none transition focus:border-sky-500"
+                        placeholder="Type answer for this question"
+                      />
 
                     {(derivedExtractionByQuestion[question] ?? []).length > 0 ? (
                       <div className="mt-2 rounded-md border border-emerald-700/60 bg-emerald-500/10 p-2">
                         <div className="mb-2 inline-flex rounded-full border border-emerald-700 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
-                          follow-up derived
+                          generated
                         </div>
                         <div className="space-y-2">
                           {(derivedExtractionByQuestion[question] ?? []).map((derivedItem, derivedIndex) => (
@@ -606,20 +746,22 @@ function CausalCard({
                         </div>
                       </div>
                     ) : null}
-                  </div>
-                )) : (
+                    </div>
+                  );
+                }) : (
                   <p className="text-sm text-neutral-400">
                     No {answerFilterMode} questions in this group right now.
                   </p>
                 )}
 
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                   <button
                     type="button"
                     onClick={onSubmitGroup}
-                    className="rounded-md border border-sky-600 bg-sky-500/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-200 transition hover:bg-sky-500/20"
+                    disabled={isSubmittingGroup}
+                    className="rounded-md border border-sky-600 bg-sky-500/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-sky-200 transition hover:bg-sky-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    Submit answered in this group
+                    {isSubmittingGroup ? "Submitting…" : "Submit answered in this group"}
                   </button>
                   <span className="text-xs text-neutral-400">Unanswered items stay as drafts and can be submitted later.</span>
                 </div>
@@ -662,6 +804,33 @@ async function requestGeneratedQuestions(causalItems: CausalItem[], model?: stri
   return Array.isArray(payload?.records) ? payload.records : [];
 }
 
+async function requestFollowUpAnswers(
+  questions: FollowUpAnswerRequestQuestion[],
+  model?: string,
+): Promise<FollowUpAnswerResult[]> {
+  const response = await fetch("/api/causal-extract/follow-up-answer", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      questions,
+      model: model?.trim() || undefined,
+    }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { answers?: FollowUpAnswerResult[]; error?: string; detail?: string }
+    | null;
+
+  if (!response.ok) {
+    const detail = payload?.detail ? ` ${payload.detail}` : "";
+    throw new Error(payload?.error ? `${payload.error}${detail}` : `Follow-up answer failed (${String(response.status)}).`);
+  }
+
+  return Array.isArray(payload?.answers) ? payload.answers : [];
+}
+
 async function submitFollowUpAnswersWithReextract(input: {
   experimentItemId: string;
   answers: Array<{
@@ -672,17 +841,23 @@ async function submitFollowUpAnswersWithReextract(input: {
     answeredBy?: string;
   }>;
   model?: string;
-}): Promise<{ savedAnswers: number; extractedFromFollowUp: number }> {
-  const response = await fetch("/api/causal-extract/follow-up-submit", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-  });
+}): Promise<FollowUpSubmitResponse> {
+  let response: Response;
+  try {
+    response = await fetch("/api/causal-extract/follow-up-submit", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Network error while submitting follow-up answers: ${message}`);
+  }
 
   const payload = (await response.json().catch(() => null)) as
-    | { savedAnswers?: number; extractedFromFollowUp?: number; error?: string; detail?: string }
+    | Partial<FollowUpSubmitResponse> & { error?: string; detail?: string }
     | null;
 
   if (!response.ok) {
@@ -692,8 +867,8 @@ async function submitFollowUpAnswersWithReextract(input: {
 
   return {
     savedAnswers: typeof payload?.savedAnswers === "number" ? payload.savedAnswers : 0,
-    extractedFromFollowUp:
-      typeof payload?.extractedFromFollowUp === "number" ? payload.extractedFromFollowUp : 0,
+    followUpRecords: Array.isArray(payload?.followUpRecords) ? payload.followUpRecords : [],
+    rawExtraction: Array.isArray(payload?.rawExtraction) ? payload.rawExtraction : [],
   };
 }
 
@@ -754,6 +929,10 @@ function isLikelyInternetAnswerable(question: string): boolean {
   return internetAnswerableSignals.some((pattern) => pattern.test(normalized));
 }
 
+function buildQuestionKey(sourceText: string, question: string): string {
+  return `${sourceText}||${question}`;
+}
+
 export default function FollowUpGenerationPage({
   initialCausalItems = [],
   includeImplicit = true,
@@ -763,6 +942,7 @@ export default function FollowUpGenerationPage({
   runFilterInternetAnswerable = false,
 }: FollowUpGenerationPageProps) {
   const [causalItems, setCausalItems] = useState<CausalItem[]>(initialCausalItems);
+  const [followUpRecords, setFollowUpRecords] = useState<FollowUpRecord[]>(initialFollowUpRecords);
   const [generatedResults, setGeneratedResults] = useState<GeneratedQuestionsData[]>(() => toGeneratedResults(initialFollowUpRecords));
   const [questionIdsBySource, setQuestionIdsBySource] = useState<Record<string, Record<string, string>>>(() =>
     toQuestionIdMap(initialFollowUpRecords),
@@ -777,10 +957,13 @@ export default function FollowUpGenerationPage({
   );
   const [newQuestionDraftBySource, setNewQuestionDraftBySource] = useState<Record<string, string>>({});
   const [groupSubmitStatus, setGroupSubmitStatus] = useState<Record<string, string>>({});
+  const [groupSubmitting, setGroupSubmitting] = useState<Set<string>>(() => new Set());
   const [allSubmitStatus, setAllSubmitStatus] = useState("");
+  const [isSubmittingAll, setIsSubmittingAll] = useState(false);
   const [generationStatus, setGenerationStatus] = useState("");
   const [draftSyncStatus, setDraftSyncStatus] = useState("");
   const [answerFilterMode, setAnswerFilterMode] = useState<AnswerFilterMode>("all");
+  const [pageViewMode, setPageViewMode] = useState<FollowUpTabMode>("question");
   const [submittedSources, setSubmittedSources] = useState<Set<string>>(() => new Set());
   const [filterBasisAnswersBySource, setFilterBasisAnswersBySource] = useState<Record<string, Record<string, string>>>(() =>
     toAnswersMap(initialFollowUpRecords),
@@ -790,6 +973,10 @@ export default function FollowUpGenerationPage({
   );
   const [deletingSources, setDeletingSources] = useState<Set<string>>(() => new Set());
   const [markingExplicitSources, setMarkingExplicitSources] = useState<Set<string>>(() => new Set());
+  const [answeringQuestionKeys, setAnsweringQuestionKeys] = useState<Set<string>>(() => new Set());
+  const [isAnsweringSearchable, setIsAnsweringSearchable] = useState(false);
+  const [isAnsweringAll, setIsAnsweringAll] = useState(false);
+  const [autoAnswerStatus, setAutoAnswerStatus] = useState("");
 
   const answersBySourceRef = useRef<Record<string, Record<string, string>>>(answersBySource);
   const questionIdsBySourceRef = useRef<Record<string, Record<string, string>>>(questionIdsBySource);
@@ -807,6 +994,7 @@ export default function FollowUpGenerationPage({
   }, [initialCausalItems]);
 
   useEffect(() => {
+    setFollowUpRecords(initialFollowUpRecords);
     const hydratedResults = toGeneratedResults(initialFollowUpRecords);
     const serverAnswers = toAnswersMap(initialFollowUpRecords);
     const localDraft = readFollowUpDraftFromStorage(experimentItemId);
@@ -822,7 +1010,13 @@ export default function FollowUpGenerationPage({
     setGroupSubmitStatus({});
     setAllSubmitStatus("");
     setGenerationStatus("");
+    setAutoAnswerStatus("");
     setDraftSyncStatus(localDraft ? "Loaded local draft answers." : "");
+    setAnsweringQuestionKeys(new Set());
+    setIsAnsweringSearchable(false);
+    setIsAnsweringAll(false);
+    setGroupSubmitting(new Set());
+    setIsSubmittingAll(false);
 
     const initialSubmittedSources = new Set<string>();
     for (const record of initialFollowUpRecords) {
@@ -848,12 +1042,22 @@ export default function FollowUpGenerationPage({
   }, [generatedResults]);
 
   const visibleCausalItems = useMemo(() => {
-    if (includeImplicit) {
-      return causalItems.filter((item) => item.explicit_type.trim().toUpperCase() === "I");
-    }
+    const baseItems = includeImplicit
+      ? causalItems.filter((item) => {
+          const isImplicit = item.explicit_type.trim().toUpperCase() === "I";
+          return isImplicit && !submittedSources.has(item.source_text);
+        })
+      : causalItems.filter((item) => !submittedSources.has(item.source_text));
 
-    return causalItems;
-  }, [causalItems, includeImplicit]);
+    const derivedItems = toDerivedCausalItems(followUpRecords);
+    return uniqueCausalItems([...baseItems, ...derivedItems]);
+  }, [causalItems, followUpRecords, includeImplicit, submittedSources]);
+
+  const submittedArchiveGroups = useMemo(() => {
+    return followUpRecords.filter((record) =>
+      (record.questions ?? []).some((question) => normalizeQuestionValue(question.answerText).length > 0),
+    );
+  }, [followUpRecords]);
 
   const generatedBySourceText = useMemo(() => {
     return new Map(generatedResults.map((result) => [result.source_text, result]));
@@ -871,6 +1075,44 @@ export default function FollowUpGenerationPage({
     return bySource;
   }, [generatedResults, runFilterInternetAnswerable]);
 
+  const searchableQuestionPayloads = useMemo<FollowUpAnswerRequestQuestion[]>(() => {
+    const items: FollowUpAnswerRequestQuestion[] = [];
+
+    for (const result of generatedResults) {
+      for (const question of result.generated_questions) {
+        if (!isLikelyInternetAnswerable(question)) {
+          continue;
+        }
+
+        items.push({
+          questionText: question,
+          sourceText: result.source_text,
+          sentenceType: result.sentence_type,
+          useInternet: true,
+        });
+      }
+    }
+
+    return items;
+  }, [generatedResults]);
+
+  const allQuestionPayloads = useMemo<FollowUpAnswerRequestQuestion[]>(() => {
+    const items: FollowUpAnswerRequestQuestion[] = [];
+
+    for (const result of generatedResults) {
+      for (const question of result.generated_questions) {
+        items.push({
+          questionText: question,
+          sourceText: result.source_text,
+          sentenceType: result.sentence_type,
+          useInternet: isLikelyInternetAnswerable(question),
+        });
+      }
+    }
+
+    return items;
+  }, [generatedResults]);
+
   const ensureExperimentItemId = (): string => {
     const itemId = (experimentItemId || "").trim();
     if (!itemId) {
@@ -880,17 +1122,32 @@ export default function FollowUpGenerationPage({
     return itemId;
   };
 
-  const reloadFollowUpRecords = async (itemId: string): Promise<FollowUpRecord[]> => {
-    const records = await loadFollowUpRecordsForItem(itemId);
+  const applyFollowUpRecords = (records: FollowUpRecord[], rawExtraction?: FollowUpSubmitResponse["rawExtraction"]) => {
+    setFollowUpRecords(records);
     const hydratedResults = toGeneratedResults(records);
     const serverAnswers = toAnswersMap(records);
-    const localDraft = readFollowUpDraftFromStorage(itemId);
+    const localDraft = readFollowUpDraftFromStorage(experimentItemId);
+    const mergedAnswers = mergeAnswersByPriority(serverAnswers, localDraft?.answersBySource ?? {});
+
     setGeneratedResults(hydratedResults);
     setQuestionIdsBySource(toQuestionIdMap(records));
-    const mergedAnswers = mergeAnswersByPriority(serverAnswers, localDraft?.answersBySource ?? {});
     setAnswersBySource(mergedAnswers);
     setFilterBasisAnswersBySource(mergedAnswers);
     setDerivedExtractionBySourceQuestion(toDerivedExtractionMap(records));
+    setSubmittedSources(
+      new Set(
+        records.filter((record) => (record.questions ?? []).some((question) => normalizeQuestionValue(question.answerText).length > 0)).map((record) => record.sourceText),
+      ),
+    );
+
+    if (Array.isArray(rawExtraction)) {
+      setCausalItems(flattenCausalItems(rawExtraction));
+    }
+  };
+
+  const reloadFollowUpRecords = async (itemId: string): Promise<FollowUpRecord[]> => {
+    const records = await loadFollowUpRecordsForItem(itemId);
+    applyFollowUpRecords(records);
     return records;
   };
 
@@ -904,29 +1161,38 @@ export default function FollowUpGenerationPage({
 
   const normalizeValue = (value?: string | null): string => (value ?? "").trim();
 
+  const buildRelationKey = (relation: CausalItem["extracted"][number]): string => [
+    normalizeValue(relation.head),
+    normalizeValue(relation.relationship),
+    normalizeValue(relation.tail),
+    normalizeValue(relation.detail),
+  ].join("||");
+
   const areExtractedRelationsEqual = (left: CausalItem["extracted"], right: CausalItem["extracted"]): boolean => {
     if (left.length !== right.length) {
       return false;
     }
 
-    for (let index = 0; index < left.length; index += 1) {
-      const leftRelation = left[index];
-      const rightRelation = right[index];
-      if (!rightRelation) {
+    const relationCounts = new Map<string, number>();
+    for (const relation of left) {
+      const key = buildRelationKey(relation);
+      relationCounts.set(key, (relationCounts.get(key) ?? 0) + 1);
+    }
+
+    for (const relation of right) {
+      const key = buildRelationKey(relation);
+      const nextCount = (relationCounts.get(key) ?? 0) - 1;
+      if (nextCount < 0) {
         return false;
       }
-
-      if (
-        normalizeValue(leftRelation.head) !== normalizeValue(rightRelation.head) ||
-        normalizeValue(leftRelation.relationship) !== normalizeValue(rightRelation.relationship) ||
-        normalizeValue(leftRelation.tail) !== normalizeValue(rightRelation.tail) ||
-        normalizeValue(leftRelation.detail) !== normalizeValue(rightRelation.detail)
-      ) {
-        return false;
+      if (nextCount === 0) {
+        relationCounts.delete(key);
+      } else {
+        relationCounts.set(key, nextCount);
       }
     }
 
-    return true;
+    return relationCounts.size === 0;
   };
 
   const doesClassMatchCausal = (
@@ -937,7 +1203,6 @@ export default function FollowUpGenerationPage({
       normalizeValue(classItem.pattern_type) !== normalizeValue(causal.pattern_type) ||
       normalizeValue(classItem.sentence_type) !== normalizeValue(causal.sentence_type) ||
       normalizeValue(classItem.marked_type) !== normalizeValue(causal.marked_type) ||
-      normalizeValue(classItem.explicit_type) !== normalizeValue(causal.explicit_type) ||
       normalizeValue(classItem.marker) !== normalizeValue(causal.marker) ||
       normalizeValue(classItem.source_text) !== normalizeValue(causal.source_text)
     ) {
@@ -1189,6 +1454,162 @@ export default function FollowUpGenerationPage({
     setGenerationStatus("Added a new question and answer box. Fill the answer, then submit.");
   };
 
+  const applyAutoAnswers = (answers: FollowUpAnswerResult[]) => {
+    if (answers.length === 0) {
+      return;
+    }
+
+    setAnswersBySource((previous) => {
+      const next = { ...previous };
+      for (const answer of answers) {
+        if (!answer.sourceText || !answer.questionText) {
+          continue;
+        }
+        const current = next[answer.sourceText] ?? {};
+        next[answer.sourceText] = {
+          ...current,
+          [answer.questionText]: answer.answerText,
+        };
+      }
+      answersBySourceRef.current = next;
+      return next;
+    });
+
+    for (const answer of answers) {
+      if (!answer.sourceText || !answer.questionText) {
+        continue;
+      }
+      dirtyAnswerKeysRef.current.add(buildQuestionKey(answer.sourceText, answer.questionText));
+    }
+
+    setDraftSyncStatus("Saving draft...");
+    flushDraftNow("blur");
+  };
+
+  const handleAutoAnswerQuestion = async (sourceText: string, sentenceType: string, question: string) => {
+    const existingAnswer = answersBySourceRef.current[sourceText]?.[question] ?? "";
+    if (existingAnswer.trim()) {
+      setAutoAnswerStatus("This question already has an answer.");
+      return;
+    }
+
+    const key = buildQuestionKey(sourceText, question);
+    setAnsweringQuestionKeys((previous) => {
+      const next = new Set(previous);
+      next.add(key);
+      return next;
+    });
+    setAutoAnswerStatus("");
+
+    try {
+      const answers = await requestFollowUpAnswers(
+        [
+          {
+            questionText: question,
+            sourceText,
+            sentenceType,
+            useInternet: isLikelyInternetAnswerable(question),
+          },
+        ],
+        model,
+      );
+
+      const resolvedAnswer = answers.find(
+        (item) => item.questionText === question && item.sourceText === sourceText,
+      ) ?? answers[0];
+
+      const answerText = (resolvedAnswer?.answerText ?? "").trim();
+      if (!answerText) {
+        setAutoAnswerStatus("No answer returned for that question.");
+        return;
+      }
+
+      applyAutoAnswers([
+        {
+          questionText: question,
+          sourceText,
+          answerText,
+        },
+      ]);
+      setAutoAnswerStatus("Answered 1 question.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to auto-answer the question.";
+      setAutoAnswerStatus(message);
+    } finally {
+      setAnsweringQuestionKeys((previous) => {
+        const next = new Set(previous);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
+
+  const handleAutoAnswerSearchable = async () => {
+    const pending = searchableQuestionPayloads.filter((item) => {
+      const answer = answersBySourceRef.current[item.sourceText]?.[item.questionText] ?? "";
+      return !answer.trim();
+    });
+
+    if (pending.length === 0) {
+      setAutoAnswerStatus("No unanswered searchable questions.");
+      return;
+    }
+
+    setIsAnsweringSearchable(true);
+    setAutoAnswerStatus("");
+
+    try {
+      const answers = await requestFollowUpAnswers(pending, model);
+      const usable = answers.filter((entry) => entry.answerText?.trim().length > 0);
+
+      if (usable.length === 0) {
+        setAutoAnswerStatus("No answers returned for searchable questions.");
+        return;
+      }
+
+      applyAutoAnswers(usable);
+      setAutoAnswerStatus(`Answered ${String(usable.length)} searchable question(s).`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to auto-answer searchable questions.";
+      setAutoAnswerStatus(message);
+    } finally {
+      setIsAnsweringSearchable(false);
+    }
+  };
+
+  const handleAutoAnswerAllQuestions = async () => {
+    const pending = allQuestionPayloads.filter((item) => {
+      const answer = answersBySourceRef.current[item.sourceText]?.[item.questionText] ?? "";
+      return !answer.trim();
+    });
+
+    if (pending.length === 0) {
+      setAutoAnswerStatus("No unanswered questions available.");
+      return;
+    }
+
+    setIsAnsweringAll(true);
+    setAutoAnswerStatus("");
+
+    try {
+      const answers = await requestFollowUpAnswers(pending, model);
+      const usable = answers.filter((entry) => entry.answerText?.trim().length > 0);
+
+      if (usable.length === 0) {
+        setAutoAnswerStatus("No answers returned for the current questions.");
+        return;
+      }
+
+      applyAutoAnswers(usable);
+      setAutoAnswerStatus(`Answered ${String(usable.length)} question(s).`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to auto-answer questions.";
+      setAutoAnswerStatus(message);
+    } finally {
+      setIsAnsweringAll(false);
+    }
+  };
+
   const handleGenerateAllQuestions = async () => {
     if (visibleCausalItems.length === 0) {
       setGenerationStatus("No causal items are currently displayed.");
@@ -1286,7 +1707,7 @@ export default function FollowUpGenerationPage({
       },
     }));
 
-    dirtyAnswerKeysRef.current.add(`${sourceText}||${question}`);
+    dirtyAnswerKeysRef.current.add(buildQuestionKey(sourceText, question));
     setDraftSyncStatus("Saving draft...");
 
     if (dirtyAnswerKeysRef.current.size >= DRAFT_SYNC_THRESHOLD) {
@@ -1325,18 +1746,19 @@ export default function FollowUpGenerationPage({
     }
 
     const sourceCausal = causalItems.find((item) => item.source_text === sourceText);
-    if (!sourceCausal) {
-      throw new Error("Unable to map this causal source when saving custom questions.");
-    }
+    const sourceSentenceType =
+      sourceCausal?.sentence_type ??
+      generatedResultsRef.current.find((item) => item.source_text === sourceText)?.sentence_type ??
+      "";
 
     await saveFollowUpQuestionsForItem({
       experimentItemId: itemId,
       records: [
         {
           sourceText,
-          sentenceType: sourceCausal.sentence_type,
+          sentenceType: sourceSentenceType,
           generatedQuestions: questions,
-          causalRef: toCausalRef(sourceCausal),
+          causalRef: sourceCausal ? toCausalRef(sourceCausal) : undefined,
           generatedBy: "user",
         },
       ],
@@ -1420,19 +1842,64 @@ export default function FollowUpGenerationPage({
         })
         .filter((payload) => (payload.classes ?? []).length > 0);
 
+      let updatedFollowUp = artifacts.follow_up;
+
       if (!removed) {
-        setGenerationStatus("Unable to find this causal class in the database.");
-        return;
-      }
+        let removedDerived = false;
+        updatedFollowUp = artifacts.follow_up.map((record) => {
+          const nextQuestions = (record.questions ?? []).map((question) => {
+            const derived = Array.isArray(question.derived_causal) ? question.derived_causal : [];
+            if (derived.length === 0) {
+              return question;
+            }
 
-      const refKey = buildCausalRefKey(toCausalRef(causal));
-      const updatedFollowUp = artifacts.follow_up.filter((record) => {
-        if (refKey) {
-          return buildCausalRefKey(record.causal_ref) !== refKey;
+            const filteredDerived = derived.filter((row) =>
+              !doesClassMatchCausal({
+                pattern_type: row.pattern_type,
+                sentence_type: row.sentence_type,
+                marked_type: row.marked_type,
+                explicit_type: row.explicit_type,
+                marker: row.marker ?? null,
+                source_text: row.source_text,
+                extracted: (row.extracted ?? []).map((relation) => ({
+                  head: relation.head,
+                  relationship: relation.relationship,
+                  tail: relation.tail,
+                  detail: relation.detail ?? "",
+                })),
+              }, causal),
+            );
+
+            if (filteredDerived.length !== derived.length) {
+              removedDerived = true;
+            }
+
+            return {
+              ...question,
+              derived_causal: filteredDerived.length > 0 ? filteredDerived : undefined,
+            };
+          });
+
+          return {
+            ...record,
+            questions: nextQuestions,
+          };
+        });
+
+        if (!removedDerived) {
+          setGenerationStatus("Unable to find this causal class in the database.");
+          return;
         }
+      } else {
+        const refKey = buildCausalRefKey(toCausalRef(causal));
+        updatedFollowUp = artifacts.follow_up.filter((record) => {
+          if (refKey) {
+            return buildCausalRefKey(record.causal_ref) !== refKey;
+          }
 
-        return normalizeValue(record.source_text) !== normalizeValue(causal.source_text);
-      });
+          return normalizeValue(record.source_text) !== normalizeValue(causal.source_text);
+        });
+      }
 
       await saveCausalArtifactsForItem({
         experimentItemId: itemId,
@@ -1493,11 +1960,15 @@ export default function FollowUpGenerationPage({
       const itemId = ensureExperimentItemId();
       const artifacts = await loadCausalArtifactsForItem(itemId);
 
-      let updated = false;
+      let matchedCount = 0;
+      let updatedCount = 0;
       const updatedRawExtraction = artifacts.raw_extraction.map((payload) => {
         const nextClasses = (payload.classes ?? []).map((classItem) => {
-          if (!updated && doesClassMatchCausal(classItem, causal)) {
-            updated = true;
+          if (doesClassMatchCausal(classItem, causal)) {
+            matchedCount += 1;
+            if (normalizeValue(classItem.explicit_type).toUpperCase() !== "E") {
+              updatedCount += 1;
+            }
             return {
               ...classItem,
               explicit_type: "E",
@@ -1513,21 +1984,90 @@ export default function FollowUpGenerationPage({
         };
       });
 
-      if (!updated) {
+      let matchedDerivedCount = 0;
+      let updatedDerivedCount = 0;
+      const updatedFollowUp = (artifacts.follow_up ?? []).map((record) => {
+        const nextQuestions = (record.questions ?? []).map((question) => {
+          if (!Array.isArray(question.derived_causal) || question.derived_causal.length === 0) {
+            return question;
+          }
+
+          let hasDerivedUpdate = false;
+          const nextDerived = question.derived_causal.map((row) => {
+            const derivedItem = {
+              pattern_type: row.pattern_type,
+              sentence_type: row.sentence_type,
+              marked_type: row.marked_type,
+              explicit_type: row.explicit_type,
+              marker: row.marker ?? null,
+              source_text: row.source_text,
+              extracted: (row.extracted ?? []).map((relation) => ({
+                head: relation.head,
+                relationship: relation.relationship,
+                tail: relation.tail,
+                detail: relation.detail ?? "",
+              })),
+            };
+
+            if (!doesClassMatchCausal(derivedItem, causal)) {
+              return row;
+            }
+
+            matchedDerivedCount += 1;
+            if (normalizeValue(row.explicit_type).toUpperCase() !== "E") {
+              updatedDerivedCount += 1;
+            }
+            hasDerivedUpdate = true;
+            return {
+              ...row,
+              explicit_type: "E",
+            };
+          });
+
+          return hasDerivedUpdate
+            ? {
+              ...question,
+              derived_causal: nextDerived,
+            }
+            : question;
+        });
+
+        return {
+          ...record,
+          questions: nextQuestions,
+        };
+      });
+
+      const totalMatches = matchedCount + matchedDerivedCount;
+      const totalUpdates = updatedCount + updatedDerivedCount;
+
+      if (totalMatches === 0) {
         setGenerationStatus("Unable to find this causal class in the database.");
+        return;
+      }
+
+      if (totalUpdates === 0) {
+        setGenerationStatus("Already marked explicit.");
         return;
       }
 
       await saveCausalArtifactsForItem({
         experimentItemId: itemId,
         rawExtraction: updatedRawExtraction,
-        followUp: artifacts.follow_up,
+        followUp: updatedFollowUp,
       });
 
-      setGenerationStatus("Marked causal class as explicit. Reloading...");
-      if (typeof window !== "undefined") {
-        window.location.reload();
-      }
+      const totalUpdatedLabel = `Marked ${String(totalUpdates)} causal class${totalUpdates === 1 ? "" : "es"} as explicit`;
+      const derivedLabel = updatedDerivedCount > 0
+        ? ` (including ${String(updatedDerivedCount)} follow-up derived class${updatedDerivedCount === 1 ? "" : "es"})`
+        : "";
+      setGenerationStatus(`${totalUpdatedLabel}${derivedLabel}.`);
+
+      const [nextArtifacts] = await Promise.all([
+        loadCausalArtifactsForItem(itemId),
+        reloadFollowUpRecords(itemId),
+      ]);
+      setCausalItems(flattenCausalItems(nextArtifacts.raw_extraction));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to mark causal as explicit.";
       setGenerationStatus(message);
@@ -1541,6 +2081,10 @@ export default function FollowUpGenerationPage({
   };
 
   const handleSubmitGroup = async (sourceText: string, questions: string[]) => {
+    if (groupSubmitting.has(sourceText)) {
+      return;
+    }
+
     if (questions.length === 0) {
       setGroupSubmitStatus((previous) => ({
         ...previous,
@@ -1549,7 +2093,7 @@ export default function FollowUpGenerationPage({
       return;
     }
 
-    const answers = answersBySource[sourceText] ?? {};
+    const answers = answersBySourceRef.current[sourceText] ?? {};
     const answeredQuestions = questions.filter((question) => (answers[question] ?? "").trim().length > 0);
     const unansweredCount = questions.length - answeredQuestions.length;
 
@@ -1562,6 +2106,15 @@ export default function FollowUpGenerationPage({
     }
 
     try {
+      setGroupSubmitting((prev) => {
+        const next = new Set(prev);
+        next.add(sourceText);
+        return next;
+      });
+      setGroupSubmitStatus((previous) => ({
+        ...previous,
+        [sourceText]: "",
+      }));
       flushDraftNow("submit");
       const itemId = ensureExperimentItemId();
       const questionIds = await ensureQuestionIdsForSource(itemId, sourceText, questions);
@@ -1586,13 +2139,20 @@ export default function FollowUpGenerationPage({
         })),
       });
 
-      await reloadFollowUpRecords(itemId);
-      
+      applyFollowUpRecords(submitResult.followUpRecords, submitResult.rawExtraction);
+
       // Update explicit_type from "I" to "E" for submitted source_text
       await updateExplicitTypeAfterSubmission(itemId, sourceText);
+      setCausalItems((previous) =>
+        previous.map((item) =>
+          item.source_text === sourceText && item.explicit_type.trim().toUpperCase() === "I"
+            ? { ...item, explicit_type: "E" }
+            : item,
+        ),
+      );
 
       for (const question of answeredQuestions) {
-        dirtyAnswerKeysRef.current.delete(`${sourceText}||${question}`);
+        dirtyAnswerKeysRef.current.delete(buildQuestionKey(sourceText, question));
       }
 
       setSubmittedSources((previous) => {
@@ -1603,7 +2163,7 @@ export default function FollowUpGenerationPage({
 
       setGroupSubmitStatus((previous) => ({
         ...previous,
-        [sourceText]: `Submitted ${String(answeredQuestions.length)} answered item(s), re-extracted ${String(submitResult.extractedFromFollowUp)} follow-up Q&A pair(s). Skipped ${String(unansweredCount)} unanswered item(s).`,
+        [sourceText]: `Submitted ${String(submitResult.savedAnswers)} answered item(s). Skipped ${String(unansweredCount)} unanswered item(s).`,
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit this Q&A group.";
@@ -1611,16 +2171,26 @@ export default function FollowUpGenerationPage({
         ...previous,
         [sourceText]: message,
       }));
+    } finally {
+      setGroupSubmitting((prev) => {
+        const next = new Set(prev);
+        next.delete(sourceText);
+        return next;
+      });
     }
   };
 
   const handleSubmitAllQA = async () => {
+    if (isSubmittingAll) {
+      return;
+    }
+
     if (!hasGenerated) {
       setAllSubmitStatus("No generated questions available to submit yet.");
       return;
     }
 
-    const qaPairs = generatedResults.flatMap((result) =>
+    const qaPairs = generatedResultsRef.current.flatMap((result) =>
       result.generated_questions.map((question) => ({
         sourceText: result.source_text,
         question,
@@ -1628,12 +2198,12 @@ export default function FollowUpGenerationPage({
     );
 
     const unansweredCount = qaPairs.filter(({ sourceText, question }) => {
-      const answer = answersBySource[sourceText]?.[question] ?? "";
+      const answer = answersBySourceRef.current[sourceText]?.[question] ?? "";
       return !answer.trim();
     }).length;
 
     const answeredPairs = qaPairs.filter(({ sourceText, question }) => {
-      const answer = answersBySource[sourceText]?.[question] ?? "";
+      const answer = answersBySourceRef.current[sourceText]?.[question] ?? "";
       return answer.trim().length > 0;
     });
 
@@ -1643,6 +2213,8 @@ export default function FollowUpGenerationPage({
     }
 
     try {
+      setIsSubmittingAll(true);
+      setAllSubmitStatus("");
       flushDraftNow("submit");
       const itemId = ensureExperimentItemId();
       const sourceToQuestions = new Map<string, string[]>();
@@ -1654,7 +2226,10 @@ export default function FollowUpGenerationPage({
 
       const resolvedIdsBySource: Record<string, Record<string, string>> = {};
       for (const [sourceText, questions] of sourceToQuestions.entries()) {
-        resolvedIdsBySource[sourceText] = await ensureQuestionIdsForSource(itemId, sourceText, questions);
+        const allQuestions =
+          generatedResultsRef.current.find((item) => item.source_text === sourceText)?.generated_questions ??
+          questions;
+        resolvedIdsBySource[sourceText] = await ensureQuestionIdsForSource(itemId, sourceText, allQuestions);
       }
 
       const answersPayload = answeredPairs
@@ -1664,7 +2239,7 @@ export default function FollowUpGenerationPage({
           questionId,
           questionText: question,
           sourceText,
-          answerText: (answersBySource[sourceText]?.[question] ?? "").trim(),
+          answerText: (answersBySourceRef.current[sourceText]?.[question] ?? "").trim(),
           answeredBy: "user",
         };
       })
@@ -1681,16 +2256,23 @@ export default function FollowUpGenerationPage({
         answers: answersPayload,
       });
 
-      await reloadFollowUpRecords(itemId);
+      applyFollowUpRecords(submitResult.followUpRecords, submitResult.rawExtraction);
 
       // Update explicit_type from "I" to "E" for all submitted source texts
       const uniqueSourceTexts = new Set(answeredPairs.map((pair) => pair.sourceText));
       for (const sourceText of uniqueSourceTexts) {
         await updateExplicitTypeAfterSubmission(itemId, sourceText);
       }
+      setCausalItems((previous) =>
+        previous.map((item) =>
+          uniqueSourceTexts.has(item.source_text) && item.explicit_type.trim().toUpperCase() === "I"
+            ? { ...item, explicit_type: "E" }
+            : item,
+        ),
+      );
 
       for (const pair of answeredPairs) {
-        dirtyAnswerKeysRef.current.delete(`${pair.sourceText}||${pair.question}`);
+        dirtyAnswerKeysRef.current.delete(buildQuestionKey(pair.sourceText, pair.question));
       }
 
       setSubmittedSources((previous) => {
@@ -1702,11 +2284,13 @@ export default function FollowUpGenerationPage({
       });
 
       setAllSubmitStatus(
-        `Submitted ${String(answeredPairs.length)} answered item(s), re-extracted ${String(submitResult.extractedFromFollowUp)} follow-up Q&A pair(s). Skipped ${String(unansweredCount)} unanswered item(s).`,
+        `Submitted ${String(submitResult.savedAnswers)} answered item(s). Skipped ${String(unansweredCount)} unanswered item(s).`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit all Q&A.";
       setAllSubmitStatus(message);
+    } finally {
+      setIsSubmittingAll(false);
     }
   };
 
@@ -1729,6 +2313,28 @@ export default function FollowUpGenerationPage({
     return { answered, unanswered };
   }, [filterBasisAnswersBySource, generatedResults, visibleGeneratedQuestionsBySource]);
 
+  const searchableUnansweredCount = useMemo(() => {
+    let count = 0;
+    for (const item of searchableQuestionPayloads) {
+      const answer = answersBySource[item.sourceText]?.[item.questionText] ?? "";
+      if (!answer.trim()) {
+        count += 1;
+      }
+    }
+    return count;
+  }, [answersBySource, searchableQuestionPayloads]);
+
+  const allUnansweredCount = useMemo(() => {
+    let count = 0;
+    for (const item of allQuestionPayloads) {
+      const answer = answersBySource[item.sourceText]?.[item.questionText] ?? "";
+      if (!answer.trim()) {
+        count += 1;
+      }
+    }
+    return count;
+  }, [answersBySource, allQuestionPayloads]);
+
   return (
     <section className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 backdrop-blur-sm md:p-6">
       <header className="mx-auto mb-6 max-w-3xl text-center">
@@ -1739,142 +2345,283 @@ export default function FollowUpGenerationPage({
         </p>
       </header>
 
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => void handleGenerateAllQuestions()}
-            disabled={isGeneratingAll}
-            className="rounded-lg border border-emerald-500 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
-          >
-            {isGeneratingAll ? "Generating..." : "Generate all questions"}
-          </button>
-
-          <div className="inline-flex overflow-hidden rounded-lg border border-neutral-700">
-            <button
-              type="button"
-              onClick={() => handleFilterModeChange("all")}
-              className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
-                answerFilterMode === "all"
-                  ? "bg-sky-500/25 text-sky-200"
-                  : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
-              }`}
-            >
-              All ({String(answerCounts.answered + answerCounts.unanswered)})
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFilterModeChange("unanswered")}
-              className={`border-l border-neutral-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
-                answerFilterMode === "unanswered"
-                  ? "bg-amber-500/25 text-amber-200"
-                  : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
-              }`}
-            >
-              Unanswered ({String(answerCounts.unanswered)})
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFilterModeChange("answered")}
-              className={`border-l border-neutral-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
-                answerFilterMode === "answered"
-                  ? "bg-emerald-500/25 text-emerald-200"
-                  : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
-              }`}
-            >
-              Answered ({String(answerCounts.answered)})
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={refreshFilterSnapshot}
-            className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-200 transition hover:bg-neutral-800"
-            title="Refresh answered/unanswered grouping from current edits"
-          >
-            Update filter view
-          </button>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => void handleSubmitAllQA()}
-          className="rounded-lg border border-neutral-700 bg-neutral-950 px-5 py-2 text-sm font-bold tracking-wide text-neutral-100 transition hover:border-neutral-500"
-        >
-          Submit all answered Question & Answer
-        </button>
-      </div>
-
-      <div className="mt-3 rounded-lg border border-amber-700/50 bg-amber-500/10 p-3 text-xs text-amber-100">
-        For better performance and reliability, submit in batches (for example one causal group at a time). You can continue drafting unanswered items and submit them later.
-      </div>
-
-      {runFilterInternetAnswerable ? (
-        <p className="mt-2 text-xs text-sky-300">
-          Internet-answerable question filter is ON.
-        </p>
-      ) : null}
-
       {generationStatus ? <p className="mt-3 text-sm text-neutral-300">{generationStatus}</p> : null}
+      {autoAnswerStatus ? <p className="mt-2 text-sm text-neutral-300">{autoAnswerStatus}</p> : null}
       {draftSyncStatus ? <p className="mt-2 text-xs text-neutral-400">{draftSyncStatus}</p> : null}
       {allSubmitStatus ? <p className="mt-3 text-sm text-neutral-300">{allSubmitStatus}</p> : null}
 
-      <div>
-        <div>
-          <p className="mb-3 text-sm font-semibold text-neutral-200">Select implicit causal for question generation</p>
-          <div className="space-y-3">
-            {visibleCausalItems.map((causal, index) => {
-              const generated = generatedBySourceText.get(causal.source_text);
-              const sourceQuestions = visibleGeneratedQuestionsBySource[causal.source_text] ?? generated?.generated_questions ?? [];
-              const sourceAnswers = answersBySource[causal.source_text] ?? {};
-              const sourceFilterAnswers = filterBasisAnswersBySource[causal.source_text] ?? {};
-              const sourceAnsweredCount = sourceQuestions.filter((question) => (sourceFilterAnswers[question] ?? "").trim().length > 0).length;
-              const sourceUnansweredCount = sourceQuestions.length - sourceAnsweredCount;
-              const uniqueKey = `${causal.source_text}__${causal.pattern_type}__${causal.sentence_type}__${index}`;
+      <div className="mt-5 inline-flex overflow-hidden rounded-lg border border-neutral-700">
+        <button
+          type="button"
+          onClick={() => setPageViewMode("question")}
+          className={`px-4 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+            pageViewMode === "question"
+              ? "bg-sky-500/25 text-sky-200"
+              : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
+          }`}
+        >
+          Question
+        </button>
+        <button
+          type="button"
+          onClick={() => setPageViewMode("submitted")}
+          className={`border-l border-neutral-700 px-4 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+            pageViewMode === "submitted"
+              ? "bg-emerald-500/25 text-emerald-200"
+              : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
+          }`}
+        >
+          Submitted ({String(submittedArchiveGroups.length)})
+        </button>
+      </div>
 
-              return (
-                <CausalCard
-                  key={uniqueKey}
-                  causal={causal}
-                  index={index}
-                  generatedQuestions={sourceQuestions}
-                  isPanelOpen={openedPanels.has(causal.source_text)}
-                  onTogglePanel={() => toggleGeneratedPanel(causal.source_text)}
-                  onGenerateForCausal={() => void handleGenerateForCausal(causal)}
-                  isGeneratingForCausal={generatingSources.has(causal.source_text)}
-                  onDeleteForCausal={() => void handleDeleteCausal(causal)}
-                  isDeletingForCausal={deletingSources.has(causal.source_text)}
-                  onMarkExplicitForCausal={() => void handleMarkExplicit(causal)}
-                  isMarkingExplicitForCausal={markingExplicitSources.has(causal.source_text)}
-                  answers={sourceAnswers}
-                  filterAnswers={sourceFilterAnswers}
-                  onAnswerChange={(question, answer) => handleAnswerChange(causal.source_text, question, answer)}
-                  onAnswerBlur={handleAnswerBlur}
-                  newQuestionDraft={newQuestionDraftBySource[causal.source_text] ?? ""}
-                  onNewQuestionDraftChange={(value) => handleNewQuestionDraftChange(causal.source_text, value)}
-                  onAddQuestionSet={() => handleAddQuestionSet(causal.source_text)}
-                  onSubmitGroup={() => void handleSubmitGroup(causal.source_text, sourceQuestions)}
-                  groupSubmitMessage={groupSubmitStatus[causal.source_text] ?? ""}
-                  derivedExtractionByQuestion={derivedExtractionBySourceQuestion[causal.source_text] ?? {}}
-                  answerFilterMode={answerFilterMode}
-                  totalAnsweredCount={sourceAnsweredCount}
-                  totalUnansweredCount={sourceUnansweredCount}
-                  isAddedToCausalStructure={
-                    submittedSources.has(causal.source_text) ||
-                    Object.keys(derivedExtractionBySourceQuestion[causal.source_text] ?? {}).length > 0
-                  }
-                />
-              );
-            })}
+      {pageViewMode === "question" ? (
+        <div className="mt-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void handleGenerateAllQuestions()}
+                disabled={isGeneratingAll}
+                className="rounded-lg border border-emerald-500 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+              >
+                {isGeneratingAll ? "Generating..." : "Generate all questions"}
+              </button>
 
-            {includeImplicit && visibleCausalItems.length === 0 ? (
-              <p className="rounded-lg border border-neutral-700 bg-neutral-950/80 p-3 text-sm text-neutral-300">
-                No implicit causal items (explicit_type = I) found for question generation.
-              </p>
-            ) : null}
+              <button
+                type="button"
+                onClick={() => void handleAutoAnswerAllQuestions()}
+                disabled={isAnsweringAll || allUnansweredCount === 0}
+                className="rounded-lg border border-indigo-500/70 bg-indigo-500/10 px-4 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+              >
+                {isAnsweringAll
+                  ? "Answering all..."
+                  : `Auto-answer all (${String(allUnansweredCount)})`}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleAutoAnswerSearchable()}
+                disabled={isAnsweringSearchable || searchableUnansweredCount === 0}
+                className="rounded-lg border border-violet-500/70 bg-violet-500/10 px-4 py-2 text-sm font-semibold text-violet-100 transition hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-neutral-800 disabled:text-neutral-500"
+              >
+                {isAnsweringSearchable
+                  ? "Answering searchable..."
+                  : `Auto-answer searchable (${String(searchableUnansweredCount)})`}
+              </button>
+
+              <div className="inline-flex overflow-hidden rounded-lg border border-neutral-700">
+                <button
+                  type="button"
+                  onClick={() => handleFilterModeChange("all")}
+                  className={`px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+                    answerFilterMode === "all"
+                      ? "bg-sky-500/25 text-sky-200"
+                      : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
+                  }`}
+                >
+                  All ({String(answerCounts.answered + answerCounts.unanswered)})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFilterModeChange("unanswered")}
+                  className={`border-l border-neutral-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+                    answerFilterMode === "unanswered"
+                      ? "bg-amber-500/25 text-amber-200"
+                      : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
+                  }`}
+                >
+                  Unanswered ({String(answerCounts.unanswered)})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFilterModeChange("answered")}
+                  className={`border-l border-neutral-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+                    answerFilterMode === "answered"
+                      ? "bg-emerald-500/25 text-emerald-200"
+                      : "bg-neutral-900 text-neutral-300 hover:bg-neutral-800"
+                  }`}
+                >
+                  Answered ({String(answerCounts.answered)})
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={refreshFilterSnapshot}
+                className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-200 transition hover:bg-neutral-800"
+                title="Refresh answered/unanswered grouping from current edits"
+              >
+                Update filter view
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void handleSubmitAllQA()}
+              disabled={isSubmittingAll}
+              className="rounded-lg border border-neutral-700 bg-neutral-950 px-5 py-2 text-sm font-bold tracking-wide text-neutral-100 transition hover:border-neutral-500 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {isSubmittingAll ? "Submitting…" : "Submit all answered Question & Answer"}
+            </button>
+          </div>
+
+          <div className="mt-3 rounded-lg border border-amber-700/50 bg-amber-500/10 p-3 text-xs text-amber-100">
+            For better performance and reliability, submit in batches (for example one causal group at a time). You can continue drafting unanswered items and submit them later.
+          </div>
+
+          {runFilterInternetAnswerable ? (
+            <p className="mt-2 text-xs text-sky-300">
+              Internet-answerable question filter is ON.
+            </p>
+          ) : null}
+
+          <div className="mt-5">
+            <p className="mb-3 text-sm font-semibold text-neutral-200">Select implicit causal for question generation</p>
+            <div className="space-y-3">
+              {visibleCausalItems.map((causal, index) => {
+                const generated = generatedBySourceText.get(causal.source_text);
+                const sourceQuestions = visibleGeneratedQuestionsBySource[causal.source_text] ?? generated?.generated_questions ?? [];
+                const sourceAnswers = answersBySource[causal.source_text] ?? {};
+                const sourceFilterAnswers = filterBasisAnswersBySource[causal.source_text] ?? {};
+                const sourceAnsweredCount = sourceQuestions.filter((question) => (sourceFilterAnswers[question] ?? "").trim().length > 0).length;
+                const sourceUnansweredCount = sourceQuestions.length - sourceAnsweredCount;
+                const uniqueKey = `${causal.source_text}__${causal.pattern_type}__${causal.sentence_type}__${index}`;
+                const isAddedToCausalStructure =
+                  submittedSources.has(causal.source_text) ||
+                  Object.keys(derivedExtractionBySourceQuestion[causal.source_text] ?? {}).length > 0;
+                const isImplicit = causal.explicit_type.trim().toUpperCase() === "I";
+
+                if (isImplicit && isAddedToCausalStructure) {
+                  return null;
+                }
+
+                return (
+                  <CausalCard
+                    key={uniqueKey}
+                    causal={causal}
+                    index={index}
+                    generatedQuestions={sourceQuestions}
+                    isPanelOpen={openedPanels.has(causal.source_text)}
+                    onTogglePanel={() => toggleGeneratedPanel(causal.source_text)}
+                    onGenerateForCausal={() => void handleGenerateForCausal(causal)}
+                    isGeneratingForCausal={generatingSources.has(causal.source_text)}
+                    onDeleteForCausal={() => void handleDeleteCausal(causal)}
+                    isDeletingForCausal={deletingSources.has(causal.source_text)}
+                    onMarkExplicitForCausal={() => void handleMarkExplicit(causal)}
+                    isMarkingExplicitForCausal={markingExplicitSources.has(causal.source_text)}
+                    answers={sourceAnswers}
+                    filterAnswers={sourceFilterAnswers}
+                    onAnswerChange={(question, answer) => handleAnswerChange(causal.source_text, question, answer)}
+                    onAnswerBlur={handleAnswerBlur}
+                    newQuestionDraft={newQuestionDraftBySource[causal.source_text] ?? ""}
+                    onNewQuestionDraftChange={(value) => handleNewQuestionDraftChange(causal.source_text, value)}
+                    onAddQuestionSet={() => handleAddQuestionSet(causal.source_text)}
+                    onAutoAnswerQuestion={(question) => void handleAutoAnswerQuestion(causal.source_text, causal.sentence_type, question)}
+                    isAnsweringQuestion={(question) =>
+                      answeringQuestionKeys.has(buildQuestionKey(causal.source_text, question))
+                    }
+                    onSubmitGroup={() => void handleSubmitGroup(causal.source_text, sourceQuestions)}
+                    isSubmittingGroup={groupSubmitting.has(causal.source_text)}
+                    groupSubmitMessage={groupSubmitStatus[causal.source_text] ?? ""}
+                    derivedExtractionByQuestion={derivedExtractionBySourceQuestion[causal.source_text] ?? {}}
+                    answerFilterMode={answerFilterMode}
+                    totalAnsweredCount={sourceAnsweredCount}
+                    totalUnansweredCount={sourceUnansweredCount}
+                    isAddedToCausalStructure={isAddedToCausalStructure}
+                  />
+                );
+              })}
+
+              {includeImplicit && visibleCausalItems.length === 0 ? (
+                <p className="rounded-lg border border-neutral-700 bg-neutral-950/80 p-3 text-sm text-neutral-300">
+                  No implicit causal items (explicit_type = I) found for question generation.
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="mt-5 space-y-4">
+          <div className="rounded-lg border border-emerald-700/40 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+            Submitted answers are archived here. Re-extracted causal rows remain available in the Question tab as new follow-up items.
+          </div>
+
+          {submittedArchiveGroups.length === 0 ? (
+            <p className="rounded-lg border border-neutral-700 bg-neutral-950/80 p-3 text-sm text-neutral-300">
+              No submitted answers have been archived yet.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {submittedArchiveGroups.map((record) => {
+                const answeredQuestions = (record.questions ?? []).filter((question) => normalizeQuestionValue(question.answerText).length > 0);
+
+                return (
+                  <article key={`${record.sourceText}__${record.causalId}`} className="rounded-xl border border-neutral-700 bg-neutral-900/80 p-4 text-sm text-neutral-200">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-base font-semibold text-neutral-100">{record.sourceText}</h3>
+                        <p className="mt-1 text-xs uppercase tracking-wide text-neutral-400">
+                          {record.sentenceType || "-"} · {String(answeredQuestions.length)} archived answered question(s)
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-emerald-700 bg-emerald-500/20 px-2 py-1 text-[11px] uppercase tracking-wide text-emerald-200">
+                        submitted
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {answeredQuestions.map((question) => {
+                        const derivedRows = question.derivedCausal ?? [];
+
+                        return (
+                          <div key={question.questionId} className="rounded-lg border border-neutral-700 bg-neutral-950/80 p-3">
+                            <p className="text-xs uppercase tracking-wide text-neutral-400">question</p>
+                            <p className="mt-1 text-neutral-100">{question.questionText}</p>
+
+                            <p className="mt-3 text-xs uppercase tracking-wide text-neutral-400">answer</p>
+                            <p className="mt-1 whitespace-pre-wrap text-neutral-100">{question.answerText ?? ""}</p>
+
+                            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-neutral-400">
+                              <span>generated by {question.generatedBy || "system"}</span>
+                              {question.answeredAt ? <span>answered {question.answeredAt}</span> : null}
+                              <span>{String(derivedRows.length)} derived causal row(s)</span>
+                            </div>
+
+                            {derivedRows.length > 0 ? (
+                              <div className="mt-3 space-y-2 rounded-md border border-emerald-700/40 bg-emerald-500/10 p-3">
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-200">re-extracted causals</p>
+                                {derivedRows.map((row, rowIndex) => (
+                                  <div key={`${question.questionId}__derived__${String(rowIndex)}`} className="rounded-md border border-neutral-700 bg-neutral-900/70 p-2 text-xs text-neutral-200">
+                                    <p>pattern_type: {formatCodeWithMeaning(row.pattern_type, PATTERN_TYPE_LABELS)}</p>
+                                    <p>sentence_type: {formatCodeWithMeaning(row.sentence_type, SENTENCE_TYPE_LABELS)}</p>
+                                    <p>marked_type: {formatCodeWithMeaning(row.marked_type, MARKED_TYPE_LABELS)}</p>
+                                    <p>explicit_type: {formatCodeWithMeaning(row.explicit_type, EXPLICIT_TYPE_LABELS)}</p>
+                                    <p className="mt-1 text-neutral-300">source_text: {row.source_text}</p>
+                                    {(row.extracted ?? []).length > 0 ? (
+                                      <div className="mt-2 space-y-1 text-neutral-100">
+                                        {row.extracted.map((relation, relationIndex) => (
+                                          <p key={`${question.questionId}__derived__${String(rowIndex)}__relation__${String(relationIndex)}`}>
+                                            {relation.head} | {relation.relationship} | {relation.tail}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
