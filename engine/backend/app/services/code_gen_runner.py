@@ -782,6 +782,16 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
     for index, entry in enumerate(iterations):
         ctx.raise_if_cancelled()
         entity_id = str(entry["iterId"])
+
+        existing_judge = checkpoints.load_iteration(ctx.job_id, "state2j_entity_judge", entity_id)
+        if existing_judge and isinstance(existing_judge, dict) and "passed" in existing_judge:
+            ctx.emit_stage_message(
+                "state2j_entity_judge",
+                f"state2j: skip {entity_id} (already judged)",
+            )
+            results.append(existing_judge)
+            continue
+
         payload = checkpoints.load_iteration(ctx.job_id, "state2_code_entity_object", entity_id)
         if not isinstance(payload, dict) or not payload.get("code"):
             skip_record: dict[str, Any] = {"entity_id": entity_id, "skipped": True}
@@ -1488,6 +1498,20 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
     for entry in state4_iterations:
         ctx.raise_if_cancelled()
         rule_id = str(entry["iterId"])
+
+        existing_verify = checkpoints.load_iteration(ctx.job_id, "state5_policy_verify", rule_id)
+        if existing_verify and isinstance(existing_verify, dict) and "passed" in existing_verify:
+            ctx.emit_stage_message(
+                "state5_policy_verify",
+                f"state5: skip {rule_id} (already verified)",
+            )
+            verification_results.append(existing_verify)
+            if existing_verify.get("passed") and existing_verify.get("attempts", 1) > 1:
+                fixed_count += 1
+            elif not existing_verify.get("passed"):
+                failed_count += 1
+            continue
+
         payload = checkpoints.load_iteration(ctx.job_id, "state4_code_policy", rule_id)
         if not isinstance(payload, dict) or not payload.get("code"):
             verification_results.append({"rule_id": rule_id, "skipped": True, "reason": "no code"})
