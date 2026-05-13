@@ -144,9 +144,7 @@ export function useEntityExtraction() {
                         return;
                     }
 
-                    const ungroupedOriginals = originals
-                        .filter((o) => !consumed.has(o.id))
-                        .map((o) => ({ ...o, selected: true, parentId: undefined }));
+                    const ungroupedOriginals = originals.filter((o) => !consumed.has(o.id));
 
                     const next: GeneratedEntity[] = [];
                     parents.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
@@ -161,17 +159,31 @@ export function useEntityExtraction() {
                         next.push(...members);
                     }
 
-                    next.push(
-                        ...ungroupedOriginals.sort(
-                            (a, b) => b.count - a.count || a.name.localeCompare(b.name),
-                        ),
-                    );
+                    const allParentIds = new Set(parents.map((p) => p.id));
+
+                    if (ungroupedOriginals.length > 0) {
+                        const otherId = "entity-canonical-other";
+                        const otherCount = ungroupedOriginals.reduce((sum, o) => sum + o.count, 0);
+                        next.push({
+                            id: otherId,
+                            name: "Other",
+                            count: otherCount,
+                            selected: true,
+                            memberIds: ungroupedOriginals.map((o) => o.id),
+                        });
+                        next.push(
+                            ...ungroupedOriginals
+                                .map((o) => ({ ...o, selected: false, parentId: otherId }))
+                                .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+                        );
+                        allParentIds.add(otherId);
+                    }
 
                     setEntities(next);
-                    setCollapsedParentIds(new Set(parents.map((p) => p.id)));
+                    setCollapsedParentIds(allParentIds);
                     appendGroupLog(
                         "info",
-                        `Built ${String(parents.length)} parent groups, ${String(next.length - parents.length)} child rows`,
+                        `Built ${String(parents.length)} parent groups + ${String(ungroupedOriginals.length > 0 ? 1 : 0)} Other, ${String(next.length - parents.length - (ungroupedOriginals.length > 0 ? 1 : 0))} child rows`,
                     );
                 } catch (err) {
                     if (

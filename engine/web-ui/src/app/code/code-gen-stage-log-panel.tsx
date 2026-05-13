@@ -585,6 +585,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                             isRunning={isActive}
                             isGated={!!awaitingConfirmationStage}
                             actionPending={actionPending}
+                            readOnly={status === "done"}
                           />
                         ) : entry.key === "state1d_metrics_draft" ? (
                           <MetricsDraftConfirmBlock
@@ -598,6 +599,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                                 : undefined
                             }
                             actionPending={actionPending}
+                            readOnly={status === "done"}
                           />
                         ) : (
                           <StageDetailBlock
@@ -714,6 +716,7 @@ function MetricsDraftConfirmBlock({
   jobId,
   onConfirm,
   actionPending,
+  readOnly,
 }: {
   detail: CodeGenCheckpointDetail | undefined;
   loading: boolean;
@@ -721,6 +724,7 @@ function MetricsDraftConfirmBlock({
   jobId: string | null;
   onConfirm?: () => void;
   actionPending: boolean;
+  readOnly?: boolean;
 }) {
   const previewMetrics: SuggestedMetric[] = useMemo(() => {
     try {
@@ -801,6 +805,11 @@ function MetricsDraftConfirmBlock({
             <p className="text-[11px] font-semibold text-neutral-300">
               Metrics ({previewMetrics.length}) — select to include in codegen
             </p>
+            {readOnly ? (
+              <span className="rounded border border-emerald-700/60 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                Confirmed ✓
+              </span>
+            ) : (
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -819,6 +828,7 @@ function MetricsDraftConfirmBlock({
                 Deselect all
               </button>
             </div>
+            )}
           </div>
           <ul className="max-h-72 overflow-y-auto">
             {previewMetrics.map((metric) => (
@@ -837,7 +847,7 @@ function MetricsDraftConfirmBlock({
                           return next;
                         })
                       }
-                      disabled={actionPending || confirming}
+                      disabled={actionPending || confirming || readOnly}
                     />
                     <span className="font-semibold">{metric.label}</span>
                     {metric.unit ? (
@@ -909,6 +919,7 @@ function PolicyConfirmBlock({
   isGated,
   actionPending,
   proceedLabelOverride,
+  readOnly,
 }: {
   detail: CodeGenCheckpointDetail | undefined;
   loading: boolean;
@@ -926,6 +937,7 @@ function PolicyConfirmBlock({
   isGated?: boolean;
   actionPending: boolean;
   proceedLabelOverride?: string;
+  readOnly?: boolean;
 }) {
   const [labelInput, setLabelInput] = useState("");
   const [descInput, setDescInput] = useState("");
@@ -1023,6 +1035,11 @@ function PolicyConfirmBlock({
           <p className="text-[11px] font-semibold text-neutral-300">
             Policies ({combinedPolicies.length}) — select to include
           </p>
+          {readOnly ? (
+            <span className="rounded border border-emerald-700/60 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+              Confirmed ✓
+            </span>
+          ) : (
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -1041,6 +1058,7 @@ function PolicyConfirmBlock({
               Deselect all
             </button>
           </div>
+          )}
         </div>
         <ul className="max-h-72 overflow-y-auto">
           {combinedPolicies.map((policy) => (
@@ -1052,7 +1070,7 @@ function PolicyConfirmBlock({
                     className="h-4 w-4 accent-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                     checked={selectedPolicyIds?.has(policy.rule_id) ?? false}
                     onChange={() => onTogglePolicy?.(policy.rule_id)}
-                    disabled={actionPending}
+                    disabled={actionPending || readOnly}
                   />
                   <span className="font-semibold">{policy.label}</span>
                 </span>
@@ -1062,7 +1080,7 @@ function PolicyConfirmBlock({
                 {policy.description ? (
                   <span className="ml-6 mt-1 text-xs text-neutral-400">{policy.description}</span>
                 ) : null}
-                {manualPolicies?.some((m) => m.rule_id === policy.rule_id) ? (
+                {!readOnly && manualPolicies?.some((m) => m.rule_id === policy.rule_id) ? (
                   <div className="ml-6 mt-1">
                     <button
                       type="button"
@@ -1080,6 +1098,7 @@ function PolicyConfirmBlock({
         </ul>
       </div>
 
+      {!readOnly ? (
       <div className="space-y-3 rounded-lg border border-neutral-800 bg-neutral-950/50 p-3">
         <div className="space-y-2">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Add manual policy</p>
@@ -1126,6 +1145,7 @@ function PolicyConfirmBlock({
           </button>
         </div>
       </div>
+      ) : null}
     </div>
   );
 }

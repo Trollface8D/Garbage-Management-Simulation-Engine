@@ -155,6 +155,7 @@ export default function CodePage() {
     const [manualPolicies, setManualPolicies] = useState<CodeGenPolicyOutline[]>([]);
     const [manualEntityName, setManualEntityName] = useState<string>("");
     const [manualEntityError, setManualEntityError] = useState<string>("");
+    const [minFreq, setMinFreq] = useState<number>(1);
     const [artifactFiles, setArtifactFiles] = useState<ArtifactFile[]>([]);
     const [causalExplicitStatusByComponentId, setCausalExplicitStatusByComponentId] = useState<
         Record<string, { isFullyExplicit: boolean; hasImplicit: boolean; implicitCount: number }>
@@ -1292,6 +1293,13 @@ export default function CodePage() {
                             })
                         }
                         onModelChange={setSelectedModel}
+                        minFreq={minFreq}
+                        onMinFreqChange={(v) => {
+                            setMinFreq(v);
+                            setEntities((prev) =>
+                                prev.map((e) => (e.count < v ? { ...e, selected: false } : e)),
+                            );
+                        }}
                     />
 
                     <CodeGenWorkspace

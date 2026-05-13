@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { type ComponentType, memo, useEffect, useMemo, useRef } from "react";
+import { type ComponentType, memo, useEffect, useMemo, useRef, useState } from "react";
 import ModelPicker from "@/app/components/model-picker";
 
 type WordCloudWord = {
@@ -118,6 +118,7 @@ type EntityExtractionPanelProps = {
     manualEntityName: string;
     manualEntityError: string;
     collapsedParentIds: ReadonlySet<string>;
+    minFreq: number;
 
     onExtract: () => void;
     onGroupWithGemini: () => void;
@@ -128,6 +129,7 @@ type EntityExtractionPanelProps = {
     onClearGroupLog: () => void;
     onToggleCollapse: (parentId: string) => void;
     onModelChange: (model: string) => void;
+    onMinFreqChange: (v: number) => void;
 };
 
 const EntityExtractionPanel = memo(function EntityExtractionPanel({
@@ -144,6 +146,7 @@ const EntityExtractionPanel = memo(function EntityExtractionPanel({
     manualEntityName,
     manualEntityError,
     collapsedParentIds,
+    minFreq,
     onExtract,
     onGroupWithGemini,
     onCancelGrouping,
@@ -153,7 +156,10 @@ const EntityExtractionPanel = memo(function EntityExtractionPanel({
     onClearGroupLog,
     onToggleCollapse,
     onModelChange,
+    onMinFreqChange,
 }: EntityExtractionPanelProps) {
+    const [draftFreq, setDraftFreq] = useState<number>(minFreq);
+
     const selectedEntities = useMemo(
         () => entities.filter((entity) => entity.selected),
         [entities],
@@ -323,10 +329,38 @@ const EntityExtractionPanel = memo(function EntityExtractionPanel({
                         />
 
                         <div className="flex flex-col rounded-lg border border-neutral-700 bg-neutral-900/70 p-4">
-                            <p className="text-sm font-semibold text-neutral-100">
-                                system will create {String(totalEntityCount)} entity
-                            </p>
-
+                            <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-semibold text-neutral-100">
+                                    system will create {String(totalEntityCount)} entity
+                                </p>
+                                <div className="flex items-center gap-1.5">
+                                    <label className="flex items-center gap-1.5 text-xs text-neutral-400">
+                                        min freq
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={draftFreq}
+                                            onChange={(e) => {
+                                                const v = parseInt(e.target.value, 10);
+                                                if (!isNaN(v) && v >= 1) setDraftFreq(v);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") onMinFreqChange(draftFreq);
+                                            }}
+                                            disabled={inputsLocked}
+                                            className="w-16 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100 focus:outline-none focus:ring-1 focus:ring-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                        />
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => onMinFreqChange(draftFreq)}
+                                        disabled={inputsLocked || draftFreq === minFreq}
+                                        className="rounded-md border border-sky-700 bg-sky-500/10 px-2 py-1 text-xs font-semibold text-sky-300 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                        Apply
+                                    </button>
+                                </div>
+                            </div>
                             <div className="mt-3 flex flex-wrap items-center gap-2">
                                 <input
                                     type="text"
