@@ -832,20 +832,10 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
                 break
 
             if attempt_num < max_attempts - 1:
-                issues_text = "\n".join(
-                    f"- [{i.get('severity')}] {i.get('location')}: {i.get('description')} → {i.get('suggested_fix', '')}"
-                    for i in issues
-                )
-                regen_prompt = prompts.build_state2_entity_prompt(
-                    entity_id=entity_id,
-                    entity_obj=entity_obj,
-                    accumulator_blob=current_code,
-                    causal_data=str(ctx.inputs.get("causalData") or ""),
-                    interface_digest={},
-                    policy_outline=policy_outline,
-                    selected_metrics=selected_metrics,
-                    retry_error=issues_text,
-                    omit_cached_context=True,
+                regen_prompt = prompts.build_entity_judge_fix_prompt(
+                    entity_code=current_code,
+                    issues=issues,
+                    base_class_src=base_class_src,
                 )
                 fixed_code = _generate_text(
                     ctx, "state2j_entity_judge", regen_prompt,

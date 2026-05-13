@@ -100,8 +100,8 @@ function stageStatus(
   jobStatus: string,
   awaitingConfirmationStage?: string | null,
 ): StageStatus {
-  // Gate is on state1c but confirmation UX lives on state1b (the policy review stage).
-  if (awaitingConfirmationStage === "state1c_entity_dependencies" && stageKey === "state1b_policy_outline") {
+  // Post-run gate on state1b: backend sets awaiting_confirmation_stage = "state1b_policy_outline".
+  if (awaitingConfirmationStage === "state1b_policy_outline" && stageKey === "state1b_policy_outline") {
     return "awaiting_confirmation";
   }
   // Post-run gate on state1d: confirmation UX lives on state1d itself.
@@ -160,7 +160,7 @@ export type CodeGenStageLogProps = {
   onProceedRequested?: (selectedPolicies: string[], manualPolicies: CodeGenPolicyOutline[]) => void;
   onResumeRequested?: () => void;
   onResumeWithPolicies?: (selectedPolicies: string[], manualPolicies: CodeGenPolicyOutline[]) => void;
-  onConfirmStage?: (stage: string) => void;
+  onConfirmStage?: (stage: string) => Promise<void> | void;
   policyConfirmReady?: boolean;
 };
 
@@ -393,7 +393,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
 
   // Auto-expand state1b when confirmation gate becomes active so user sees confirm UI.
   useEffect(() => {
-    if (awaitingConfirmationStage === "state1c_entity_dependencies") {
+    if (awaitingConfirmationStage === "state1b_policy_outline") {
       setExpandedStage("state1b_policy_outline");
     } else if (awaitingConfirmationStage === "state1d_metrics_draft") {
       setExpandedStage("state1d_metrics_draft");
@@ -514,7 +514,8 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
 
                       {status === "awaiting_confirmation" &&
                       entry.key === awaitingConfirmationStage &&
-                      entry.key !== "state1d_metrics_draft" ? (
+                      entry.key !== "state1d_metrics_draft" &&
+                      entry.key !== "state1b_policy_outline" ? (
                         <div className="rounded-md border border-yellow-700/60 bg-yellow-500/10 p-3 space-y-2">
                           <p className="text-xs font-semibold text-yellow-200">
                             Waiting for confirmation before running {entry.label}
@@ -722,7 +723,7 @@ function MetricsDraftConfirmBlock({
   loading: boolean;
   error: string;
   jobId: string | null;
-  onConfirm?: () => void;
+  onConfirm?: () => Promise<void> | void;
   actionPending: boolean;
   readOnly?: boolean;
 }) {
@@ -757,7 +758,7 @@ function MetricsDraftConfirmBlock({
     try {
       const selected = previewMetrics.filter((m) => selectedNames.has(m.name));
       await updateCodeGenJobMetrics(jobId, selected);
-      onConfirm();
+      await onConfirm();
     } catch (err) {
       setConfirmError(err instanceof Error ? err.message : String(err));
     } finally {

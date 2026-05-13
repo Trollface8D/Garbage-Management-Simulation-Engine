@@ -896,9 +896,15 @@ def strip_code_fences(raw: str) -> str:
     text = (raw or "").strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else ""
-    if text.endswith("```"):
-        text = text.rsplit("```", 1)[0]
-    return text.strip()
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+        return text.strip()
+    # Model preamble before a fenced block (thinking models leak reasoning text).
+    # Extract the first fenced Python block.
+    fence_match = re.search(r"```(?:python)?\n(.*?)```", text, re.DOTALL)
+    if fence_match:
+        return fence_match.group(1).strip()
+    return text
 
 
 def _walk_classes(tree: ast.AST) -> list[ast.ClassDef]:
@@ -1090,6 +1096,22 @@ Entity class interfaces:
 Return ONLY the fixed Python code. No markdown fences, no explanation.
 """
 
+_ENTITY_JUDGE_FIX_TEMPLATE = """You are fixing bugs in a simulation entity module.
+
+Issues identified:
+{issues_text}
+
+Original entity code:
+```python
+{entity_code}
+```
+
+Base class interface (entity_object_template.py — must be satisfied):
+{base_class_interface}
+
+Return ONLY the fixed Python code. No markdown fences, no explanation.
+"""
+
 _ENTITY_JUDGE_TEMPLATE = """You are a Python code reviewer checking a simulation entity module.
 
 Entity contract:
@@ -1190,6 +1212,31 @@ def build_entity_judge_prompt(
         metric_attrs="\n".join(metric_attr_lines),
         base_class_interface="\n".join(base_lines) or "  (unavailable)",
         entity_code=entity_code[:8000],
+    )
+
+
+def build_entity_judge_fix_prompt(
+    *,
+    entity_code: str,
+    issues: list[dict[str, Any]],
+    base_class_src: str,
+) -> str:
+    """Pass 2 fix prompt for entity judge — mirrors policy judge pass 2."""
+    issues_text = "\n".join(
+        f"- [{i.get('severity','?')}] {i.get('location','?')}: {i.get('description','?')}"
+        f"{' → ' + i['suggested_fix'] if i.get('suggested_fix') else ''}"
+        for i in (issues or [])
+    ) or "(none)"
+    digest = interface_digest_from_source(base_class_src)
+    base_lines: list[str] = []
+    for cls in digest.get("classes") or []:
+        for method in cls.get("methods") or []:
+            args = ", ".join(method.get("args") or [])
+            base_lines.append(f"  def {method['name']}({args}): ...")
+    return _ENTITY_JUDGE_FIX_TEMPLATE.format(
+        issues_text=issues_text,
+        entity_code=entity_code[:8000],
+        base_class_interface="\n".join(base_lines) or "  (unavailable)",
     )
 
 

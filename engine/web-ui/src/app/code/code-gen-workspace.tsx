@@ -683,7 +683,7 @@ export default function CodeGenWorkspace({
           }
           onResumeRequested={() => void job.resume()}
           onResumeWithPolicies={(sp, mp) => void handleResumeWithPolicies(sp, mp)}
-          onConfirmStage={(stage) => void job.confirm(stage)}
+          onConfirmStage={(stage) => job.confirm(stage)}
           policyConfirmReady={workflow.policyConfirmReady}
         />
       </div>
