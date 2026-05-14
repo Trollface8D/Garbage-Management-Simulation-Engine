@@ -1,0 +1,5 @@
+run,context,model,entity_list_mode,pass1_pass,pass1_total,pass1_pass_pct,pass1_warning,pass1_fail,pass1_avg_score,pass1_avg_pct,pass2_pass,pass2_total,pass2_pass_pct,causal_exact_match_pct,causal_partial_match_pct,causal_missing_pct,total_reference_causal,simulation_run,simulation_behaviour_correctness
+Run 1,Incomplete Note,gemini-2.5-flash,Implicit,9,19,47,5,5,2.11,70.33,1,23,4.35,49,10,41,153,fail,not accurate
+Run 2,Note + Interview,gemini-2.5-pro,Implicit,15,20,75,1,4,2.55,85.00,5,12,41.67,79,7,14,72,success,not accurate
+Run 3,Note + Interview,gemini-2.5-pro,Explicit,11,18,61,3,4,2.39,79.66,4,11,36.36,86.4,1.5,12.1,66,success,not accurate
+Run 4,Note + Interview,gemini-2.5-pro,Explicit,14,17,82,1,2,2.71,90.33,3,12,25.00,82.7,2.7,14.7,75,fail,not accurate
