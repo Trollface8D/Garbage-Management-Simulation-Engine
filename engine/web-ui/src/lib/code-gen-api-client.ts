@@ -157,6 +157,8 @@ export type CodeGenCreateRequest = {
    * persists across server restarts and resume calls.
    */
   autoConfirm?: boolean;
+  /** Max LLM judge + fix attempts per entity/policy (1–10). Default 3. */
+  verificationLoops?: number;
 };
 
 async function parseError(response: Response): Promise<string> {

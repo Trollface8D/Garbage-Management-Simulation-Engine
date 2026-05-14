@@ -190,6 +190,7 @@ export default function CodeGenWorkspace({
   const [actionError, setActionError] = useState<string>("");
   const [previewText, setPreviewText] = useState<string>("");
   const [autoConfirm, setAutoConfirm] = useState<boolean>(false);
+  const [maxVerifyAttempts, setMaxVerifyAttempts] = useState<number>(3);
   const [wasRestoredFromPersistence, setWasRestoredFromPersistence] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const lastResultJobIdRef = useRef<string | null>(null);
@@ -431,6 +432,7 @@ export default function CodeGenWorkspace({
         model: model.trim() || undefined,
         previewOnly: false,
         autoConfirm,
+        verificationLoops: maxVerifyAttempts,
       });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Generate failed.");
@@ -611,7 +613,19 @@ export default function CodeGenWorkspace({
           Edit Input
         </button>
         <div className="ml-auto flex items-center gap-2">
-        <ModelPicker value={model} onChange={(v) => onModelChange?.(v)} label="model" placeholder="default from .env" />
+          <label className="flex items-center gap-1.5 text-xs text-neutral-400" title="Max LLM judge + fix attempts per entity/policy (1–10)">
+            <span>max attempts</span>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={maxVerifyAttempts}
+              onChange={(e) => setMaxVerifyAttempts(Math.max(1, Math.min(10, Number(e.target.value))))}
+              disabled={workflow.isRunning}
+              className="w-14 rounded border border-neutral-700 bg-neutral-900 px-1.5 py-1 text-center text-xs text-neutral-200 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50"
+            />
+          </label>
+          <ModelPicker value={model} onChange={(v) => onModelChange?.(v)} label="model" placeholder="default from .env" />
         </div>
       </div>
 
