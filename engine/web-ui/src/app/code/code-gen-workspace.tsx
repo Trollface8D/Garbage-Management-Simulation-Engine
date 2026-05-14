@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  appendCodeGenJobEntities,
   artifactUrl,
   fetchCodeGenResult,
   updateCodeGenJobPolicies,
   type CodeGenEntity,
+  type CodeGenMissingEntity,
   type CodeGenPolicyOutline,
   type SuggestedMetric,
   type UserEntityItem,
@@ -684,6 +686,16 @@ export default function CodeGenWorkspace({
           onResumeRequested={() => void job.resume()}
           onResumeWithPolicies={(sp, mp) => void handleResumeWithPolicies(sp, mp)}
           onConfirmStage={(stage) => job.confirm(stage)}
+          onAddEntities={async (entities: CodeGenMissingEntity[]) => {
+            if (!job.jobId) return;
+            const payload = entities.map((me) => ({
+              id: me.suggested_id,
+              label: me.role || me.suggested_id,
+              type: "resource" as const,
+              frequency: 1,
+            }));
+            await appendCodeGenJobEntities(job.jobId, payload);
+          }}
           policyConfirmReady={workflow.policyConfirmReady}
         />
       </div>

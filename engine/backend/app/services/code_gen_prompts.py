@@ -66,7 +66,7 @@ def entity_label_to_class_name(label: str) -> str:
     text = re.sub(r'^entity[-_][\w\d]+[-_][\w\d]+[-_]', '', text)
     text = re.sub(r'^entity[-_][\w\d]+[-_]', '', text)
     text = re.sub(r'^entity[-_]', '', text)
-    words = re.split(r'[\s\-_]+', text)
+    words = re.split(r'[^a-zA-Z0-9]+', text)
     pascal_case = ''.join(w.capitalize() for w in words if w and not w.isdigit())
     return f'Entity_{pascal_case}'
 
@@ -156,10 +156,29 @@ STATE1B_POLICY_OUTLINE_SCHEMA: dict[str, Any] = {
                         "items": {"type": "string"},
                     },
                     "description": {"type": "string"},
+                    "observable_via": {
+                        "type": "string",
+                        "enum": ["attribute", "on_query", "method_return", "none"],
+                    },
+                    "observable_key": {"type": "string"},
+                    "contract_warning": {"type": "string"},
                 },
                 "required": ["rule_id", "trigger", "target_entity_id", "target_method"],
             },
-        }
+        },
+        "missing_entities": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "suggested_id": {"type": "string"},
+                    "role": {"type": "string"},
+                    "needed_by_rules": {"type": "array", "items": {"type": "string"}},
+                    "reason": {"type": "string"},
+                },
+                "required": ["suggested_id", "role", "reason"],
+            },
+        },
     },
     "required": ["policies"],
 }
@@ -175,7 +194,18 @@ STATE1B_POLICY_OUTLINE_SCHEMA_TEXT = (
     '      "target_entity_id": "string (entity.id from State 1 — the class the policy will mutate)",\n'
     '      "target_method": "string (snake_case method name the policy will call on the target entity)",\n'
     '      "inputs": ["string", ...],\n'
-    '      "description": "string (one sentence)"\n'
+    '      "description": "string (one sentence)",\n'
+    '      "observable_via": "attribute|on_query|method_return|none",\n'
+    '      "observable_key": "string (exact attr name or on_query key string)",\n'
+    '      "contract_warning": "string (describe the gap if implementation is impossible or ambiguous)"\n'
+    "    }\n"
+    "  ],\n"
+    '  "missing_entities": [\n'
+    "    {\n"
+    '      "suggested_id": "snake_case id for the missing entity",\n'
+    '      "role": "what this entity does in the system",\n'
+    '      "needed_by_rules": ["rule_id_1", ...],\n'
+    '      "reason": "why no existing entity in the list can serve this role"\n'
     "    }\n"
     "  ]\n"
     "}\n"
@@ -185,6 +215,20 @@ STATE1B_POLICY_OUTLINE_SCHEMA_TEXT = (
     "- target_method MUST be the public method name the entity (or environment) is expected to\n"
     "  expose. Stage 2 will be told to define this method on the target class so the policy has a\n"
     "  stable interface to call.\n"
+    "- observable_via: if the policy READS state from the target entity to decide whether to fire,\n"
+    "  specify HOW: 'attribute' (direct attr), 'on_query' (entity.on_query(key)), 'method_return'\n"
+    "  (method returns a value), or 'none' (void trigger only). Omit if policy never reads entity state.\n"
+    "- observable_key: if observable_via is 'on_query', this MUST be the exact string key the policy\n"
+    "  will pass to entity.on_query(key). Both the entity generator AND the entity judge will use\n"
+    "  this key to verify the entity exposes it. If observable_via is 'attribute', this is the\n"
+    "  attribute name. Required when observable_via is 'on_query' or 'attribute'.\n"
+    "- contract_warning: emit this when the mechanism CANNOT be implemented cleanly — e.g. a method\n"
+    "  contract forbids params but the method semantically needs data, or the trigger reads state from\n"
+    "  an entity that has no way to expose it. Describe EXACTLY what is missing or contradictory.\n"
+    "  Do NOT silently drop broken mechanisms — emit them with a contract_warning instead.\n"
+    "- missing_entities: if one or more mechanisms require an entity to exist (e.g. a data holder,\n"
+    "  a message queue, a mediating agent) that is NOT in the provided entity list, emit it here.\n"
+    "  Only emit entities that are structurally necessary — not nice-to-haves.\n"
     "- Do NOT emit policy bodies. This stage is a contract preview only."
 )
 
@@ -274,7 +318,18 @@ def build_state1b_policy_outline_prompt(
         "handles it, and what method that entity already performs. "
         "For each mechanism, output one entry: the observed trigger, the target entity "
         "(or 'environment'), and a method name that reads as the entity's own behavior "
-        "(not a policy label)."
+        "(not a policy label).\n\n"
+        "CONTRACT COMPLETENESS CHECK — for every mechanism you emit, ask:\n"
+        "1. Does target_method need to receive data (e.g. waste objects, location id, severity level)\n"
+        "   but the method signature in the entity list shows no parameters? If so, emit contract_warning.\n"
+        "2. Does the policy need to READ state from the target entity (count, level, flag) but no\n"
+        "   entity in the list specifies how that state is exposed? If so, set observable_via='on_query'\n"
+        "   with the exact key, OR emit contract_warning if it cannot be resolved.\n"
+        "3. Does the mechanism require transferring data between two entities via an intermediate holder\n"
+        "   (request object, message, queue) that does NOT exist in the entity list? If so, emit the\n"
+        "   missing entity in missing_entities[] and reference it in contract_warning.\n"
+        "Do NOT silently drop mechanisms that have these gaps — emit them with clear warnings so\n"
+        "the code generator knows upfront that manual intervention may be needed."
     )
     prompt = _assemble(
         [
@@ -836,6 +891,20 @@ def build_state4_policy_prompt(
         "This template file is provided in the artifacts directory.\n"
         "Do NOT attempt to define the Policy base class yourself — import it from the template."
     )
+    # Entity lookup API — always included regardless of map availability
+    entity_api_section = (
+        "Entity lookup API (call these on the `env` parameter):\n"
+        "  env.entities → list of all entity instances\n"
+        "  env.get_entities_by_type(type_name: str) → list\n"
+        "  env.get_entities_at(location_id: str) → list\n"
+        "  env.get_entity_object(entity_object_id: str) → entity or None\n"
+        "\nCANONICAL NAME RULE: get_entities_by_type() requires a canonical entity id STRING\n"
+        "(e.g. 'entity-canonical-0-waste', 'entity-canonical-5-pest', 'entity-canonical-14-event').\n"
+        "Do NOT pass a Python class object (Entity_Waste) or a display name.\n"
+        "Entity id strings are visible in the entity classes blob above — use the id that\n"
+        "appears in entity_object_id assignments, e.g. 'entity-canonical-N-label'."
+    )
+
     # Map accessor API section (Section 10)
     map_interface_section = ""
     if isinstance(map_graph, dict) and map_graph:
@@ -867,6 +936,7 @@ def build_state4_policy_prompt(
             + (entities_blob.strip() if entities_blob.strip() else "(empty)"),
             "Environment class code:\n"
             + (environment_code.strip() if environment_code.strip() else "(empty)"),
+            entity_api_section,
             map_interface_section,
             "Already generated policy code (single delimited blob):\n"
             + (policies_accumulator.strip() if policies_accumulator.strip() else "(empty)"),
@@ -1060,9 +1130,17 @@ Policy code under review:
 {policy_code}
 ```
 
+PRIORITY RULE: If the code has ANY syntax error (SyntaxError, unfinished string, missing colon,
+etc.), report ONLY that syntax error. Do NOT report other issues — they cannot be verified until
+the file parses. Set verdict="fail" with issues containing only the syntax error.
+
 Identify concrete bugs only — wrong method signatures, missing imports, undefined names,
 incorrect entity method calls, broken Policy base-class inheritance, or runtime errors.
 Do NOT report style issues or minor formatting.
+
+CANONICAL NAME RULE: env.get_entities_by_type() requires a canonical entity id STRING
+(e.g. 'entity-canonical-0-waste', 'entity-canonical-5-pest'), NOT a Python class object
+like Entity_Waste. Flag any call that passes a class object or non-canonical string.
 
 Return JSON only (no prose, no markdown):
 {{
@@ -1098,8 +1176,14 @@ Return ONLY the fixed Python code. No markdown fences, no explanation.
 
 _ENTITY_JUDGE_FIX_TEMPLATE = """You are fixing bugs in a simulation entity module.
 
-Issues identified:
+Issues identified (fix IN THIS ORDER — syntax errors block all other fixes):
 {issues_text}
+
+Policy methods this entity MUST expose (called by policies):
+{policy_methods}
+
+on_query() keys this entity MUST return (policies read entity state via these keys):
+{on_query_keys}
 
 Original entity code:
 ```python
@@ -1108,6 +1192,10 @@ Original entity code:
 
 Base class interface (entity_object_template.py — must be satisfied):
 {base_class_interface}
+
+IMPORTANT: Fix all listed issues without removing fixes already present in the code.
+If on_query keys are listed above, implement on_query(self, metric_name: str) -> dict
+returning a dict with those exact keys when the correct metric_name is passed.
 
 Return ONLY the fixed Python code. No markdown fences, no explanation.
 """
@@ -1122,6 +1210,9 @@ Entity contract:
 Policy methods this entity MUST expose (called by policies):
 {policy_methods}
 
+on_query() keys this entity MUST return (used by policies to read entity state):
+{on_query_keys}
+
 Metric attributes this entity MUST expose for the Reporter:
 {metric_attrs}
 
@@ -1133,11 +1224,17 @@ Entity code under review:
 {entity_code}
 ```
 
+PRIORITY RULE: If the code has ANY syntax error (SyntaxError, unfinished string, missing colon,
+etc.), report ONLY that syntax error. Do NOT report other issues — they cannot be verified until
+the file parses. Set verdict="fail" with issues containing only the syntax error.
+
 Identify concrete bugs only:
 - Missing or wrong-signature policy methods
+- Missing on_query() override when on_query keys are listed above
+- on_query() that does not return the required keys listed above
 - Metric attrs that don't exist, are wrong type, or are not reporter-reducible
   (reporter-reducible = int/float/bool, or List[Dict] with at least one numeric value field)
-- Missing step() or on_query() overrides
+- Missing step() override
 - Broken base class inheritance
 
 Do NOT report style issues or minor formatting.
@@ -1159,6 +1256,22 @@ If issues: {{"issues": [...], "verdict": "fail"}}.
 """
 
 
+def _extract_on_query_keys(
+    entity_id: str,
+    policy_outline: list[dict[str, Any]],
+) -> list[str]:
+    """Collect on_query keys policies expect from this entity (from observable_key field)."""
+    keys: list[str] = []
+    for p in policy_outline or []:
+        if p.get("target_entity_id") != entity_id:
+            continue
+        if p.get("observable_via") == "on_query" and p.get("observable_key"):
+            key = str(p["observable_key"])
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
 def build_entity_judge_prompt(
     *,
     entity_id: str,
@@ -1177,6 +1290,9 @@ def build_entity_judge_prompt(
         f"  {p.get('rule_id')}: {p.get('target_method')}() — {p.get('trigger', '')}"
         for p in relevant_policies
     ] or ["  (none)"]
+
+    on_query_keys = _extract_on_query_keys(entity_id, policy_outline)
+    on_query_lines = [f"  '{k}'" for k in on_query_keys] or ["  (none)"]
 
     entity_metrics = [
         m for m in selected_metrics
@@ -1209,6 +1325,7 @@ def build_entity_judge_prompt(
         label=str(entity_obj.get("label") or entity_id),
         description=str(entity_obj.get("description") or ""),
         policy_methods="\n".join(policy_methods_lines),
+        on_query_keys="\n".join(on_query_lines),
         metric_attrs="\n".join(metric_attr_lines),
         base_class_interface="\n".join(base_lines) or "  (unavailable)",
         entity_code=entity_code[:8000],
@@ -1220,12 +1337,19 @@ def build_entity_judge_fix_prompt(
     entity_code: str,
     issues: list[dict[str, Any]],
     base_class_src: str,
+    policy_outline: list[dict[str, Any]] | None = None,
+    entity_id: str | None = None,
 ) -> str:
     """Pass 2 fix prompt for entity judge — mirrors policy judge pass 2."""
+    # Sort: syntax errors first so fixer clears parse blockers before other fixes.
+    sorted_issues = sorted(
+        issues or [],
+        key=lambda i: 0 if "syntax" in str(i.get("description", "")).lower() else 1,
+    )
     issues_text = "\n".join(
         f"- [{i.get('severity','?')}] {i.get('location','?')}: {i.get('description','?')}"
         f"{' → ' + i['suggested_fix'] if i.get('suggested_fix') else ''}"
-        for i in (issues or [])
+        for i in sorted_issues
     ) or "(none)"
     digest = interface_digest_from_source(base_class_src)
     base_lines: list[str] = []
@@ -1233,8 +1357,23 @@ def build_entity_judge_fix_prompt(
         for method in cls.get("methods") or []:
             args = ", ".join(method.get("args") or [])
             base_lines.append(f"  def {method['name']}({args}): ...")
+
+    relevant_policies = [
+        p for p in (policy_outline or [])
+        if p.get("target_entity_id") == entity_id
+    ] if entity_id else []
+    policy_methods_lines = [
+        f"  {p.get('rule_id')}: {p.get('target_method')}() — {p.get('trigger', '')}"
+        for p in relevant_policies
+    ] or ["  (none)"]
+
+    on_query_keys = _extract_on_query_keys(entity_id or "", policy_outline or [])
+    on_query_lines = [f"  '{k}'" for k in on_query_keys] or ["  (none)"]
+
     return _ENTITY_JUDGE_FIX_TEMPLATE.format(
         issues_text=issues_text,
+        policy_methods="\n".join(policy_methods_lines),
+        on_query_keys="\n".join(on_query_lines),
         entity_code=entity_code[:8000],
         base_class_interface="\n".join(base_lines) or "  (unavailable)",
     )

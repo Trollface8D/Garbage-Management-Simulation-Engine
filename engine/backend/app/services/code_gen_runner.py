@@ -34,6 +34,22 @@ from ..services.job_store import (
 
 logger = logging.getLogger(__name__)
 
+_LLM_CRASH_PATTERNS: tuple[str, ...] = (
+    "An internal error occurred",
+    "Please try again",
+    "I'm sorry, I encountered",
+    "I apologize",
+    "[INTERNAL]",
+)
+
+
+def _is_llm_crash(text: str) -> bool:
+    """Return True when the LLM returned an error string instead of code."""
+    t = (text or "").strip()
+    if len(t) < 30:
+        return True
+    return any(pat in t for pat in _LLM_CRASH_PATTERNS)
+
 
 def _append_interaction_log(
     job_id: str,
@@ -445,18 +461,61 @@ def _stage_state1b_policy_outline(ctx: StageContext) -> dict[str, Any]:
                 )
                 continue
         seen_rule_ids.add(rule_id)
-        cleaned.append(
-            {
-                "rule_id": rule_id,
-                "label": str(entry.get("label") or rule_id),
-                "trigger": str(entry.get("trigger") or "").strip(),
-                "target_entity_id": target,
-                "target_method": method,
-                "inputs": [str(x) for x in (entry.get("inputs") or []) if isinstance(x, str)],
-                "description": str(entry.get("description") or "").strip(),
-            }
+        record: dict[str, Any] = {
+            "rule_id": rule_id,
+            "label": str(entry.get("label") or rule_id),
+            "trigger": str(entry.get("trigger") or "").strip(),
+            "target_entity_id": target,
+            "target_method": method,
+            "inputs": [str(x) for x in (entry.get("inputs") or []) if isinstance(x, str)],
+            "description": str(entry.get("description") or "").strip(),
+        }
+        if entry.get("observable_via"):
+            record["observable_via"] = str(entry["observable_via"])
+        if entry.get("observable_key"):
+            record["observable_key"] = str(entry["observable_key"])
+        if entry.get("contract_warning"):
+            record["contract_warning"] = str(entry["contract_warning"])
+        cleaned.append(record)
+
+    # Surface missing_entities as a top-level warning for the pipeline.
+    missing_entities: list[dict[str, Any]] = []
+    for item in (parsed.get("missing_entities") or []):
+        if not isinstance(item, dict):
+            continue
+        suggested_id = str(item.get("suggested_id") or "").strip()
+        if not suggested_id:
+            continue
+        missing_entities.append({
+            "suggested_id": suggested_id,
+            "role": str(item.get("role") or ""),
+            "needed_by_rules": [str(r) for r in (item.get("needed_by_rules") or []) if isinstance(r, str)],
+            "reason": str(item.get("reason") or ""),
+        })
+    if missing_entities:
+        logger.warning(
+            "[code_gen][state1b] %d missing entity/entities flagged by LLM: %s",
+            len(missing_entities),
+            [m["suggested_id"] for m in missing_entities],
         )
-    return {"stage": "state1b_policy_outline", "policies": cleaned}
+
+    contract_warnings = [
+        {"rule_id": r["rule_id"], "warning": r["contract_warning"]}
+        for r in cleaned if r.get("contract_warning")
+    ]
+    if contract_warnings:
+        logger.warning(
+            "[code_gen][state1b] %d rule(s) have contract warnings: %s",
+            len(contract_warnings),
+            contract_warnings,
+        )
+
+    return {
+        "stage": "state1b_policy_outline",
+        "policies": cleaned,
+        "missingEntities": missing_entities,
+        "contractWarnings": contract_warnings,
+    }
 
 
 def _stage_state1c_entity_dependencies(ctx: StageContext) -> dict[str, Any]:
@@ -754,6 +813,29 @@ def _stage_state2_code_entity_object(ctx: StageContext) -> dict[str, Any]:
     }
 
 
+def _broken_dependencies(
+    entity_id: str,
+    dep_edges: list[dict[str, Any]],
+    judge_results_map: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Return list of dependency entity ids that failed verification.
+
+    dep_edges format: {from: A, to: B} means A depends on B.
+    Only checks deps that have already been judged (in-order processing).
+    """
+    broken: list[str] = []
+    for edge in dep_edges:
+        if str(edge.get("from") or "") != entity_id:
+            continue
+        dep = str(edge.get("to") or "")
+        if not dep:
+            continue
+        result = judge_results_map.get(dep)
+        if result is not None and not result.get("passed") and not result.get("skipped"):
+            broken.append(dep)
+    return broken
+
+
 def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
     """LLM-as-Judge: review each entity, fix via state2 retry, loop up to maxVerifyAttempts."""
     ctx.raise_if_cancelled()
@@ -769,6 +851,9 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
     state1b = ctx.stage_payload("state1b_policy_outline") or {}
     policy_outline: list[dict] = state1b.get("policies") or []
 
+    state1c = ctx.stage_payload("state1c_entity_dependencies") or {}
+    dep_edges: list[dict[str, Any]] = list(state1c.get("edges") or [])
+
     selected_metrics: list[dict] = list(ctx.inputs.get("selectedMetrics") or [])
 
     base_class_src = Path(
@@ -777,6 +862,7 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
 
     max_attempts = int(ctx.inputs.get("maxVerifyAttempts", 3))
     results: list[dict] = []
+    judge_results_map: dict[str, dict[str, Any]] = {}
     total = len(iterations)
 
     for index, entry in enumerate(iterations):
@@ -790,6 +876,7 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
                 f"state2j: skip {entity_id} (already judged)",
             )
             results.append(existing_judge)
+            judge_results_map[entity_id] = existing_judge
             continue
 
         payload = checkpoints.load_iteration(ctx.job_id, "state2_code_entity_object", entity_id)
@@ -797,6 +884,26 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
             skip_record: dict[str, Any] = {"entity_id": entity_id, "skipped": True}
             checkpoints.save_iteration(ctx.job_id, "state2j_entity_judge", entity_id, skip_record)
             results.append(skip_record)
+            judge_results_map[entity_id] = skip_record
+            continue
+
+        # Dependency gate: skip fix budget if a required dependency already failed.
+        broken_deps = _broken_dependencies(entity_id, dep_edges, judge_results_map)
+        if broken_deps:
+            dep_block_record: dict[str, Any] = {
+                "entity_id": entity_id,
+                "passed": False,
+                "status": "dependency_blocked",
+                "blocked_by": broken_deps,
+                "attempts": [],
+            }
+            checkpoints.save_iteration(ctx.job_id, "state2j_entity_judge", entity_id, dep_block_record)
+            results.append(dep_block_record)
+            judge_results_map[entity_id] = dep_block_record
+            ctx.emit_stage_message(
+                "state2j_entity_judge",
+                f"state2j: {entity_id} dependency_blocked by {broken_deps} — skipping judge",
+            )
             continue
 
         current_code = str(payload["code"])
@@ -806,7 +913,9 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
 
         ctx.emit_stage_message("state2j_entity_judge", f"state2j: judging {entity_id} ({index + 1}/{total})")
 
-        for attempt_num in range(max_attempts):
+        crash_retries_remaining = 2  # LLM crash budget (separate from verify budget)
+        attempt_num = 0
+        while attempt_num < max_attempts:
             ctx.raise_if_cancelled()
             judge_prompt = prompts.build_entity_judge_prompt(
                 entity_id=entity_id,
@@ -831,16 +940,44 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
                 attempts.append(attempt_record)
                 break
 
+            # Contract violations are architecturally unfixable — stop wasting budget.
+            contract_violations = [i for i in issues if i.get("severity") == "contract_violation"]
+            if contract_violations:
+                attempt_record["status"] = "contract_gap"
+                passed = False
+                attempts.append(attempt_record)
+                logger.warning(
+                    "[code_gen][state2j] %s has contract violation(s) — skipping fix attempts: %s",
+                    entity_id,
+                    [v.get("description") for v in contract_violations],
+                )
+                break
+
             if attempt_num < max_attempts - 1:
                 regen_prompt = prompts.build_entity_judge_fix_prompt(
                     entity_code=current_code,
                     issues=issues,
                     base_class_src=base_class_src,
+                    policy_outline=policy_outline,
+                    entity_id=entity_id,
                 )
                 fixed_code = _generate_text(
                     ctx, "state2j_entity_judge", regen_prompt,
                     iter_id=f"{entity_id}_fix{attempt_num + 1}",
                 )
+                if _is_llm_crash(fixed_code):
+                    # Crash doesn't count against verify budget — retry same attempt.
+                    if crash_retries_remaining > 0:
+                        crash_retries_remaining -= 1
+                        ctx.emit_stage_message(
+                            "state2j_entity_judge",
+                            f"state2j: {entity_id} LLM crash on fix — retrying (crash retries left: {crash_retries_remaining})",
+                        )
+                        continue  # re-run this attempt_num without incrementing
+                    attempt_record["status"] = "fix_failed_crash"
+                    passed = False
+                    attempts.append(attempt_record)
+                    break
                 if fixed_code.strip():
                     current_code = fixed_code
                     attempt_record["status"] = "fixed_and_retry"
@@ -854,6 +991,7 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
                 passed = False
 
             attempts.append(attempt_record)
+            attempt_num += 1
 
         code_changed = current_code != str(payload.get("code", ""))
         if code_changed:
@@ -868,15 +1006,18 @@ def _stage_state2j_entity_judge(ctx: StageContext) -> dict[str, Any]:
             "codeChanged": code_changed,
         }
         checkpoints.save_iteration(ctx.job_id, "state2j_entity_judge", entity_id, judge_record)
+        judge_results_map[entity_id] = judge_record
         results.append({"entity_id": entity_id, "passed": passed, "attempts": attempts})
 
     passed_count = sum(1 for r in results if r.get("passed"))
     failed_count = sum(1 for r in results if not r.get("passed") and not r.get("skipped"))
+    dep_blocked_count = sum(1 for r in results if r.get("status") == "dependency_blocked")
     return {
         "stage": "state2j_entity_judge",
         "entityCount": len(results),
         "passedCount": passed_count,
         "failedCount": failed_count,
+        "depBlockedCount": dep_blocked_count,
         "results": results,
     }
 
@@ -1461,6 +1602,20 @@ def _load_entity_code_index(ctx: StageContext) -> dict[str, str]:
     return result
 
 
+def _policy_target_entity_broken(
+    rule_contract: dict[str, Any],
+    state2j_results_map: dict[str, dict[str, Any]],
+) -> str | None:
+    """Return the failed target entity id if the policy's target entity failed verification."""
+    target = str(rule_contract.get("target_entity_id") or "")
+    if not target or target == "environment":
+        return None
+    result = state2j_results_map.get(target)
+    if result is not None and not result.get("passed") and not result.get("skipped"):
+        return target
+    return None
+
+
 def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
     """LLM-as-Judge: review each generated policy, fix bugs, max 2 retries per policy."""
     ctx.raise_if_cancelled()
@@ -1477,6 +1632,13 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
         if isinstance(p, dict) and p.get("rule_id")
     }
 
+    # Build state2j results map for dependency gate.
+    state2j_stage = ctx.stage_payload("state2j_entity_judge") or {}
+    state2j_results_map: dict[str, dict[str, Any]] = {}
+    for r in (state2j_stage.get("results") or []):
+        if isinstance(r, dict) and r.get("entity_id"):
+            state2j_results_map[str(r["entity_id"])] = r
+
     entity_code_index = _load_entity_code_index(ctx)
     map_graph = ctx.inputs.get("mapGraph")
     map_accessor_api = _MAP_ACCESSOR_API_SUMMARY if isinstance(map_graph, dict) and map_graph else ""
@@ -1484,6 +1646,7 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
     verification_results: list[dict[str, Any]] = []
     fixed_count = 0
     failed_count = 0
+    dep_blocked_count = 0
 
     for entry in state4_iterations:
         ctx.raise_if_cancelled()
@@ -1508,6 +1671,28 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
             continue
 
         rule_contract = rule_contracts.get(rule_id, {"rule_id": rule_id})
+
+        # Dependency gate: if target entity failed, policy cannot be verified meaningfully.
+        broken_target = _policy_target_entity_broken(rule_contract, state2j_results_map)
+        if broken_target:
+            dep_block_record: dict[str, Any] = {
+                "rule_id": rule_id,
+                "passed": False,
+                "status": "dependency_blocked",
+                "blocked_by": [broken_target],
+                "fix_history": [],
+                "attempts": 0,
+            }
+            checkpoints.save_iteration(ctx.job_id, "state5_policy_verify", rule_id, dep_block_record)
+            verification_results.append(dep_block_record)
+            dep_blocked_count += 1
+            ctx.emit_stage_message(
+                "state5_policy_verify",
+                f"state5: {rule_id} dependency_blocked — target entity '{broken_target}' failed state2j",
+            )
+            continue
+
+        rule_contract = rule_contracts.get(rule_id, {"rule_id": rule_id})
         current_code = str(payload["code"])
         attempts: list[dict[str, Any]] = []
         final_code = current_code
@@ -1519,7 +1704,9 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
         )
 
         max_verify_attempts = int(ctx.inputs.get("maxVerifyAttempts", 3))
-        for attempt_num in range(max_verify_attempts):
+        crash_retries_remaining = 2
+        attempt_num = 0
+        while attempt_num < max_verify_attempts:
             ctx.raise_if_cancelled()
             judge_prompt = prompts.build_policy_judge_pass1_prompt(
                 policy_code=current_code,
@@ -1542,7 +1729,20 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
                 attempts.append(attempt_record)
                 break
 
-            if attempt_num < 2:
+            # Contract violations are architecturally unfixable — stop wasting budget.
+            contract_violations = [i for i in issues if i.get("severity") == "contract_violation"]
+            if contract_violations:
+                attempt_record["status"] = "contract_gap"
+                passed = False
+                attempts.append(attempt_record)
+                logger.warning(
+                    "[code_gen][state5] %s has contract violation(s) — skipping fix attempts: %s",
+                    rule_id,
+                    [v.get("description") for v in contract_violations],
+                )
+                break
+
+            if attempt_num < max_verify_attempts - 1:
                 fix_prompt = prompts.build_policy_judge_pass2_prompt(
                     policy_code=current_code,
                     rule_contract=rule_contract,
@@ -1554,6 +1754,18 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
                     ctx, "state5_policy_verify", fix_prompt,
                     iter_id=f"{rule_id}_fix_attempt{attempt_num + 1}",
                 )
+                if _is_llm_crash(fixed_code):
+                    if crash_retries_remaining > 0:
+                        crash_retries_remaining -= 1
+                        ctx.emit_stage_message(
+                            "state5_policy_verify",
+                            f"state5: {rule_id} LLM crash on fix — retrying (crash retries left: {crash_retries_remaining})",
+                        )
+                        continue  # re-run this attempt_num without incrementing
+                    attempt_record["status"] = "fix_failed_crash"
+                    attempts.append(attempt_record)
+                    passed = False
+                    break
                 if fixed_code.strip():
                     current_code = fixed_code
                     final_code = fixed_code
@@ -1563,6 +1775,8 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
                 attempt_record["status"] = "fail"
                 attempts.append(attempt_record)
                 passed = False
+
+            attempt_num += 1
 
         if len(attempts) > 1 and passed:
             fixed_count += 1
@@ -1595,6 +1809,7 @@ def _stage_state5_policy_verify(ctx: StageContext) -> dict[str, Any]:
         "policyCount": len(state4_iterations),
         "fixedCount": fixed_count,
         "failedCount": failed_count,
+        "depBlockedCount": dep_blocked_count,
         "results": verification_results,
     }
 

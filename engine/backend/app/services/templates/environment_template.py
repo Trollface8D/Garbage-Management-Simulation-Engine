@@ -138,6 +138,32 @@ class SimulationEnvironment:
     def get_global_policies(self) -> List['Policy']:
         return self.policies.copy()
 
+    # ==================== ENTITY LOOKUP ====================
+
+    def get_entities_by_type(self, type_name: str) -> List['entity_object']:
+        """Return entities matching type_name (canonical id string, e.g. 'entity-canonical-0-waste').
+
+        Matches against entity_object_id prefix OR exact class name string.
+        Pass the canonical entity id string — NOT a Python class object.
+        """
+        result = []
+        for e in self.entities:
+            eid = getattr(e, 'entity_object_id', '') or ''
+            cls_name = type(e).__name__
+            if (cls_name == type_name
+                    or eid == type_name
+                    or eid.startswith(type_name)):
+                result.append(e)
+        return result
+
+    def get_entities_at(self, location_id: str) -> List['entity_object']:
+        """Return entities whose location_id or current_location matches location_id."""
+        return [
+            e for e in self.entities
+            if (getattr(e, 'location_id', None) == location_id
+                or getattr(e, 'current_location', None) == location_id)
+        ]
+
     # ==================== BACKWARD COMPATIBILITY ====================
 
     def register_entity(self, entity):

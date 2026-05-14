@@ -394,6 +394,25 @@ def update_job_policies(job_id: str, payload: dict[str, Any] = Body(default_fact
     return {"jobId": job_id, "selectedPolicies": selected_policies}
 
 
+@router.patch("/code_gen/jobs/{job_id}/entities")
+def append_job_entities(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
+    """Append new entities to userEntityList (inputs.json) and state1_entity_list checkpoint.
+
+    Body: ``{"entities": [{"id": "...", "label": "...", "type": "resource", "frequency": 1}]}``
+    Call before confirming state1b when missing entities were detected, so state1c
+    picks them up and state2 generates code for them.
+    """
+    entities = list(payload.get("entities") or [])
+    try:
+        checkpoints.append_user_entities(job_id, entities)
+    except FileNotFoundError:
+        return JSONResponse(
+            {"error": f"No job data found for '{job_id}'."},
+            status_code=404,
+        )
+    return {"jobId": job_id, "appended": len(entities)}
+
+
 @router.patch("/code_gen/jobs/{job_id}/metrics")
 def update_job_metrics(job_id: str, payload: dict[str, Any] = Body(default_factory=dict)):
     """Overwrite selectedMetrics in the saved inputs manifest.

@@ -496,6 +496,53 @@ def update_selected_metrics(job_id: str, selected_metrics: list[dict[str, Any]])
     )
 
 
+def append_user_entities(job_id: str, new_entities: list[dict[str, Any]]) -> None:
+    """Append new entities to userEntityList in inputs.json and to state1_entity_list checkpoint.
+
+    Entities already present (by id) are skipped. The state1 checkpoint is updated so
+    that state1c (which runs next) picks up the new entities for dependency ordering.
+    """
+    if not new_entities:
+        return
+    base = job_dir(job_id)
+
+    # Update inputs.json so re-runs also include the new entities.
+    manifest_path = base / "inputs.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        existing: list[dict[str, Any]] = list(manifest.get("userEntityList") or [])
+        existing_ids = {str(e.get("id") or "") for e in existing if isinstance(e, dict)}
+        appended = 0
+        for ent in new_entities:
+            eid = str(ent.get("id") or "")
+            if eid and eid not in existing_ids:
+                existing.append(ent)
+                existing_ids.add(eid)
+                appended += 1
+        manifest["userEntityList"] = existing
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Update state1_entity_list checkpoint so state1c sees the full entity set.
+    state1_path = stage_file(job_id, "state1_entity_list")
+    if state1_path.exists():
+        state1 = json.loads(state1_path.read_text(encoding="utf-8"))
+        entities: list[dict[str, Any]] = list(state1.get("entities") or [])
+        existing_ids_s1 = {str(e.get("id") or "") for e in entities if isinstance(e, dict)}
+        for ent in new_entities:
+            eid = str(ent.get("id") or "")
+            if eid and eid not in existing_ids_s1:
+                entities.append(ent)
+                existing_ids_s1.add(eid)
+        state1["entities"] = entities
+        save_stage(job_id, "state1_entity_list", state1)
+
+    logger.info(
+        "[code_gen][checkpoint] entities appended jobId=%s count=%s",
+        job_id,
+        len(new_entities),
+    )
+
+
 def encode_bytes(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 

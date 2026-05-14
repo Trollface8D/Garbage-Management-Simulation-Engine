@@ -9,6 +9,7 @@ import {
   rollbackCodeGenJob,
   updateCodeGenJobMetrics,
   type CodeGenCheckpointDetail,
+  type CodeGenMissingEntity,
   type CodeGenPolicyOutline,
   type SuggestedMetric,
 } from "@/lib/code-gen-api-client";
@@ -55,7 +56,7 @@ const STAGE_ENTRIES: StageEntry[] = [
   {
     key: "state2j_entity_judge",
     label: "Entity judge",
-    description: "LLM-as-Judge reviews each entity for missing methods and metric attrs; applies fixes (max retries).",
+    description: "LLM-as-Judge reviews each entity for missing methods and metric attrs; applies fixes (max retries). Statuses: pass · fail · contract_gap · dependency_blocked · fix_failed_crash.",
   },
   {
     key: "state3_code_environment",
@@ -75,7 +76,7 @@ const STAGE_ENTRIES: StageEntry[] = [
   {
     key: "state5_policy_verify",
     label: "Policy self-check",
-    description: "LLM-as-Judge reviews each policy for bugs and applies fixes (max 2 retries).",
+    description: "LLM-as-Judge reviews each policy for bugs and applies fixes (max 2 retries). Statuses: pass · fail · contract_gap · dependency_blocked · fix_failed_crash.",
   },
   {
     key: "finalize_bundle",
@@ -161,6 +162,7 @@ export type CodeGenStageLogProps = {
   onResumeRequested?: () => void;
   onResumeWithPolicies?: (selectedPolicies: string[], manualPolicies: CodeGenPolicyOutline[]) => void;
   onConfirmStage?: (stage: string) => Promise<void> | void;
+  onAddEntities?: (entities: CodeGenMissingEntity[]) => Promise<void>;
   policyConfirmReady?: boolean;
 };
 
@@ -183,6 +185,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
     onResumeRequested,
     onResumeWithPolicies,
     onConfirmStage,
+    onAddEntities,
     policyConfirmReady,
   } = props;
 
@@ -564,6 +567,7 @@ export default function CodeGenStageLogPanel(props: CodeGenStageLogProps) {
                             onRemoveManualPolicy={(rule_id) => {
                               setDraftManualPolicies((prev) => prev.filter((item) => item.rule_id !== rule_id));
                             }}
+                            onAddEntities={onAddEntities}
                             onConfirm={
                               awaitingConfirmationStage
                                 ? () => onConfirmStage?.(awaitingConfirmationStage)
@@ -914,6 +918,7 @@ function PolicyConfirmBlock({
   manualPolicies,
   onAddManualPolicy,
   onRemoveManualPolicy,
+  onAddEntities,
   onConfirm,
   confirmReady,
   isRunning,
@@ -932,6 +937,7 @@ function PolicyConfirmBlock({
   manualPolicies?: CodeGenPolicyOutline[];
   onAddManualPolicy?: (policy: CodeGenPolicyOutline) => void;
   onRemoveManualPolicy?: (rule_id: string) => void;
+  onAddEntities?: (entities: CodeGenMissingEntity[]) => Promise<void>;
   onConfirm?: () => void;
   confirmReady?: boolean;
   isRunning: boolean;
@@ -942,6 +948,7 @@ function PolicyConfirmBlock({
 }) {
   const [labelInput, setLabelInput] = useState("");
   const [descInput, setDescInput] = useState("");
+  const [selectedMissingIds, setSelectedMissingIds] = useState<Set<string>>(new Set());
 
   const handleAddManualPolicy = () => {
     const label = labelInput.trim();
@@ -966,6 +973,52 @@ function PolicyConfirmBlock({
     event.preventDefault();
     handleAddManualPolicy();
   };
+
+  // Derive data from checkpoint before any early return so hooks stay unconditional.
+  const previewPolicies: CodeGenPolicyOutline[] = (() => {
+    try {
+      const raw = detail?.preview as { policies?: unknown } | null | undefined;
+      if (Array.isArray(raw)) return raw as CodeGenPolicyOutline[];
+      if (raw && Array.isArray(raw.policies)) return raw.policies as CodeGenPolicyOutline[];
+      return [];
+    } catch {
+      return [];
+    }
+  })();
+
+  const missingEntities: CodeGenMissingEntity[] = (() => {
+    try {
+      const raw = detail?.preview as { missingEntities?: unknown } | null | undefined;
+      if (raw && Array.isArray(raw.missingEntities)) return raw.missingEntities as CodeGenMissingEntity[];
+      return [];
+    } catch {
+      return [];
+    }
+  })();
+
+  // Pre-check all missing entities whenever the list changes.
+  const missingEntityIdKey = missingEntities.map((m) => m.suggested_id).join(",");
+  useEffect(() => {
+    if (missingEntities.length > 0) {
+      setSelectedMissingIds(new Set(missingEntities.map((m) => m.suggested_id)));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missingEntityIdKey]);
+
+  const toggleMissing = (id: string) => {
+    setSelectedMissingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Merge preview policies with manual policies, manual policies appended
+  const combinedPolicies: CodeGenPolicyOutline[] = [
+    ...previewPolicies,
+    ...(manualPolicies || []),
+  ];
 
   if (loading) {
     return <p className="text-[11px] text-neutral-500">Loading checkpoint…</p>;
@@ -994,25 +1047,13 @@ function PolicyConfirmBlock({
       window.alert("Please select at least one policy before confirming.");
       return;
     }
-    onConfirm?.();
-  };
-
-  const previewPolicies: CodeGenPolicyOutline[] = (() => {
-    try {
-      const raw = detail?.preview as { policies?: unknown } | null | undefined;
-      if (Array.isArray(raw)) return raw as CodeGenPolicyOutline[];
-      if (raw && Array.isArray(raw.policies)) return raw.policies as CodeGenPolicyOutline[];
-      return [];
-    } catch {
-      return [];
+    const entitiesToAdd = missingEntities.filter((m) => selectedMissingIds.has(m.suggested_id));
+    if (entitiesToAdd.length > 0 && onAddEntities) {
+      void onAddEntities(entitiesToAdd).then(() => onConfirm?.());
+    } else {
+      onConfirm?.();
     }
-  })();
-
-  // Merge preview policies with manual policies, manual policies appended
-  const combinedPolicies: CodeGenPolicyOutline[] = [
-    ...previewPolicies,
-    ...(manualPolicies || []),
-  ];
+  };
 
   return (
     <div className="space-y-2 rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
@@ -1029,6 +1070,37 @@ function PolicyConfirmBlock({
         <p className="text-[11px] text-neutral-500">
           Policy checkpoint details are not loaded yet. Manual policy entry remains available.
         </p>
+      ) : null}
+
+      {missingEntities.length > 0 ? (
+        <div className="rounded-md border border-amber-600/40 bg-amber-500/5 p-2 space-y-1">
+          <p className="text-[11px] font-semibold text-amber-300">
+            Missing entities ({missingEntities.length}) — check to auto-add before proceeding
+          </p>
+          <ul className="space-y-1">
+            {missingEntities.map((me) => (
+              <li key={me.suggested_id}>
+                <label className="flex flex-col gap-0.5 rounded border border-amber-700/30 bg-amber-500/5 px-2 py-1 text-[11px] text-amber-200 cursor-pointer">
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      checked={selectedMissingIds.has(me.suggested_id)}
+                      onChange={() => toggleMissing(me.suggested_id)}
+                      disabled={actionPending || readOnly}
+                    />
+                    <span className="font-semibold">{me.suggested_id}</span>
+                    {me.role ? <span className="text-amber-300/70">— {me.role}</span> : null}
+                  </span>
+                  {me.needed_by_rules?.length ? (
+                    <span className="ml-5 text-amber-400/60">needed by: {me.needed_by_rules.join(", ")}</span>
+                  ) : null}
+                  {me.reason ? <span className="ml-5 text-amber-400/60">{me.reason}</span> : null}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       <div>
@@ -1080,6 +1152,12 @@ function PolicyConfirmBlock({
                 </span>
                 {policy.description ? (
                   <span className="ml-6 mt-1 text-xs text-neutral-400">{policy.description}</span>
+                ) : null}
+                {policy.contract_warning ? (
+                  <span className="ml-6 mt-1 flex items-start gap-1 rounded border border-amber-600/50 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+                    <span className="shrink-0 font-semibold">⚠ contract gap:</span>
+                    <span>{policy.contract_warning}</span>
+                  </span>
                 ) : null}
                 {!readOnly && manualPolicies?.some((m) => m.rule_id === policy.rule_id) ? (
                   <div className="ml-6 mt-1">

@@ -17,6 +17,31 @@ export type CodeGenPolicyOutline = {
   target_method: string;
   inputs: string[];
   description: string;
+  observable_via?: "attribute" | "on_query" | "method_return" | "none";
+  observable_key?: string;
+  contract_warning?: string;
+};
+
+export type CodeGenMissingEntity = {
+  suggested_id: string;
+  role: string;
+  needed_by_rules: string[];
+  reason: string;
+};
+
+export type CodeGenJudgeAttempt = {
+  status: "pass" | "fixed_and_retry" | "fail" | "contract_gap" | "fix_failed_crash" | "fix_failed" | "dependency_blocked";
+  issues?: Array<{ description: string; severity?: string }>;
+  blocked_by?: string[];
+};
+
+export type CodeGenJudgeResult = {
+  entity_id?: string;
+  rule_id?: string;
+  passed: boolean;
+  status: CodeGenJudgeAttempt["status"];
+  blocked_by?: string[];
+  attempts: CodeGenJudgeAttempt[];
 };
 
 export type CodeGenJobStatus = {
@@ -42,6 +67,8 @@ export type CodeGenPreviewResult = {
   entities: CodeGenEntity[];
   policies: CodeGenPolicyOutline[];
   warning: string | null;
+  missingEntities?: CodeGenMissingEntity[];
+  contractWarnings?: string[];
 };
 
 export type CodeGenIterationEntry = {
@@ -269,6 +296,21 @@ export async function rollbackCodeGenJob(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ toStage, mode, force: true }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+}
+
+export async function appendCodeGenJobEntities(
+  jobId: string,
+  entities: Array<{ id: string; label: string; type: string; frequency: number }>,
+): Promise<void> {
+  const response = await fetch(`${BASE}/jobs/${encodeURIComponent(jobId)}/entities`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ entities }),
     cache: "no-store",
   });
   if (!response.ok) {
