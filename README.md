@@ -73,7 +73,7 @@ Causal knowledge graph              Physical map images
                   Dashboard — KPIs, overflow metrics, cost/staff analytics
 ``` -->
 
-![system overview](image.png)
+![system overview](docs/image.png)
 
 **Core insight:** causal triples — `{head, relationship, tail, detail}` facts extracted from interviews, e.g. _"janitors collect waste from trash bins [when bins are full]"_ — map directly onto simulation architecture. Heads and tails become entity classes; relationships become Policy classes. The campus map grounds entity placement spatially so traversal distances and collection routes are physically accurate.
 
